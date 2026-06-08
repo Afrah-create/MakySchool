@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Caddyfile>
+  # Local multi-tenant routing — map *.localhost to Next.js and inject school slug
+  {
+    auto_https off
+  }
+
+  :80 {
+    @tenant host *.localhost
+    handle @tenant {
+      reverse_proxy localhost:3000 {
+        header_up X-School-Slug {labels.0}
+      }
+    }
+
+    handle {
+      reverse_proxy localhost:3000
+    }
+  }
+
+  :4000 {
+    reverse_proxy localhost:4000
+  }
+</Caddyfile>
