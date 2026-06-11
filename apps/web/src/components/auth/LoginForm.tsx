@@ -66,7 +66,7 @@ export function LoginForm({
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(event)} className="space-y-4">
+    <form onSubmit={(event) => void handleSubmit(event)} className="flex flex-col gap-5">
       <AuthField
         id="email"
         label="Email address"
@@ -76,22 +76,6 @@ export function LoginForm({
         autoComplete="email"
         placeholder="you@school.ug"
       />
-
-      {showSchoolSlugField ? (
-        <AuthField
-          id="schoolSlug"
-          label={needsSchoolSlug ? "School slug (required)" : "School slug (optional)"}
-          value={schoolSlug}
-          onChange={setSchoolSlug}
-          disabled={Boolean(lockedSchoolSlug)}
-          placeholder="e.g. easton-high"
-          hint={
-            lockedSchoolSlug
-              ? "Signing in to this school subdomain."
-              : "Only needed if your email is linked to more than one school."
-          }
-        />
-      ) : null}
 
       <AuthField
         id="password"
@@ -103,12 +87,34 @@ export function LoginForm({
         placeholder="Enter your password"
       />
 
+      {showSchoolSlugField ? (
+        <AuthField
+          id="schoolSlug"
+          label={needsSchoolSlug ? "School slug" : "School slug (optional)"}
+          value={schoolSlug}
+          onChange={setSchoolSlug}
+          disabled={Boolean(lockedSchoolSlug)}
+          placeholder="e.g. easton-high"
+          hint={
+            lockedSchoolSlug
+              ? "Signing in to this school subdomain."
+              : needsSchoolSlug
+                ? "Required — your account is linked to multiple schools."
+                : "Only if your email is linked to more than one school."
+          }
+        />
+      ) : null}
+
       {error ? <AuthAlert message={error} /> : null}
 
-      <AuthSubmitButton loading={loading}>Continue</AuthSubmitButton>
+      <div className="pt-1">
+        <AuthSubmitButton loading={loading}>Sign in</AuthSubmitButton>
+      </div>
 
-      <p className="text-center text-xs leading-5 text-slate-500">
-        Accounts are provisioned by a platform administrator. There is no public registration.
+      <p className="border-t border-[#252A3A]/80 pt-5 text-center text-xs leading-relaxed text-[#3D4357]">
+        Accounts are provisioned by a platform administrator.
+        <br />
+        There is no public registration.
       </p>
     </form>
   );

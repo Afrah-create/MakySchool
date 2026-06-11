@@ -110,6 +110,7 @@ authRouter.post("/login", async (req, res) => {
     school_name: string;
     school_status: string;
     subscription_status: string;
+    account_status: string;
   }>(
     `SELECT
        u.id,
@@ -118,6 +119,7 @@ authRouter.post("/login", async (req, res) => {
        ${USER_DISPLAY_NAME_SQL} AS name,
        u.role,
        u.school_id,
+       u.account_status,
        s.slug AS school_slug,
        s.name AS school_name,
        s.status AS school_status,
@@ -156,6 +158,20 @@ authRouter.post("/login", async (req, res) => {
   const isValid = await bcrypt.compare(password, candidate.password_hash);
   if (!isValid) {
     return res.status(401).json({ error: "Invalid credentials" });
+  }
+
+  if (candidate.account_status && candidate.account_status !== "ACTIVE") {
+    return res.status(403).json({
+      error: "Your account has been deactivated. Contact your school administrator.",
+      code: "ACCOUNT_INACTIVE",
+    });
+  }
+
+  if (candidate.school_status === "suspended") {
+    return res.status(403).json({
+      error: "This school account is suspended. Contact MakySchool support.",
+      code: "SCHOOL_SUSPENDED",
+    });
   }
 
   const normalizedRole = normalizeUserRole(candidate.role);

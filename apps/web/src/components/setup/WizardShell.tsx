@@ -8,6 +8,7 @@ import { AcademicYearStep } from "@/components/setup/steps/AcademicYearStep";
 import { GradingScaleStep } from "@/components/setup/steps/GradingScaleStep";
 import { ReviewStep } from "@/components/setup/steps/ReviewStep";
 import { apiClient } from "@/lib/api/client";
+import { theme } from "@/lib/theme";
 
 const storageKey = "makyschool.setupDraft";
 
@@ -193,17 +194,17 @@ export function WizardShell({
   }
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className={`${theme.panel} ${theme.panelPadding}`}>
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-slate-500">Step {state.step} of 4</p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-900">{steps[state.step - 1]}</h1>
+          <p className={`text-sm ${theme.muted}`}>Step {state.step} of 4</p>
+          <h1 className={`mt-1 text-2xl font-semibold ${theme.heading}`}>{steps[state.step - 1]}</h1>
         </div>
         <div className="flex gap-2">
           {steps.map((step, index) => (
             <span
               key={step}
-              className={`h-2 w-8 rounded-full ${index + 1 <= state.step ? "bg-indigo-700" : "bg-slate-200"}`}
+              className={`h-2 w-8 rounded-full ${index + 1 <= state.step ? "bg-[#4F6EF7]" : "bg-[#252A3A]"}`}
             />
           ))}
         </div>
@@ -232,7 +233,7 @@ export function WizardShell({
       </div>
 
       {error ? (
-        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div className="mt-4 rounded-lg border border-[#252A3A] bg-[#0F1117] px-4 py-3 text-sm text-[#F0F2FA]">
           {error}
         </div>
       ) : null}
@@ -242,16 +243,12 @@ export function WizardShell({
           type="button"
           onClick={() => setState({ ...state, step: Math.max(1, state.step - 1) })}
           disabled={state.step === 1}
-          className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 disabled:opacity-40"
+          className={`${theme.btnGhost} disabled:opacity-40`}
         >
           Back
         </button>
         {state.step < 4 ? (
-          <button
-            type="button"
-            onClick={goNext}
-            className="rounded-xl bg-indigo-700 px-4 py-2.5 text-sm font-medium text-white"
-          >
+          <button type="button" onClick={goNext} className={theme.btnPrimary}>
             Continue
           </button>
         ) : (
@@ -259,12 +256,9 @@ export function WizardShell({
             type="button"
             onClick={() => void finishSetup()}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-70"
+            className={`${theme.btnPrimary} disabled:opacity-70`}
           >
-            {loading ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/35 border-t-white" />
-            ) : null}
-            Confirm & Launch Dashboard
+            {loading ? "Saving…" : "Finish setup"}
           </button>
         )}
       </div>

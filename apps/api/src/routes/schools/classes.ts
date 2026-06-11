@@ -60,6 +60,36 @@ classesRouter.post("/", async (req: TenantRequest, res) => {
   return res.status(201).json({ data: result.rows[0] });
 });
 
+classesRouter.patch("/:id", async (req: TenantRequest, res) => {
+  const schoolId = req.schoolId;
+  const { id } = req.params;
+  if (!schoolId) {
+    return res.status(400).json({ error: "Missing tenant context" });
+  }
+
+  const { level, stream, capacity } = req.body as {
+    level?: string;
+    stream?: string | null;
+    capacity?: number | null;
+  };
+
+  const result = await pool.query(
+    `UPDATE school_classes
+     SET level = COALESCE($1, level),
+         stream = COALESCE($2, stream),
+         capacity = COALESCE($3, capacity)
+     WHERE id = $4 AND school_id = $5
+     RETURNING *`,
+    [level ?? null, stream ?? null, capacity ?? null, id, schoolId],
+  );
+
+  if (!result.rowCount) {
+    return res.status(404).json({ error: "Class not found" });
+  }
+
+  return res.json({ data: result.rows[0] });
+});
+
 classesRouter.delete("/:id", async (req: TenantRequest, res) => {
   const schoolId = req.schoolId;
   const { id } = req.params;
@@ -77,9 +107,11 @@ classesRouter.delete("/:id", async (req: TenantRequest, res) => {
   );
 
   if (Number(studentCount.rows[0]?.count ?? 0) > 0) {
+    const count = Number(studentCount.rows[0]?.count ?? 0);
     return res.status(409).json({
-      error: "Cannot delete a class that still has students",
+      error: `Cannot delete this class. ${count} student${count === 1 ? "" : "s"} enrolled. Move them first.`,
       code: "CLASS_HAS_STUDENTS",
+      studentCount: count,
     });
   }
 

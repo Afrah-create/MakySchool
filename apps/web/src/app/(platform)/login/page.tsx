@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { DEFAULT_ROOT_DOMAIN } from "@makyschool/shared/constants";
-import { AuthShell } from "@/components/auth/AuthShell";
+import { AuthCard, AuthLayout } from "@/components/auth/AuthLayout";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { getTenantFromHeaders } from "@/lib/tenant/server";
 
@@ -12,19 +12,35 @@ export default async function LoginPage() {
   const schoolSlug = tenant?.schoolSlug;
 
   return (
-    <AuthShell
+    <AuthLayout
       footer={
-        <Link href="/" className="font-medium text-indigo-700 hover:text-indigo-800">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-[#8B90A7] no-underline transition hover:text-[#F0F2FA]"
+        >
+          <span aria-hidden>←</span>
           Back to home
         </Link>
       }
     >
-      {schoolSlug ? (
-        <div className="mb-5 rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-sm text-indigo-900">
-          Signing in to <span className="font-semibold">{schoolSlug}.{rootDomain}</span>
-        </div>
-      ) : null}
-      <LoginForm initialSchoolSlug={schoolSlug} lockedSchoolSlug={schoolSlug} />
-    </AuthShell>
+      <AuthCard
+        title="Welcome back"
+        subtitle={schoolSlug ? "Sign in to your school workspace" : "Sign in to your account"}
+        badge={
+          schoolSlug ? (
+            <div className="flex items-center justify-center gap-2.5 rounded-lg border border-[#252A3A] bg-[#0F1117]/60 px-3.5 py-2.5">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" aria-hidden />
+              <p className="text-xs leading-none text-[#8B90A7]">
+                <span className="font-medium text-[#F0F2FA]">
+                  {schoolSlug}.{rootDomain}
+                </span>
+              </p>
+            </div>
+          ) : undefined
+        }
+      >
+        <LoginForm initialSchoolSlug={schoolSlug} lockedSchoolSlug={schoolSlug} />
+      </AuthCard>
+    </AuthLayout>
   );
 }

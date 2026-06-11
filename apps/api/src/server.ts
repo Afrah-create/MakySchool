@@ -8,6 +8,7 @@ import { migrate } from "./db/migrate.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { tenantMiddleware } from "./middleware/tenant.js";
 import { requireTenantAuth } from "./middleware/tenantAuth.js";
+import { requireActiveSubscription } from "./middleware/subscriptionGuard.js";
 import { authRouter } from "./routes/auth/login.js";
 import { superAdminAuthRouter } from "./routes/superadmin/auth.js";
 import { superAdminSchoolsRouter } from "./routes/superadmin/schools.js";
@@ -43,6 +44,7 @@ app.use("/api/webhooks/schoolpay", schoolPayWebhookRouter);
 app.use(tenantMiddleware);
 
 app.use(requireTenantAuth);
+app.use(requireActiveSubscription);
 app.use("/api/schools/setup", schoolSetupRouter);
 app.use("/api/schools/classes", classesRouter);
 app.use("/api/schools/subjects", subjectsRouter);

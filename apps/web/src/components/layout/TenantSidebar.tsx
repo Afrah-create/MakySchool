@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { theme } from "@/lib/theme";
 
 const links = [
   { href: "/dashboard", label: "Overview" },
-  { href: "/dashboard/classes", label: "Classes & Subjects" },
+  { href: "/dashboard/classes", label: "Classes & subjects" },
   { href: "/dashboard/billing", label: "Billing" },
 ];
 
@@ -15,26 +16,21 @@ export function TenantSidebar({
 }) {
   const navLinks =
     schoolStatus === "setup"
-      ? [{ href: "/dashboard/setup", label: "Setup Wizard" }]
+      ? [{ href: "/dashboard/setup", label: "Setup wizard" }]
       : links;
 
   return (
-    <aside className="hidden w-72 shrink-0 border-r border-slate-200 bg-white/90 p-6 shadow-sm lg:flex lg:flex-col">
+    <aside className={`hidden w-72 shrink-0 border-r ${theme.divider} bg-[#181C27] p-6 lg:flex lg:flex-col`}>
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-          {schoolSlug ?? "Tenant"}
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900">Dashboard</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          Classes, setup, and subscription controls for the current school.
-        </p>
+        <p className={`text-sm font-medium ${theme.muted}`}>{schoolSlug ?? "School"}</p>
+        <h1 className={`mt-2 text-xl font-semibold ${theme.heading}`}>Dashboard</h1>
       </div>
-      <nav className="mt-10 space-y-2 text-sm">
+      <nav className="mt-10 space-y-1 text-sm">
         {navLinks.map((link) => (
           <Link
             key={link.href}
             href={link.href}
-            className="block rounded-2xl px-4 py-3 font-medium text-slate-700 transition hover:bg-slate-100"
+            className="block rounded-lg px-3 py-2.5 font-medium text-[#F0F2FA] transition hover:bg-[#252A3A]"
           >
             {link.label}
           </Link>

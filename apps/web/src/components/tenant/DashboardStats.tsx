@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { apiClient } from "@/lib/api/client";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { theme } from "@/lib/theme";
 import { useTenantSchool } from "@/providers/TenantSchoolProvider";
 
 export function DashboardStats() {
@@ -29,13 +30,13 @@ export function DashboardStats() {
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p className="text-sm text-slate-500">Total Classes</p>
-        <p className="mt-2 text-3xl font-semibold text-slate-900">{classes?.length ?? 0}</p>
+      <div className={`${theme.panel} ${theme.panelPadding}`}>
+        <p className={`text-sm ${theme.muted}`}>Classes</p>
+        <p className={`mt-2 text-3xl font-semibold ${theme.heading}`}>{classes?.length ?? 0}</p>
       </div>
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <p className="text-sm text-slate-500">Total Subjects</p>
-        <p className="mt-2 text-3xl font-semibold text-slate-900">{subjects?.length ?? 0}</p>
+      <div className={`${theme.panel} ${theme.panelPadding}`}>
+        <p className={`text-sm ${theme.muted}`}>Subjects</p>
+        <p className={`mt-2 text-3xl font-semibold ${theme.heading}`}>{subjects?.length ?? 0}</p>
       </div>
     </div>
   );

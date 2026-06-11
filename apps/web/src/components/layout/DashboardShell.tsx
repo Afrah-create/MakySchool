@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { theme } from "@/lib/theme";
 
 export function DashboardShell({
   sidebar,
@@ -7,5 +8,10 @@ export function DashboardShell({
   sidebar: ReactNode;
   children: ReactNode;
 }) {
-  return <div className="min-h-screen lg:flex">{sidebar}{children}</div>;
+  return (
+    <div className={`${theme.page} min-h-screen lg:flex`}>
+      {sidebar}
+      {children}
+    </div>
+  );
 }

@@ -31,36 +31,33 @@ export default async function BillingPage() {
 
   return (
     <main className="px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-2xl space-y-6">
+      <div className="mx-auto max-w-lg space-y-6">
         <div>
-          <p className="text-sm font-medium uppercase tracking-[0.28em] text-slate-500">Billing</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">Renew subscription</h1>
+          <h1 className="text-2xl font-semibold text-[#F0F2FA]">Billing</h1>
+          <p className="mt-1 text-sm text-[#8B90A7]">MakySchool subscription</p>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm text-slate-600">
-            Your school subscription is{" "}
-            <span className="font-semibold text-slate-900">{school.subscription_status}</span>.
+        <div className="rounded-2xl border border-[#252A3A] bg-[#181C27] p-6">
+          <p className="text-sm text-[#8B90A7]">
+            Status: <span className="font-medium text-[#F0F2FA]">{school.subscription_status}</span>
           </p>
-          <p className="mt-4 text-sm leading-6 text-slate-600">
-            Pay UGX {SUBSCRIPTION_FEE_UGX.toLocaleString()} via SchoolPay for{" "}
-            {school.subscription_term ?? "the current term"} {school.subscription_year ?? ""} to restore
-            full dashboard access.
+          <p className="mt-4 text-sm leading-6 text-[#8B90A7]">
+            UGX {SUBSCRIPTION_FEE_UGX.toLocaleString()} per term via SchoolPay.
           </p>
           {school.schoolpay_code ? (
-            <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 font-mono text-sm text-slate-900">
-              SchoolPay code: {school.schoolpay_code}
+            <p className="mt-4 rounded-lg border border-[#252A3A] bg-[#0F1117] px-4 py-3 font-mono text-sm text-[#F0F2FA]">
+              {school.schoolpay_code}
             </p>
           ) : (
-            <p className="mt-4 text-sm text-slate-500">
-              Contact your platform administrator for your SchoolPay merchant code.
+            <p className="mt-4 text-sm text-[#8B90A7]">
+              Contact your platform administrator for your SchoolPay code.
             </p>
           )}
           <Link
             href="/dashboard"
-            className="mt-6 inline-flex rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700"
+            className="mt-6 inline-flex rounded-lg border border-[#252A3A] px-4 py-2.5 text-sm font-medium text-[#F0F2FA] hover:bg-[#252A3A]/50"
           >
-            Back to dashboard
+            Back
           </Link>
         </div>
       </div>

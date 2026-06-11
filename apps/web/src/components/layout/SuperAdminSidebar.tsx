@@ -1,12 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { LogOut, School } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { clearSchoolSlug } from "@/lib/auth/session";
 
 export function SuperAdminSidebar() {
   const router = useRouter();
+  const pathname = usePathname();
+  const schoolsActive =
+    pathname === "/superadmin/dashboard" || pathname.startsWith("/superadmin/schools");
 
   async function handleLogout() {
     await apiClient("/auth/logout", { method: "POST" });
@@ -16,29 +20,39 @@ export function SuperAdminSidebar() {
   }
 
   return (
-    <aside className="hidden w-72 shrink-0 border-r border-slate-200 bg-white/90 p-6 shadow-sm lg:flex lg:flex-col">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-700">MakySchool</p>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900">Super Admin</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          School provisioning, subscriptions, and platform oversight.
-        </p>
+    <aside className="hidden min-h-screen w-72 shrink-0 flex-col border-r border-[#252A3A] bg-[#181C27] p-6 lg:flex">
+      <div className="mb-6 flex items-center gap-3 border-b border-[#252A3A] pb-6">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4F6EF7] text-xs font-bold text-white">
+          MS
+        </span>
+        <span className="text-sm font-semibold text-[#F0F2FA]">MakySchool</span>
       </div>
-      <nav className="mt-10 flex flex-1 flex-col space-y-2 text-sm">
+
+      <nav className="flex flex-1 flex-col space-y-1 text-sm">
         <Link
           href="/superadmin/dashboard"
-          className="block rounded-2xl bg-indigo-700 px-4 py-3 font-medium text-white"
+          className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 font-medium transition ${
+            schoolsActive
+              ? "bg-[#1E2A5E] text-[#4F6EF7]"
+              : "text-[#8B90A7] hover:bg-[#252A3A] hover:text-[#F0F2FA]"
+          }`}
         >
-          Dashboard
+          <School className="h-4 w-4 shrink-0" />
+          Schools
         </Link>
+      </nav>
+
+      <div className="mt-auto pt-6">
         <button
           type="button"
           onClick={() => void handleLogout()}
-          className="block rounded-2xl px-4 py-3 text-left font-medium text-slate-700 transition hover:bg-slate-100"
+          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-[#8B90A7] transition hover:text-[#F0F2FA]"
         >
+          <LogOut className="h-4 w-4 shrink-0" />
           Sign out
         </button>
-      </nav>
+        <p className="mt-4 px-3 text-[10px] text-[#3D4357]">MakySchool v1.0</p>
+      </div>
     </aside>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Plus } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { SlideOver } from "@/components/ui/SlideOver";
 
@@ -50,8 +51,14 @@ export function AddSchoolPanel({ onCreated }: { onCreated: () => void }) {
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700">
-        Add School
+      <button
+        type="button"
+        id="add-school-trigger"
+        onClick={() => setOpen(true)}
+        className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-[#4F6EF7] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#3D5CE6]"
+      >
+        <Plus className="h-4 w-4" />
+        Add school
       </button>
       <SlideOver
         open={open}

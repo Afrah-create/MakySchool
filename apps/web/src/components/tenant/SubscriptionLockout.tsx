@@ -8,30 +8,32 @@ export function SubscriptionLockout() {
   const pathname = usePathname();
   const { school } = useTenantSchool();
 
-  if (!school || school.subscription_status !== "expired") {
+  if (!school || school.status === "setup") {
     return null;
   }
 
-  if (pathname.startsWith("/dashboard/billing")) {
+  const needsPayment = school.subscription_status === "unpaid" || school.subscription_status === "expired";
+
+  if (!needsPayment) {
     return null;
   }
+
+  if (pathname.startsWith("/dashboard/billing") || pathname.startsWith("/dashboard/setup")) {
+    return null;
+  }
+
+  const title = school.subscription_status === "expired" ? "Subscription expired" : "Payment required";
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/65 px-4">
-      <div className="max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-2xl">
-        <p className="text-sm font-medium uppercase tracking-[0.24em] text-slate-500">
-          Subscription Expired
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-[#0F1117]/90 px-4">
+      <div className="max-w-md rounded-2xl border border-[#252A3A] bg-[#181C27] p-8 text-center">
+        <h2 className="text-xl font-semibold text-[#F0F2FA]">{title}</h2>
+        <p className="mt-3 text-sm leading-6 text-[#8B90A7]">
+          Pay UGX 300,000 for {school.subscription_term ?? "the current term"}{" "}
+          {school.subscription_year ?? new Date().getFullYear()} via SchoolPay to restore access.
         </p>
-        <h2 className="mt-3 text-2xl font-semibold text-slate-900">Renew to restore access</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          Pay the SchoolPay reference for {school.subscription_term ?? "the active term"}{" "}
-          {school.subscription_year ?? ""} to continue using the dashboard.
-        </p>
-        <Link
-          href="/dashboard/billing"
-          className="mt-6 inline-flex rounded-xl bg-indigo-700 px-5 py-2.5 text-sm font-medium text-white"
-        >
-          View payment instructions
+        <Link href="/dashboard/billing" className="mt-6 inline-flex rounded-lg bg-[#4F6EF7] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#3D5CE6]">
+          View payment details
         </Link>
       </div>
     </div>

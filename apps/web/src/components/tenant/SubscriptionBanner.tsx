@@ -2,39 +2,37 @@
 
 import Link from "next/link";
 import { Badge } from "@/components/ui/Badge";
+import { theme } from "@/lib/theme";
 import { useTenantSchool } from "@/providers/TenantSchoolProvider";
 
 export function SubscriptionBanner() {
   const { school } = useTenantSchool();
 
-  if (!school) {
+  if (!school || school.status === "setup") {
     return null;
   }
 
   const isActive = school.subscription_status === "active";
-  const bannerText = isActive
-    ? `Active — ${school.subscription_term ?? "Term"} ${school.subscription_year ?? ""}`
-    : "Subscription Expired — Renew Now";
+  const label = isActive
+    ? `${school.subscription_term ?? "Term"} ${school.subscription_year ?? ""}`
+    : school.subscription_status === "unpaid"
+      ? "Payment pending"
+      : "Renew subscription";
 
   return (
-    <div
-      className={`rounded-3xl border px-5 py-4 shadow-sm ${
-        isActive ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50"
-      }`}
-    >
+    <div className={`${theme.panel} ${theme.panelPadding}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-slate-500">Subscription</p>
-          <h2 className="mt-1 text-xl font-semibold text-slate-900">{bannerText}</h2>
+          <p className={`text-sm ${theme.muted}`}>Subscription</p>
+          <h2 className={`mt-1 text-lg font-semibold ${theme.heading}`}>{label}</h2>
         </div>
-        <Badge tone={isActive ? "success" : "danger"}>{school.subscription_status}</Badge>
+        <Badge tone={isActive ? "success" : "warning"}>{school.subscription_status}</Badge>
       </div>
       {!isActive ? (
-        <p className="mt-3 text-sm text-slate-600">
-          <Link href="/dashboard/billing" className="font-medium text-indigo-700 underline">
-            View payment instructions
-          </Link>{" "}
-          to restore access.
+        <p className={`mt-3 text-sm ${theme.muted}`}>
+          <Link href="/dashboard/billing" className="font-medium text-[#4F6EF7] hover:underline">
+            Payment instructions
+          </Link>
         </p>
       ) : null}
     </div>

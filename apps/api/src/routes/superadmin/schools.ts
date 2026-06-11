@@ -186,7 +186,40 @@ superAdminSchoolsRouter.patch("/:id/status", async (req, res) => {
     return res.status(400).json({ error: "Valid status is required" });
   }
 
+  if (status === "active") {
+    const current = await pool.query<{ status: string }>(
+      "SELECT status FROM schools WHERE id = $1 LIMIT 1",
+      [id],
+    );
+    if (current.rows[0]?.status === "setup") {
+      return res.status(400).json({
+        error: "School must complete setup before activation",
+        code: "SETUP_INCOMPLETE",
+      });
+    }
+  }
+
   const result = await pool.query("UPDATE schools SET status = $1 WHERE id = $2 RETURNING id, status", [status, id]);
+  if (!result.rowCount) {
+    return res.status(404).json({ error: "School not found" });
+  }
+
+  return res.json({ data: result.rows[0] });
+});
+
+superAdminSchoolsRouter.patch("/:id", async (req, res) => {
+  const { id } = req.params;
+  const { schoolpayCode } = req.body as { schoolpayCode?: string };
+
+  if (!schoolpayCode?.trim()) {
+    return res.status(400).json({ error: "SchoolPay code is required" });
+  }
+
+  const result = await pool.query(
+    "UPDATE schools SET schoolpay_code = $1 WHERE id = $2 RETURNING id, schoolpay_code",
+    [schoolpayCode.trim(), id],
+  );
+
   if (!result.rowCount) {
     return res.status(404).json({ error: "School not found" });
   }
