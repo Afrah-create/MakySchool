@@ -1,6 +1,12 @@
-import Link from "next/link";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { DashboardShell } from "@/components/layout/DashboardShell";
+import { TenantSidebar } from "@/components/layout/TenantSidebar";
+import { SubscriptionLockout } from "@/components/tenant/SubscriptionLockout";
+import { TenantSchoolProvider } from "@/providers/TenantSchoolProvider";
+import { apiFetch } from "@/lib/api/server";
 import { getTenantFromHeaders } from "@/lib/tenant/server";
+import type { SetupStatusResponse } from "@makyschool/shared/types";
 
 export default async function TenantDashboardLayout({
   children,
@@ -10,24 +16,30 @@ export default async function TenantDashboardLayout({
   const headerList = await headers();
   const tenant = getTenantFromHeaders(headerList);
 
+  if (!tenant?.schoolSlug) {
+    redirect("/login");
+  }
+
+  let status: SetupStatusResponse | null = null;
+
+  try {
+    status = await apiFetch<SetupStatusResponse>("/schools/setup/status", {
+      schoolSlug: tenant.schoolSlug,
+    });
+  } catch {
+    status = null;
+  }
+
   return (
-    <div className="min-h-screen">
-      <nav className="border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <div>
-            <Link href="/dashboard" className="font-semibold">
-              MakySchool
-            </Link>
-            {tenant && (
-              <p className="text-xs text-muted">{tenant.schoolSlug}</p>
-            )}
-          </div>
-          <Link href="/login" className="text-sm text-muted hover:text-foreground">
-            Sign out
-          </Link>
-        </div>
-      </nav>
-      <div className="mx-auto max-w-5xl px-6 py-8">{children}</div>
-    </div>
+    <TenantSchoolProvider
+      schoolSlug={tenant.schoolSlug}
+      school={status?.school ?? null}
+      setupStatus={status}
+    >
+      <DashboardShell sidebar={<TenantSidebar schoolSlug={tenant.schoolSlug} schoolStatus={status?.school?.status} />}>
+        <div className="flex-1">{children}</div>
+        <SubscriptionLockout />
+      </DashboardShell>
+    </TenantSchoolProvider>
   );
 }

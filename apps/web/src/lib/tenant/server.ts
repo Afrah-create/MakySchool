@@ -13,3 +13,7 @@ export function getTenantFromHeaders(headers: HeaderLike): TenantContext | null 
 
   return { schoolSlug, schoolId };
 }
+
+export function getApiUrl() {
+  return process.env.API_INTERNAL_URL ?? process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
+}

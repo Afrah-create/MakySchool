@@ -33,7 +33,7 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} min-h-screen antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen antialiased selection:bg-slate-900 selection:text-white`}
         data-school-slug={tenant?.schoolSlug ?? ""}
       >
         {children}

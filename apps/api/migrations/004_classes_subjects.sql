@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS classes (
+  id UUID PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  level TEXT NOT NULL,
+  stream TEXT,
+  capacity INT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS subjects (
+  id UUID PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS class_subjects (
+  id UUID PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  UNIQUE(class_id, subject_id)
+);

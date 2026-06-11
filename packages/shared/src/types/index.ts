@@ -1,9 +1,8 @@
-/** Roles supported in Week 1 scope */
 export type UserRole = "admin" | "head_teacher" | "teacher" | "learner";
 
 export type SchoolType = "primary" | "secondary" | "both";
 
-export type SubscriptionStatus = "active" | "expired" | "pending";
+export type SubscriptionStatus = "unpaid" | "active" | "expired";
 
 /** Injected by middleware / reverse proxy on every tenant request */
 export interface TenantContext {
@@ -11,6 +10,7 @@ export interface TenantContext {
   schoolId?: string;
 }
 
+/** @deprecated Use SchoolRecord from ./school instead */
 export interface School {
   id: string;
   slug: string;
@@ -31,3 +31,8 @@ export interface ApiError {
   code?: string;
   details?: Record<string, string[]>;
 }
+
+export * from "./auth";
+export * from "./school";
+export * from "./classes";
+export * from "./subscription";

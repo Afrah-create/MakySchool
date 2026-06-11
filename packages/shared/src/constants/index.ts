@@ -15,3 +15,7 @@ export const DEFAULT_ROOT_DOMAIN = "makyschool.com";
 export const UGANDA_TERMS = ["Term 1", "Term 2", "Term 3"] as const;
 
 export const SUBSCRIPTION_FEE_UGX = 300_000;
+
+export * from "./auth";
+export * from "./school";
+export * from "./classes";

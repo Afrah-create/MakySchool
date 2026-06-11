@@ -16,5 +16,18 @@
   },
   "engines": {
     "node": ">=20.9.0"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "lru-cache": "^11.5.1",
+    "multer": "^2.1.1",
+    "pg": "^8.21.0",
+    "swr": "^2.4.1"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.1.0"
   }
 }

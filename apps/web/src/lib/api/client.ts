@@ -9,10 +9,22 @@ type RequestOptions = Omit<RequestInit, "body"> & {
 
 function getBaseUrl() {
   if (typeof window === "undefined") {
-    return process.env.API_INTERNAL_URL ?? process.env.API_URL ?? "http://localhost:4000";
+    return process.env.API_INTERNAL_URL ?? process.env.API_URL ?? "http://localhost:4000/api";
   }
 
-  return process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
+  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
+}
+
+function resolveSchoolSlug(explicitSlug?: string) {
+  if (explicitSlug) {
+    return explicitSlug;
+  }
+
+  if (typeof document !== "undefined") {
+    return document.body.dataset.schoolSlug || undefined;
+  }
+
+  return undefined;
 }
 
 export async function apiClient<T>(
@@ -22,13 +34,14 @@ export async function apiClient<T>(
   const { body, schoolSlug, schoolId, headers: initHeaders, ...rest } = options;
 
   const headers = new Headers(initHeaders);
+  const resolvedSlug = resolveSchoolSlug(schoolSlug);
 
-  if (body !== undefined) {
+  if (body !== undefined && !(body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
 
-  if (schoolSlug) {
-    headers.set(TENANT_HEADERS.SCHOOL_SLUG, schoolSlug);
+  if (resolvedSlug) {
+    headers.set(TENANT_HEADERS.SCHOOL_SLUG, resolvedSlug);
   }
 
   if (schoolId) {
@@ -37,8 +50,14 @@ export async function apiClient<T>(
 
   const response = await fetch(`${getBaseUrl()}${path}`, {
     ...rest,
+    credentials: "include",
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body:
+      body === undefined
+        ? undefined
+        : body instanceof FormData
+          ? body
+          : JSON.stringify(body),
   });
 
   const payload = (await response.json()) as ApiResponse<T> | ApiError;
