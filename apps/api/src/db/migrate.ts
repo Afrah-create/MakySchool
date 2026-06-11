@@ -1,3 +1,4 @@
+import "../loadEnv.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -5,6 +6,8 @@ import { pool } from "./pool.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(__dirname, "../../migrations");
+
+const MIGRATION_FILE_PATTERN = /^\d{3}_[a-z0-9_]+\.sql$/i;
 
 async function ensureMigrationsTable() {
   await pool.query(`
@@ -19,8 +22,13 @@ export async function migrate() {
   await ensureMigrationsTable();
 
   const files = (await fs.readdir(migrationsDir))
-    .filter((file) => file.endsWith(".sql"))
+    .filter((file) => MIGRATION_FILE_PATTERN.test(file))
     .sort();
+
+  if (files.length === 0) {
+    console.warn("No migration files found");
+    return;
+  }
 
   for (const filename of files) {
     const applied = await pool.query(
@@ -41,6 +49,7 @@ export async function migrate() {
         filename,
       ]);
       await pool.query("COMMIT");
+      console.log(`Applied migration: ${filename}`);
     } catch (error) {
       await pool.query("ROLLBACK");
       throw error;

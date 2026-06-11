@@ -2,14 +2,33 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { AuthAlert, AuthField, AuthSubmitButton } from "@/components/auth/AuthShell";
 import { apiClient } from "@/lib/api/client";
+import { clearSchoolSlug, persistSchoolSlug } from "@/lib/auth/session";
 
-export function LoginForm({ schoolSlug }: { schoolSlug?: string }) {
+type LoginResponse = {
+  accountType: "platform" | "school";
+  role: string;
+  redirectTo: string;
+  school?: { slug: string; name: string; status: string } | null;
+};
+
+export function LoginForm({
+  initialSchoolSlug,
+  lockedSchoolSlug,
+}: {
+  initialSchoolSlug?: string;
+  lockedSchoolSlug?: string;
+}) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [schoolSlug, setSchoolSlug] = useState(initialSchoolSlug ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [needsSchoolSlug, setNeedsSchoolSlug] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const showSchoolSlugField = !lockedSchoolSlug || needsSchoolSlug;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -17,20 +36,30 @@ export function LoginForm({ schoolSlug }: { schoolSlug?: string }) {
     setError(null);
 
     try {
-      const response = await apiClient<{
-        user: { id: string; email: string; name: string; role: string };
-        school: { status: string } | null;
-      }>("/auth/login", {
+      const response = await apiClient<LoginResponse>("/auth/login", {
         method: "POST",
-        body: { email, password },
-        schoolSlug,
+        body: {
+          email,
+          password,
+          schoolSlug: lockedSchoolSlug ?? (schoolSlug.trim() || undefined),
+        },
+        schoolSlug: lockedSchoolSlug,
       });
 
-      const status = response.data.school?.status;
-      router.push(status === "setup" ? "/dashboard/setup" : "/dashboard");
+      if (response.data.accountType === "school" && response.data.school?.slug) {
+        persistSchoolSlug(response.data.school.slug);
+      } else {
+        clearSchoolSlug();
+      }
+
+      router.push(response.data.redirectTo);
       router.refresh();
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "Login failed");
+      const message = submissionError instanceof Error ? submissionError.message : "Login failed";
+      if (message.includes("school slug")) {
+        setNeedsSchoolSlug(true);
+      }
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -38,47 +67,49 @@ export function LoginForm({ schoolSlug }: { schoolSlug?: string }) {
 
   return (
     <form onSubmit={(event) => void handleSubmit(event)} className="space-y-4">
-      <div>
-        <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-slate-700">
-          Email
-        </label>
-        <input
-          id="email"
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          required
-          className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none ring-indigo-600 focus:ring-2"
+      <AuthField
+        id="email"
+        label="Email address"
+        type="email"
+        value={email}
+        onChange={setEmail}
+        autoComplete="email"
+        placeholder="you@school.ug"
+      />
+
+      {showSchoolSlugField ? (
+        <AuthField
+          id="schoolSlug"
+          label={needsSchoolSlug ? "School slug (required)" : "School slug (optional)"}
+          value={schoolSlug}
+          onChange={setSchoolSlug}
+          disabled={Boolean(lockedSchoolSlug)}
+          placeholder="e.g. easton-high"
+          hint={
+            lockedSchoolSlug
+              ? "Signing in to this school subdomain."
+              : "Only needed if your email is linked to more than one school."
+          }
         />
-      </div>
-      <div>
-        <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-slate-700">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-          className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none ring-indigo-600 focus:ring-2"
-        />
-      </div>
-      {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </div>
       ) : null}
-      <button
-        type="submit"
-        disabled={loading}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-70"
-      >
-        {loading ? (
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/35 border-t-white" />
-        ) : null}
-        Sign in
-      </button>
+
+      <AuthField
+        id="password"
+        label="Password"
+        type="password"
+        value={password}
+        onChange={setPassword}
+        autoComplete="current-password"
+        placeholder="Enter your password"
+      />
+
+      {error ? <AuthAlert message={error} /> : null}
+
+      <AuthSubmitButton loading={loading}>Continue</AuthSubmitButton>
+
+      <p className="text-center text-xs leading-5 text-slate-500">
+        Accounts are provisioned by a platform administrator. There is no public registration.
+      </p>
     </form>
   );
 }

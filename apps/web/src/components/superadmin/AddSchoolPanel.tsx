@@ -9,12 +9,14 @@ export function AddSchoolPanel({ onCreated }: { onCreated: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [password, setPassword] = useState<string | null>(null);
+  const [loginUrl, setLoginUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   async function handleSubmit(formData: FormData) {
     setLoading(true);
     setError(null);
     setPassword(null);
+    setLoginUrl(null);
 
     try {
       const payload = {
@@ -23,11 +25,20 @@ export function AddSchoolPanel({ onCreated }: { onCreated: () => void }) {
         adminEmail: String(formData.get("adminEmail") ?? "").trim(),
       };
 
-      const response = await apiClient<{ school: { id: string }; tempPassword: string }>("/superadmin/schools", {
+      const response = await apiClient<{ school: { id: string; slug: string }; tempPassword: string }>("/superadmin/schools", {
         method: "POST",
         body: payload,
       });
 
+      const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "makyschool.com";
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? `https://${rootDomain}`;
+      const slug = response.data.school.slug;
+      const isLocal = appUrl.includes("localhost");
+      const tenantLoginUrl = isLocal
+        ? `${appUrl.replace(/\/$/, "")}/login`
+        : `https://${slug}.${rootDomain}/login`;
+
+      setLoginUrl(tenantLoginUrl);
       setPassword(response.data.tempPassword);
       onCreated();
     } catch (error) {
@@ -69,23 +80,37 @@ export function AddSchoolPanel({ onCreated }: { onCreated: () => void }) {
 
           {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
           {password ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-              <p className="font-medium">Temporary password</p>
-              <div className="mt-2 flex items-center gap-3">
-                <code className="rounded-lg bg-white px-3 py-2 font-mono text-sm">{password}</code>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(password);
-                    setCopied(true);
-                    window.setTimeout(() => setCopied(false), 1500);
-                  }}
-                  className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100"
-                >
-                  {copied ? "Copied" : "Copy"}
-                </button>
+            <div className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+              <div>
+                <p className="font-medium">Share with the school admin</p>
+                <p className="mt-1 text-emerald-800">
+                  They sign in at their school URL using the admin email above and this temporary password.
+                </p>
               </div>
-              <button type="button" onClick={() => setPassword(null)} className="mt-3 text-xs font-medium text-emerald-700 underline">
+              {loginUrl ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">School login URL</p>
+                  <code className="mt-2 block overflow-x-auto rounded-lg bg-white px-3 py-2 font-mono text-xs">{loginUrl}</code>
+                </div>
+              ) : null}
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Temporary password</p>
+                <div className="mt-2 flex items-center gap-3">
+                  <code className="rounded-lg bg-white px-3 py-2 font-mono text-sm">{password}</code>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(password);
+                      setCopied(true);
+                      window.setTimeout(() => setCopied(false), 1500);
+                    }}
+                    className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100"
+                  >
+                    {copied ? "Copied" : "Copy password"}
+                  </button>
+                </div>
+              </div>
+              <button type="button" onClick={() => { setPassword(null); setLoginUrl(null); }} className="text-xs font-medium text-emerald-700 underline">
                 Dismiss
               </button>
             </div>

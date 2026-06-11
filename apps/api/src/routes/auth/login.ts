@@ -1,105 +1,240 @@
 import bcrypt from "bcrypt";
 import { Router } from "express";
+import { USER_DISPLAY_NAME_SQL, normalizeUserRole } from "../../db/userSql.js";
 import { pool } from "../../db/pool.js";
-import type { TenantRequest } from "../../middleware/tenant.js";
+import { TENANT_HEADERS } from "@makyschool/shared/constants";
 import { getCookie } from "../../utils/http.js";
 import {
+  SUPERADMIN_ACCESS_COOKIE,
+  SUPERADMIN_REFRESH_COOKIE,
   TENANT_ACCESS_COOKIE,
   TENANT_REFRESH_COOKIE,
   cookieOptions,
+  signSuperAdminToken,
   signTenantToken,
+  verifySuperAdminToken,
   verifyTenantToken,
 } from "../../utils/auth.js";
 
-export const tenantAuthRouter = Router();
+export const authRouter = Router();
 
-// TODO(Ssekyanzi): RBAC, forgot-password, role guards, refresh token rotation
+type SchoolRow = {
+  id: string;
+  slug: string;
+  name: string;
+  status: string;
+  subscription_status: string;
+};
 
-tenantAuthRouter.post("/login", async (req: TenantRequest, res) => {
-  const schoolId = req.schoolId;
-  const schoolSlug = req.schoolSlug;
-
-  if (!schoolId || !schoolSlug) {
-    return res.status(400).json({
-      error: "Missing tenant context",
-      code: "TENANT_CONTEXT_REQUIRED",
-    });
+function resolveRedirectPath(accountType: "platform" | "school", school?: SchoolRow | null) {
+  if (accountType === "platform") {
+    return "/superadmin/dashboard";
   }
 
-  const { email, password } = req.body as { email?: string; password?: string };
+  return school?.status === "setup" ? "/dashboard/setup" : "/dashboard";
+}
 
-  if (!email || !password) {
+function clearAuthCookies(res: import("express").Response) {
+  res.clearCookie(SUPERADMIN_ACCESS_COOKIE, { path: "/" });
+  res.clearCookie(SUPERADMIN_REFRESH_COOKIE, { path: "/" });
+  res.clearCookie(TENANT_ACCESS_COOKIE, { path: "/" });
+  res.clearCookie(TENANT_REFRESH_COOKIE, { path: "/" });
+}
+
+authRouter.post("/login", async (req, res) => {
+  const { email, password, schoolSlug: bodySlug } = req.body as {
+    email?: string;
+    password?: string;
+    schoolSlug?: string;
+  };
+
+  if (!email?.trim() || !password) {
     return res.status(400).json({ error: "Email and password are required" });
   }
 
-  const result = await pool.query<{
+  const normalizedEmail = email.toLowerCase().trim();
+  const headerSlug = req.header(TENANT_HEADERS.SCHOOL_SLUG)?.trim().toLowerCase();
+  const requestedSlug = (bodySlug ?? headerSlug)?.trim().toLowerCase() || null;
+
+  clearAuthCookies(res);
+
+  const superAdminResult = await pool.query<{
+    id: string;
+    email: string;
+    password_hash: string;
+    name: string;
+  }>(
+    "SELECT id, email, password_hash, name FROM super_admins WHERE LOWER(email) = LOWER($1) LIMIT 1",
+    [normalizedEmail],
+  );
+
+  const superAdmin = superAdminResult.rows[0];
+  if (superAdmin) {
+    const isValid = await bcrypt.compare(password, superAdmin.password_hash);
+    if (!isValid) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const payload = {
+      sub: superAdmin.id,
+      email: superAdmin.email,
+      name: superAdmin.name,
+      role: "super_admin" as const,
+    };
+
+    res.cookie(SUPERADMIN_ACCESS_COOKIE, signSuperAdminToken(payload, "15m"), cookieOptions(15 * 60 * 1000));
+    res.cookie(SUPERADMIN_REFRESH_COOKIE, signSuperAdminToken(payload, "7d"), cookieOptions(7 * 24 * 60 * 60 * 1000));
+
+    return res.json({
+      data: {
+        accountType: "platform" as const,
+        role: "super_admin" as const,
+        redirectTo: resolveRedirectPath("platform"),
+        user: {
+          id: superAdmin.id,
+          email: superAdmin.email,
+          name: superAdmin.name,
+        },
+      },
+    });
+  }
+
+  const userCandidates = await pool.query<{
     id: string;
     email: string;
     password_hash: string;
     name: string;
     role: string;
     school_id: string;
+    school_slug: string;
+    school_name: string;
+    school_status: string;
+    subscription_status: string;
   }>(
-    `SELECT id, email, password_hash, name, role, school_id
-     FROM users
-     WHERE school_id = $1 AND email = $2
-     LIMIT 1`,
-    [schoolId, email.toLowerCase().trim()],
+    `SELECT
+       u.id,
+       u.email,
+       u.password_hash,
+       ${USER_DISPLAY_NAME_SQL} AS name,
+       u.role,
+       u.school_id,
+       s.slug AS school_slug,
+       s.name AS school_name,
+       s.status AS school_status,
+       s.subscription_status
+     FROM users u
+     INNER JOIN schools s ON s.id = u.school_id
+     WHERE LOWER(u.email) = LOWER($1)
+       AND u.password_hash IS NOT NULL
+     ORDER BY s.name ASC`,
+    [normalizedEmail],
   );
 
-  const user = result.rows[0];
-  if (!user) {
+  if (!userCandidates.rowCount) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
 
-  const isValid = await bcrypt.compare(password, user.password_hash);
+  let candidate = userCandidates.rows[0];
+
+  if (userCandidates.rowCount > 1) {
+    if (!requestedSlug) {
+      return res.status(400).json({
+        error: "Multiple schools found for this email. Enter your school slug to continue.",
+        code: "SCHOOL_SLUG_REQUIRED",
+      });
+    }
+
+    const matched = userCandidates.rows.find((row) => row.school_slug === requestedSlug);
+    if (!matched) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+    candidate = matched;
+  } else if (requestedSlug && candidate.school_slug !== requestedSlug) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+
+  const isValid = await bcrypt.compare(password, candidate.password_hash);
   if (!isValid) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
 
+  const normalizedRole = normalizeUserRole(candidate.role);
+  const school: SchoolRow = {
+    id: candidate.school_id,
+    slug: candidate.school_slug,
+    name: candidate.school_name,
+    status: candidate.school_status,
+    subscription_status: candidate.subscription_status,
+  };
+
   const payload = {
-    sub: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role as "admin" | "head_teacher" | "teacher" | "learner",
-    schoolId: user.school_id,
-    schoolSlug,
+    sub: candidate.id,
+    email: candidate.email,
+    name: candidate.name,
+    role: normalizedRole as "admin" | "head_teacher" | "teacher" | "learner",
+    schoolId: candidate.school_id,
+    schoolSlug: candidate.school_slug,
   };
 
   res.cookie(TENANT_ACCESS_COOKIE, signTenantToken(payload, "15m"), cookieOptions(15 * 60 * 1000));
   res.cookie(TENANT_REFRESH_COOKIE, signTenantToken(payload, "7d"), cookieOptions(7 * 24 * 60 * 60 * 1000));
 
-  const schoolResult = await pool.query(
-    "SELECT id, slug, name, status, subscription_status FROM schools WHERE id = $1",
-    [schoolId],
-  );
-
   return res.json({
     data: {
+      accountType: "school" as const,
+      role: normalizedRole,
+      redirectTo: resolveRedirectPath("school", school),
       user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        school_id: user.school_id,
+        id: candidate.id,
+        email: candidate.email,
+        name: candidate.name,
+        role: normalizedRole,
+        school_id: candidate.school_id,
       },
-      school: schoolResult.rows[0] ?? null,
+      school,
     },
   });
 });
 
-tenantAuthRouter.get("/me", async (req: TenantRequest, res) => {
-  const token =
+authRouter.get("/me", async (req, res) => {
+  const superAdminToken =
+    getCookie(req, SUPERADMIN_ACCESS_COOKIE) ?? getCookie(req, SUPERADMIN_REFRESH_COOKIE);
+
+  if (superAdminToken) {
+    try {
+      const payload = verifySuperAdminToken(superAdminToken);
+      const result = await pool.query<{ id: string; email: string; name: string }>(
+        "SELECT id, email, name FROM super_admins WHERE id = $1 LIMIT 1",
+        [payload.sub],
+      );
+      const superAdmin = result.rows[0];
+      if (!superAdmin) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      return res.json({
+        data: {
+          accountType: "platform" as const,
+          role: "super_admin" as const,
+          user: superAdmin,
+        },
+      });
+    } catch {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+  }
+
+  const tenantToken =
     getCookie(req, TENANT_ACCESS_COOKIE) ?? getCookie(req, TENANT_REFRESH_COOKIE);
 
-  if (!token) {
+  if (!tenantToken) {
     return res.status(401).json({ error: "Not authenticated" });
   }
 
   try {
-    const payload = verifyTenantToken(token);
-
-    if (req.schoolId && payload.schoolId !== req.schoolId) {
+    const payload = verifyTenantToken(tenantToken);
+    const headerSlug = req.header(TENANT_HEADERS.SCHOOL_SLUG);
+    if (headerSlug && payload.schoolSlug !== headerSlug) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
@@ -110,7 +245,15 @@ tenantAuthRouter.get("/me", async (req: TenantRequest, res) => {
       role: string;
       school_id: string;
     }>(
-      "SELECT id, email, name, role, school_id FROM users WHERE id = $1 LIMIT 1",
+      `SELECT
+         u.id,
+         u.email,
+         ${USER_DISPLAY_NAME_SQL} AS name,
+         u.role,
+         u.school_id
+       FROM users u
+       WHERE u.id = $1
+       LIMIT 1`,
       [payload.sub],
     );
 
@@ -119,14 +262,29 @@ tenantAuthRouter.get("/me", async (req: TenantRequest, res) => {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    return res.json({ data: user });
+    return res.json({
+      data: {
+        accountType: "school" as const,
+        role: normalizeUserRole(user.role),
+        user: {
+          ...user,
+          role: normalizeUserRole(user.role),
+        },
+        school: {
+          slug: payload.schoolSlug,
+          id: payload.schoolId,
+        },
+      },
+    });
   } catch {
     return res.status(401).json({ error: "Not authenticated" });
   }
 });
 
-tenantAuthRouter.post("/logout", (_req, res) => {
-  res.clearCookie(TENANT_ACCESS_COOKIE, { path: "/" });
-  res.clearCookie(TENANT_REFRESH_COOKIE, { path: "/" });
+authRouter.post("/logout", (_req, res) => {
+  clearAuthCookies(res);
   return res.json({ data: { ok: true } });
 });
+
+// Backward-compatible aliases used by existing client code
+export const tenantAuthRouter = authRouter;

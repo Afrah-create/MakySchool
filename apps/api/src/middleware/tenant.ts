@@ -21,6 +21,7 @@ function isPublicRoute(path: string) {
   return (
     path.startsWith("/api/health") ||
     path.startsWith("/api/v1/health") ||
+    path.startsWith("/api/auth") ||
     path.startsWith("/api/superadmin") ||
     path.startsWith("/api/webhooks")
   );

@@ -31,7 +31,7 @@ export default async function RootLayout({
   const tenant = getTenantFromHeaders(headerList);
 
   return (
-    <html lang="en">
+    <html lang="en" data-scroll-behavior="smooth">
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen antialiased selection:bg-slate-900 selection:text-white`}
         data-school-slug={tenant?.schoolSlug ?? ""}

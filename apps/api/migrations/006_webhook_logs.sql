@@ -1,8 +1,0 @@
-CREATE TABLE IF NOT EXISTS webhook_logs (
-  id UUID PRIMARY KEY,
-  source TEXT NOT NULL,
-  payload JSONB NOT NULL,
-  headers JSONB NOT NULL,
-  processed_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);

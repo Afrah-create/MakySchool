@@ -6,29 +6,41 @@ import { extractSchoolSlug } from "@/lib/tenant/extract-school-slug";
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  if (pathname === "/register" || pathname === "/superadmin/login") {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  const hasSuperAdminSession =
+    request.cookies.get("superadmin_access_token") ??
+    request.cookies.get("superadmin_refresh_token");
+
+  const hasTenantSession =
+    request.cookies.get("tenant_access_token") ??
+    request.cookies.get("tenant_refresh_token");
+
   if (pathname.startsWith("/superadmin")) {
-    if (pathname !== "/superadmin/login" && !request.cookies.get("superadmin_access_token")) {
+    if (!hasSuperAdminSession) {
       const url = request.nextUrl.clone();
-      url.pathname = "/superadmin/login";
+      url.pathname = "/login";
       return NextResponse.redirect(url);
     }
   }
 
   const isTenantProtected = pathname.startsWith("/dashboard");
 
-  if (isTenantProtected || pathname === "/login") {
-    const hasTenantToken = Boolean(request.cookies.get("tenant_access_token"));
+  if (isTenantProtected && !hasTenantSession) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
 
-    if (isTenantProtected && !hasTenantToken) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/login";
-      return NextResponse.redirect(url);
+  if (pathname === "/login") {
+    if (hasSuperAdminSession) {
+      return NextResponse.redirect(new URL("/superadmin/dashboard", request.url));
     }
 
-    if (pathname === "/login" && hasTenantToken) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/dashboard";
-      return NextResponse.redirect(url);
+    if (hasTenantSession) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
     }
   }
 

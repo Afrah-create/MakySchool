@@ -1,4 +1,6 @@
--- WARNING: This schema is for context only and is not meant to be run.
+-- REFERENCE ONLY — do not execute this file.
+-- Snapshot of the legacy single-school database before multi-tenant migration.
+-- Apply changes with: apps/api/migrations/001_multi_tenant_shift.sql
 -- Table order and constraints may not be valid for execution.
 
 CREATE TABLE public.analytics (

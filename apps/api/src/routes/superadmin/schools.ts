@@ -1,6 +1,11 @@
 import bcrypt from "bcrypt";
 import { Router } from "express";
 import { requireSuperAdmin } from "../../middleware/superAdminAuth.js";
+import {
+  USER_ADMIN_ROLE_SQL,
+  USER_LEARNER_ROLE_SQL,
+  USER_TEACHER_ROLE_SQL,
+} from "../../db/userSql.js";
 import { pool } from "../../db/pool.js";
 import { slugifySchoolName } from "../../utils/slug.js";
 
@@ -57,7 +62,7 @@ superAdminSchoolsRouter.get("/", async (req, res) => {
       COALESCE(u.email, '') AS admin_email
     FROM schools s
     LEFT JOIN LATERAL (
-      SELECT email FROM users WHERE school_id = s.id AND role = 'admin' ORDER BY created_at ASC LIMIT 1
+      SELECT email FROM users u WHERE u.school_id = s.id AND ${USER_ADMIN_ROLE_SQL} ORDER BY u.created_at ASC LIMIT 1
     ) u ON true
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
     ORDER BY s.created_at DESC
@@ -113,7 +118,9 @@ superAdminSchoolsRouter.post("/", async (req, res) => {
     );
 
     await pool.query(
-      `INSERT INTO users (id, school_id, email, password_hash, name, role) VALUES ($1, $2, $3, $4, $5, 'admin')`,
+      `INSERT INTO users (
+         id, school_id, email, password_hash, full_name, name, role, account_status
+       ) VALUES ($1, $2, $3, $4, $5, $5, 'ADMIN', 'ACTIVE')`,
       [crypto.randomUUID(), schoolId, adminEmail.toLowerCase().trim(), passwordHash, adminName.trim()],
     );
 
@@ -147,9 +154,9 @@ superAdminSchoolsRouter.get("/:id", async (req, res) => {
   );
   const countsResult = await pool.query(
     `SELECT
-      (SELECT COUNT(*)::int FROM classes WHERE school_id = $1) AS classes,
-      (SELECT COUNT(*)::int FROM users WHERE school_id = $1 AND role = 'teacher') AS teachers,
-      (SELECT COUNT(*)::int FROM users WHERE school_id = $1 AND role = 'learner') AS students`,
+      (SELECT COUNT(*)::int FROM school_classes WHERE school_id = $1) AS classes,
+      (SELECT COUNT(*)::int FROM users u WHERE u.school_id = $1 AND ${USER_TEACHER_ROLE_SQL}) AS teachers,
+      (SELECT COUNT(*)::int FROM users u WHERE u.school_id = $1 AND ${USER_LEARNER_ROLE_SQL}) AS students`,
     [id],
   );
   const [yearResult, gradingResult] = await Promise.all([

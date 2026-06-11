@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool } from "../../db/pool.js";
+import { USER_LEARNER_ROLE_SQL } from "../../db/userSql.js";
 import type { TenantRequest } from "../../middleware/tenant.js";
 
 export const classesRouter = Router();
@@ -16,9 +17,20 @@ classesRouter.get("/", async (req: TenantRequest, res) => {
        c.level,
        c.stream,
        c.capacity,
-       COALESCE((SELECT COUNT(*)::int FROM users u WHERE u.school_id = c.school_id AND u.role = 'learner' AND u.class_id = c.id), 0) AS student_count,
-       COALESCE((SELECT json_agg(json_build_object('id', s.id, 'name', s.name)) FROM class_subjects cs JOIN subjects s ON s.id = cs.subject_id WHERE cs.class_id = c.id), '[]'::json) AS subjects
-     FROM classes c
+       COALESCE((
+         SELECT COUNT(*)::int
+         FROM users u
+         WHERE u.school_id = c.school_id
+           AND ${USER_LEARNER_ROLE_SQL}
+           AND u.school_class_id = c.id
+       ), 0) AS student_count,
+       COALESCE((
+         SELECT json_agg(json_build_object('id', s.id, 'name', s.name))
+         FROM school_class_subjects cs
+         JOIN school_subjects s ON s.id = cs.subject_id
+         WHERE cs.class_id = c.id
+       ), '[]'::json) AS subjects
+     FROM school_classes c
      WHERE c.school_id = $1
      ORDER BY c.created_at DESC`,
     [schoolId],
@@ -39,7 +51,7 @@ classesRouter.post("/", async (req: TenantRequest, res) => {
   }
 
   const result = await pool.query(
-    `INSERT INTO classes (id, school_id, level, stream, capacity)
+    `INSERT INTO school_classes (id, school_id, level, stream, capacity)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
     [crypto.randomUUID(), schoolId, level, stream ?? null, capacity ?? null],
@@ -56,15 +68,22 @@ classesRouter.delete("/:id", async (req: TenantRequest, res) => {
   }
 
   const studentCount = await pool.query(
-    "SELECT COUNT(*)::int AS count FROM users WHERE school_id = $1 AND role = 'learner' AND class_id = $2",
+    `SELECT COUNT(*)::int AS count
+     FROM users u
+     WHERE u.school_id = $1
+       AND ${USER_LEARNER_ROLE_SQL}
+       AND u.school_class_id = $2`,
     [schoolId, id],
   );
 
   if (Number(studentCount.rows[0]?.count ?? 0) > 0) {
-    return res.status(409).json({ error: "Cannot delete a class that still has students" });
+    return res.status(409).json({
+      error: "Cannot delete a class that still has students",
+      code: "CLASS_HAS_STUDENTS",
+    });
   }
 
-  await pool.query("DELETE FROM classes WHERE id = $1 AND school_id = $2", [id, schoolId]);
+  await pool.query("DELETE FROM school_classes WHERE id = $1 AND school_id = $2", [id, schoolId]);
   return res.json({ data: { ok: true } });
 });
 
@@ -78,7 +97,7 @@ classesRouter.post("/:id/subjects", async (req: TenantRequest, res) => {
   }
 
   await pool.query(
-    `INSERT INTO class_subjects (id, school_id, class_id, subject_id)
+    `INSERT INTO school_class_subjects (id, school_id, class_id, subject_id)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (class_id, subject_id) DO NOTHING`,
     [crypto.randomUUID(), schoolId, id, subjectId],
@@ -94,6 +113,9 @@ classesRouter.delete("/:id/subjects/:subjectId", async (req: TenantRequest, res)
     return res.status(400).json({ error: "Missing tenant context" });
   }
 
-  await pool.query("DELETE FROM class_subjects WHERE school_id = $1 AND class_id = $2 AND subject_id = $3", [schoolId, id, subjectId]);
+  await pool.query(
+    "DELETE FROM school_class_subjects WHERE school_id = $1 AND class_id = $2 AND subject_id = $3",
+    [schoolId, id, subjectId],
+  );
   return res.json({ data: { ok: true } });
 });

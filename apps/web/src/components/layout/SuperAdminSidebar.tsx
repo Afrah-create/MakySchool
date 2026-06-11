@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
+import { clearSchoolSlug } from "@/lib/auth/session";
 
 export function SuperAdminSidebar() {
   const router = useRouter();
 
   async function handleLogout() {
-    await apiClient("/superadmin/auth/logout", { method: "POST" });
-    router.push("/superadmin/login");
+    await apiClient("/auth/logout", { method: "POST" });
+    clearSchoolSlug();
+    router.push("/login");
     router.refresh();
   }
 
