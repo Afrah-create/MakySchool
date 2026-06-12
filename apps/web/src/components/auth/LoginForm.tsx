@@ -111,7 +111,7 @@ export function LoginForm({
         <AuthSubmitButton loading={loading}>Sign in</AuthSubmitButton>
       </div>
 
-      <p className="border-t border-[#252A3A]/80 pt-5 text-center text-xs leading-relaxed text-[#3D4357]">
+      <p className="border-t border-theme/80 pt-5 text-center text-xs leading-relaxed text-theme-faint">
         Accounts are provisioned by a platform administrator.
         <br />
         There is no public registration.

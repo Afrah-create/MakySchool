@@ -1,7 +1,6 @@
 "use client";
 
 import { FileUpload } from "@/components/ui/FileUpload";
-import { theme } from "@/lib/theme";
 
 type ProfileValue = {
   name: string;
@@ -13,8 +12,7 @@ type ProfileValue = {
   schoolType: string;
 };
 
-const inputClass = theme.input;
-const labelClass = "mb-2 block text-sm font-medium text-[#8B90A7]";
+const labelClass = "mb-2 block text-sm font-medium text-theme-muted";
 
 export function ProfileStep({
   value,
@@ -30,7 +28,7 @@ export function ProfileStep({
         <input
           value={value.name}
           onChange={(event) => onChange({ ...value, name: event.target.value })}
-          className={inputClass}
+          className="ms-input"
         />
       </label>
 
@@ -39,14 +37,12 @@ export function ProfileStep({
         helperText="JPEG, PNG, or WebP. Max 2 MB."
         accept="image/jpeg,image/png,image/webp"
         onChange={(file) => onChange({ ...value, logo: file })}
-        dark
       />
       <FileUpload
         label="School stamp"
         helperText="JPEG, PNG, or WebP. Max 2 MB."
         accept="image/jpeg,image/png,image/webp"
         onChange={(file) => onChange({ ...value, stamp: file })}
-        dark
       />
 
       <label className="block">
@@ -55,7 +51,7 @@ export function ProfileStep({
           type="email"
           value={value.email}
           onChange={(event) => onChange({ ...value, email: event.target.value })}
-          className={inputClass}
+          className="ms-input"
         />
       </label>
       <label className="block">
@@ -63,7 +59,7 @@ export function ProfileStep({
         <input
           value={value.phone}
           onChange={(event) => onChange({ ...value, phone: event.target.value })}
-          className={inputClass}
+          className="ms-input"
         />
       </label>
       <label className="block lg:col-span-2">
@@ -72,7 +68,7 @@ export function ProfileStep({
           value={value.address}
           onChange={(event) => onChange({ ...value, address: event.target.value })}
           rows={3}
-          className={inputClass}
+          className="ms-input"
         />
       </label>
 
@@ -84,8 +80,8 @@ export function ProfileStep({
               key={type}
               className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2.5 text-sm capitalize transition ${
                 value.schoolType === type
-                  ? "border-[#4F6EF7] bg-[#1E2A5E] text-[#F0F2FA]"
-                  : "border-[#252A3A] text-[#8B90A7] hover:border-[#3D4357]"
+                  ? "border-accent-soft bg-theme-accent-muted text-theme-primary"
+                  : "border-theme text-theme-muted hover:border-theme-strong"
               }`}
             >
               <input

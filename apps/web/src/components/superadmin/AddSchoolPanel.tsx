@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { apiClient } from "@/lib/api/client";
 import { SlideOver } from "@/components/ui/SlideOver";
-import { theme } from "@/lib/theme";
 
 type ProvisionResponse = {
   school: { id: string; slug: string; name: string };
@@ -38,19 +37,19 @@ function Field({
 }) {
   return (
     <label htmlFor={id} className="block">
-      <span className="mb-2 block text-xs font-medium text-[#8B90A7]">{label}</span>
+      <span className="mb-2 block text-xs font-medium text-theme-muted">{label}</span>
       <div className="relative">
-        <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#3D4357]" />
+        <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-theme-faint" />
         <input
           id={id}
           name={name}
           type={type}
           required
           placeholder={placeholder}
-          className={`${theme.input} pl-10`}
+          className="ms-input pl-10"
         />
       </div>
-      {hint ? <p className="mt-1.5 text-xs text-[#3D4357]">{hint}</p> : null}
+      {hint ? <p className="mt-1.5 text-xs text-theme-faint">{hint}</p> : null}
     </label>
   );
 }
@@ -67,9 +66,9 @@ function Section({
   return (
     <section className="space-y-4">
       <div>
-        <h3 className="text-sm font-medium text-[#F0F2FA]">{title}</h3>
+        <h3 className="text-sm font-medium text-theme-primary">{title}</h3>
         {description ? (
-          <p className="mt-0.5 text-xs text-[#8B90A7]">{description}</p>
+          <p className="mt-0.5 text-xs text-theme-muted">{description}</p>
         ) : null}
       </div>
       <div className="space-y-4">{children}</div>
@@ -98,7 +97,7 @@ function CopyButton({
         setCopied(true);
         window.setTimeout(() => setCopied(false), 1500);
       }}
-      className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#252A3A] px-3 py-2 text-xs font-medium text-[#4F6EF7] transition hover:bg-[#1E2A5E] ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-theme px-3 py-2 text-xs font-medium text-theme-accent transition hover:bg-theme-accent-muted ${className}`}
     >
       <Copy className="h-3.5 w-3.5" />
       {copied ? copiedLabel : label}
@@ -131,33 +130,33 @@ function SuccessView({
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-center text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#0D2E1F]">
-          <CheckCircle2 className="h-6 w-6 text-emerald-400" />
+        <div className="badge-success flex h-12 w-12 items-center justify-center rounded-full">
+          <CheckCircle2 className="h-6 w-6" />
         </div>
-        <h3 className="mt-4 text-base font-semibold text-[#F0F2FA]">School provisioned</h3>
-        <p className="mt-1 text-sm text-[#8B90A7]">
+        <h3 className="mt-4 text-base font-semibold text-theme-primary">School provisioned</h3>
+        <p className="mt-1 text-sm text-theme-muted">
           Share the credentials below with the school administrator.
         </p>
       </div>
 
-      <div className="rounded-xl border border-[#252A3A] bg-[#0F1117] divide-y divide-[#252A3A]">
+      <div className="rounded-xl border border-theme bg-input divide-y divide-theme">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="min-w-0">
-            <p className="text-xs text-[#8B90A7]">School</p>
-            <p className="truncate text-sm font-medium text-[#F0F2FA]">{data.school.name}</p>
+            <p className="text-xs text-theme-muted">School</p>
+            <p className="truncate text-sm font-medium text-theme-primary">{data.school.name}</p>
           </div>
-          <span className="shrink-0 rounded-full bg-[#1E2A5E] px-2.5 py-0.5 font-mono text-xs text-[#93ACFF]">
+          <span className="badge-info shrink-0 rounded-full px-2.5 py-0.5 font-mono text-xs">
             {data.school.slug}
           </span>
         </div>
         <div className="px-4 py-3">
-          <p className="text-xs text-[#8B90A7]">Admin email</p>
-          <p className="mt-0.5 text-sm text-[#F0F2FA]">{data.admin.email}</p>
+          <p className="text-xs text-theme-muted">Admin email</p>
+          <p className="mt-0.5 text-sm text-theme-primary">{data.admin.email}</p>
         </div>
         <div className="px-4 py-3">
-          <p className="text-xs text-[#8B90A7]">Login URL</p>
+          <p className="text-xs text-theme-muted">Login URL</p>
           <div className="mt-2 flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-lg bg-[#181C27] px-3 py-2 font-mono text-xs text-[#F0F2FA]">
+            <code className="min-w-0 flex-1 truncate rounded-lg bg-theme-surface px-3 py-2 font-mono text-xs text-theme-primary">
               {loginUrl}
             </code>
             <CopyButton label="Copy" value={loginUrl} />
@@ -165,17 +164,17 @@ function SuccessView({
         </div>
       </div>
 
-      <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-amber-400/90">
+      <div className="badge-warning rounded-xl p-4">
+        <p className="text-xs font-medium uppercase tracking-wide">
           Temporary password
         </p>
         <div className="mt-3 flex items-center gap-2">
-          <code className="min-w-0 flex-1 rounded-lg border border-[#252A3A] bg-[#0F1117] px-3 py-2.5 font-mono text-sm tracking-wide text-[#F0F2FA]">
+          <code className="min-w-0 flex-1 rounded-lg border border-theme bg-input px-3 py-2.5 font-mono text-sm tracking-wide text-theme-primary">
             {data.tempPassword}
           </code>
           <CopyButton label="Copy" value={data.tempPassword} />
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-amber-400/80">
+        <p className="mt-3 text-xs leading-relaxed opacity-80">
           This password is shown once. The admin must change it on first sign-in.
         </p>
       </div>
@@ -190,7 +189,7 @@ function SuccessView({
         <button
           type="button"
           onClick={onDone}
-          className={`${theme.btnPrimary} flex-1`}
+          className="ms-btn-primary flex-1"
         >
           Done
         </button>
@@ -243,14 +242,14 @@ export function AddSchoolPanel({ onCreated }: { onCreated: () => void }) {
 
   const formFooter = !success ? (
     <div className="flex items-center justify-end gap-3">
-      <button type="button" onClick={handleClose} className={theme.btnGhost}>
+      <button type="button" onClick={handleClose} className="ms-btn-ghost">
         Cancel
       </button>
       <button
         form="provision-school-form"
         disabled={loading}
         type="submit"
-        className={`${theme.btnPrimary} min-w-[8.5rem]`}
+        className="ms-btn-primary min-w-[8.5rem]"
       >
         {loading ? (
           <span className="inline-flex items-center gap-2">
@@ -273,7 +272,7 @@ export function AddSchoolPanel({ onCreated }: { onCreated: () => void }) {
           resetPanel();
           setOpen(true);
         }}
-        className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-[#4F6EF7] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#3D5CE6]"
+        className="inline-flex shrink-0 items-center gap-2 ms-btn-primary px-4 py-2.5"
       >
         <Plus className="h-4 w-4" />
         Add school
@@ -319,7 +318,7 @@ export function AddSchoolPanel({ onCreated }: { onCreated: () => void }) {
               />
             </Section>
 
-            <div className="h-px bg-[#252A3A]" />
+            <div className="h-px bg-theme-icon" />
 
             <Section
               title="Administrator account"
@@ -346,7 +345,7 @@ export function AddSchoolPanel({ onCreated }: { onCreated: () => void }) {
             {error ? (
               <div
                 role="alert"
-                className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
+                className="alert-error rounded-lg px-4 py-3 text-sm"
               >
                 {error}
               </div>

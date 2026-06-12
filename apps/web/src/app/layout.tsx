@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
+import { AppProviders } from "@/providers/AppProviders";
 import { getTenantFromHeaders } from "@/lib/tenant/server";
 import "./globals.css";
 
@@ -22,6 +23,18 @@ export const metadata: Metadata = {
   description: "Multi-tenant school management platform for Uganda",
 };
 
+const themeInitScript = `
+(function() {
+  try {
+    var stored = localStorage.getItem('makyschool-theme');
+    var system = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', stored || system);
+  } catch(e) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+})();
+`;
+
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -31,12 +44,15 @@ export default async function RootLayout({
   const tenant = getTenantFromHeaders(headerList);
 
   return (
-    <html lang="en" data-scroll-behavior="smooth">
+    <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} min-h-screen antialiased selection:bg-slate-900 selection:text-white`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen antialiased`}
         data-school-slug={tenant?.schoolSlug ?? ""}
       >
-        {children}
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

@@ -1,11 +1,7 @@
 "use client";
 
-import { theme } from "@/lib/theme";
-
 type Band = { label: string; minScore: number; maxScore: number; description: string };
 type GradingScaleValue = { bands: Band[] };
-
-const inputClass = theme.input;
 
 export function GradingScaleStep({
   value,
@@ -19,7 +15,7 @@ export function GradingScaleStep({
       {value.bands.map((band, index) => (
         <div
           key={index}
-          className="grid gap-3 rounded-xl border border-[#252A3A] bg-[#0F1117] p-4 md:grid-cols-4"
+          className="grid gap-3 rounded-xl border border-theme bg-input p-4 md:grid-cols-4"
         >
           <input
             value={band.label}
@@ -32,7 +28,7 @@ export function GradingScaleStep({
               })
             }
             placeholder="Label"
-            className={inputClass}
+            className="ms-input"
           />
           <input
             type="number"
@@ -46,7 +42,7 @@ export function GradingScaleStep({
               })
             }
             placeholder="Min"
-            className={inputClass}
+            className="ms-input"
           />
           <input
             type="number"
@@ -60,7 +56,7 @@ export function GradingScaleStep({
               })
             }
             placeholder="Max"
-            className={inputClass}
+            className="ms-input"
           />
           <input
             value={band.description}
@@ -73,7 +69,7 @@ export function GradingScaleStep({
               })
             }
             placeholder="Description (optional)"
-            className={inputClass}
+            className="ms-input"
           />
         </div>
       ))}
@@ -86,7 +82,7 @@ export function GradingScaleStep({
             bands: [...value.bands, { label: "", minScore: 0, maxScore: 0, description: "" }],
           })
         }
-        className={theme.btnGhost}
+        className="ms-btn-ghost"
       >
         Add band
       </button>

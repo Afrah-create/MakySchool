@@ -35,15 +35,15 @@ type SchoolsPayload = {
 };
 
 function statusBadgeClass(status: string) {
-  if (status === "active") return "bg-[#0D2E1F] text-[#34D399]";
-  if (status === "setup") return "bg-[#1E2A5E] text-[#93ACFF]";
-  return "bg-[#2E1515] text-[#F87171]";
+  if (status === "active") return "badge-success";
+  if (status === "setup") return "badge-info";
+  return "badge-danger";
 }
 
 function subscriptionBadgeClass(status: string) {
-  if (status === "active") return "bg-[#0D2E1F] text-[#34D399]";
-  if (status === "expired") return "bg-[#2E1515] text-[#F87171]";
-  return "bg-[#1E2A5E] text-[#93ACFF]";
+  if (status === "active") return "badge-success";
+  if (status === "expired") return "badge-danger";
+  return "badge-info";
 }
 
 const statCards = [
@@ -96,15 +96,15 @@ export function SchoolsTable() {
           return (
             <div
               key={card.key}
-              className="rounded-xl border border-[#252A3A] bg-[#181C27] p-5"
+              className="rounded-xl border border-theme bg-theme-surface p-5"
             >
               <div className="flex items-center justify-between">
-                <Icon className="h-4 w-4 text-[#4F6EF7]" />
-                <span className="text-xs font-medium uppercase tracking-wide text-[#8B90A7]">
+                <Icon className="h-4 w-4 text-theme-accent" />
+                <span className="text-xs font-medium uppercase tracking-wide text-theme-muted">
                   {card.label}
                 </span>
               </div>
-              <p className="mt-3 text-2xl font-semibold text-[#F0F2FA]">
+              <p className="mt-3 text-2xl font-semibold text-theme-primary">
                 {card.format(value)}
               </p>
             </div>
@@ -114,18 +114,18 @@ export function SchoolsTable() {
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#3D4357]" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-theme-faint" />
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search schools"
-            className="w-full rounded-lg border border-[#252A3A] bg-[#181C27] py-2.5 pl-10 pr-4 text-sm text-[#F0F2FA] outline-none placeholder:text-[#3D4357] focus:border-[#4F6EF7]"
+            className="ms-input w-full py-2.5 pl-10 pr-4 focus:border-input-focus"
           />
         </div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value)}
-          className="w-full shrink-0 rounded-lg border border-[#252A3A] bg-[#181C27] px-3 py-2.5 text-sm text-[#F0F2FA] outline-none focus:border-[#4F6EF7] sm:w-auto"
+          className="ms-select w-full shrink-0 py-2.5 sm:w-auto focus:border-input-focus"
         >
           <option value="">All Statuses</option>
           <option value="setup">Setup</option>
@@ -136,43 +136,43 @@ export function SchoolsTable() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-3 rounded-xl border border-[#252A3A] bg-[#181C27] p-4">
+        <div className="space-y-3 rounded-xl border border-theme bg-theme-surface p-4">
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
         </div>
       ) : error ? (
-        <div className="rounded-xl border border-[#252A3A] bg-[#181C27] px-6 py-20 text-center">
-          <Building2 className="mx-auto mb-4 h-10 w-10 text-[#252A3A]" />
-          <h3 className="text-sm font-medium text-[#F0F2FA]">Could not load schools</h3>
-          <p className="mt-1 text-sm text-[#8B90A7]">Check the API connection and try again.</p>
+        <div className="rounded-xl border border-theme bg-theme-surface px-6 py-20 text-center">
+          <Building2 className="mx-auto mb-4 h-10 w-10 text-theme-faint" />
+          <h3 className="text-sm font-medium text-theme-primary">Could not load schools</h3>
+          <p className="mt-1 text-sm text-theme-muted">Check the API connection and try again.</p>
           <button
             type="button"
             onClick={() => void mutate()}
-            className="mt-6 inline-flex items-center gap-2 rounded-lg border border-[#252A3A] px-4 py-2 text-sm text-[#4F6EF7] hover:bg-[#1E2A5E]"
+            className="mt-6 inline-flex items-center gap-2 rounded-lg border border-theme px-4 py-2 text-sm text-theme-accent hover:bg-theme-accent-muted"
           >
             Retry
           </button>
         </div>
       ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-[#252A3A] bg-[#181C27] px-6 py-20 text-center">
-          <Building2 className="mx-auto mb-4 h-10 w-10 text-[#252A3A]" />
-          <h3 className="text-sm font-medium text-[#F0F2FA]">No schools yet</h3>
-          <p className="mt-1 text-sm text-[#8B90A7]">Provision the first school to get started.</p>
+        <div className="rounded-xl border border-theme bg-theme-surface px-6 py-20 text-center">
+          <Building2 className="mx-auto mb-4 h-10 w-10 text-theme-faint" />
+          <h3 className="text-sm font-medium text-theme-primary">No schools yet</h3>
+          <p className="mt-1 text-sm text-theme-muted">Provision the first school to get started.</p>
           <button
             type="button"
             onClick={() => document.getElementById("add-school-trigger")?.click()}
-            className="mt-6 inline-flex items-center gap-2 rounded-lg border border-[#252A3A] px-4 py-2 text-sm text-[#4F6EF7] hover:bg-[#1E2A5E]"
+            className="mt-6 inline-flex items-center gap-2 rounded-lg border border-theme px-4 py-2 text-sm text-theme-accent hover:bg-theme-accent-muted"
           >
             <Plus className="h-4 w-4" />
             Provision a school
           </button>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-[#252A3A] bg-[#181C27]">
+        <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
           <div className="overflow-x-auto">
             <table className="min-w-full">
-              <thead className="bg-[#0F1117] text-left text-xs font-medium uppercase tracking-wide text-[#8B90A7]">
+              <thead className="bg-table-header text-left text-xs font-medium uppercase tracking-wide text-theme-muted">
                 <tr>
                   <th className="px-4 py-3">School</th>
                   <th className="px-4 py-3">Slug</th>
@@ -187,14 +187,14 @@ export function SchoolsTable() {
                 {rows.map((school) => (
                   <tr
                     key={school.id}
-                    className="border-t border-[#252A3A] transition hover:bg-[#1A1F2E]"
+                    className="border-t border-theme transition hover:bg-theme-raised"
                   >
                     <td className="px-4 py-4">
-                      <div className="font-medium text-[#F0F2FA]">{school.name ?? "Unnamed school"}</div>
-                      <div className="text-sm text-[#8B90A7]">{school.admin_email || "—"}</div>
+                      <div className="font-medium text-theme-primary">{school.name ?? "Unnamed school"}</div>
+                      <div className="text-sm text-theme-muted">{school.admin_email || "—"}</div>
                     </td>
-                    <td className="px-4 py-4 text-sm text-[#8B90A7]">{school.slug}</td>
-                    <td className="px-4 py-4 text-sm text-[#8B90A7]">{school.school_type ?? "—"}</td>
+                    <td className="px-4 py-4 text-sm text-theme-muted">{school.slug}</td>
+                    <td className="px-4 py-4 text-sm text-theme-muted">{school.school_type ?? "—"}</td>
                     <td className="px-4 py-4">
                       <span
                         className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusBadgeClass(school.status)}`}
@@ -209,13 +209,13 @@ export function SchoolsTable() {
                         {school.subscription_status}
                       </span>
                     </td>
-                    <td className="px-4 py-4 text-sm text-[#8B90A7]">
+                    <td className="px-4 py-4 text-sm text-theme-muted">
                       {new Date(school.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-4 text-right">
                       <Link
                         href={`/superadmin/schools/${school.id}`}
-                        className="text-xs text-[#4F6EF7] hover:underline"
+                        className="text-xs text-theme-accent hover:underline"
                       >
                         View
                       </Link>

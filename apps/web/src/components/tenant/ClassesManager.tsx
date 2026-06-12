@@ -7,13 +7,12 @@ import type { ClassWithDetails } from "@makyschool/shared/types";
 import { apiClient } from "@/lib/api/client";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { theme } from "@/lib/theme";
 
 function DarkEmpty({ title, description }: { title: string; description: string }) {
   return (
-    <div className="rounded-xl border border-dashed border-[#252A3A] bg-[#0F1117] px-4 py-8 text-center">
-      <p className="text-sm font-medium text-[#F0F2FA]">{title}</p>
-      <p className="mt-1 text-sm text-[#8B90A7]">{description}</p>
+    <div className="rounded-xl border border-dashed border-theme bg-input px-4 py-8 text-center">
+      <p className="text-sm font-medium text-theme-primary">{title}</p>
+      <p className="mt-1 text-sm text-theme-muted">{description}</p>
     </div>
   );
 }
@@ -139,16 +138,16 @@ export function ClassesManager({
   return (
     <div className="grid gap-6 lg:grid-cols-[1.05fr_1.4fr]">
       {actionError ? (
-        <div className="lg:col-span-2 rounded-lg border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+        <div className="lg:col-span-2 alert-error rounded-lg px-4 py-3 text-sm">
           {actionError}
         </div>
       ) : null}
 
       <div className="space-y-4">
-        <div className={`${theme.panel} ${theme.panelPadding}`}>
-          <h2 className={`text-sm font-semibold ${theme.heading}`}>Add class</h2>
+        <div className="ms-panel p-5 sm:p-6">
+          <h2 className="text-sm font-semibold text-theme-primary">Add class</h2>
           <form action={(formData) => void addClass(formData)} className="mt-4 space-y-3">
-            <select name="level" required className={theme.select + " w-full"}>
+            <select name="level" required className="ms-select w-full">
               <option value="">Select level</option>
               {levels.map((level) => (
                 <option key={level} value={level}>
@@ -159,24 +158,24 @@ export function ClassesManager({
             <input
               name="stream"
               placeholder="Stream (optional)"
-              className={theme.input}
+              className="ms-input"
             />
             <input
               name="capacity"
               type="number"
               placeholder="Capacity"
-              className={theme.input}
+              className="ms-input"
             />
-            <button disabled={loading} type="submit" className={theme.btnPrimary}>
+            <button disabled={loading} type="submit" className="ms-btn-primary">
               Create class
             </button>
           </form>
         </div>
 
-        <div className={`${theme.panel} ${theme.panelPadding}`}>
+        <div className="ms-panel p-5 sm:p-6">
           <div className="flex items-center justify-between">
-            <h2 className={`text-sm font-semibold ${theme.heading}`}>Classes</h2>
-            <span className="rounded-full bg-[#1E2A5E] px-2.5 py-0.5 text-xs font-medium text-[#93ACFF]">
+            <h2 className="text-sm font-semibold text-theme-primary">Classes</h2>
+            <span className="badge-info rounded-full px-2.5 py-0.5 text-xs font-medium">
               {classesData?.length ?? 0}
             </span>
           </div>
@@ -197,8 +196,8 @@ export function ClassesManager({
                   key={classRow.id}
                   className={`rounded-xl border px-4 py-3 transition ${
                     selectedClass?.id === classRow.id
-                      ? "border-[#4F6EF7] bg-[#1E2A5E]"
-                      : "border-[#252A3A] bg-[#0F1117] hover:border-[#3D4357]"
+                      ? "border-accent-soft bg-theme-accent-muted"
+                      : "border-theme bg-input hover:border-theme-strong"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -207,11 +206,11 @@ export function ClassesManager({
                       onClick={() => setSelectedClassId(classRow.id)}
                       className="min-w-0 flex-1 text-left"
                     >
-                      <div className={`font-medium ${theme.heading}`}>
+                      <div className="font-medium text-theme-primary">
                         {classRow.level}
                         {classRow.stream ?? ""}
                       </div>
-                      <div className={`text-sm ${theme.muted}`}>
+                      <div className="text-sm text-theme-muted">
                         {classRow.student_count} students
                       </div>
                     </button>
@@ -219,7 +218,7 @@ export function ClassesManager({
                       type="button"
                       disabled={classRow.student_count > 0}
                       onClick={() => setConfirmDelete(classRow)}
-                      className={`${theme.btnGhost} px-3 py-1.5 text-xs disabled:opacity-40`}
+                      className="ms-btn-ghost px-3 py-1.5 text-xs disabled:opacity-40"
                     >
                       Delete
                     </button>
@@ -231,16 +230,16 @@ export function ClassesManager({
         </div>
       </div>
 
-      <div className={`${theme.panel} ${theme.panelPadding}`}>
+      <div className="ms-panel p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className={`text-sm font-semibold ${theme.heading}`}>Subjects</h2>
-            <p className={`mt-1 text-sm ${theme.muted}`}>
+            <h2 className="text-sm font-semibold text-theme-primary">Subjects</h2>
+            <p className="mt-1 text-sm text-theme-muted">
               Link subjects to{" "}
               {selectedClass ? `${selectedClass.level}${selectedClass.stream ?? ""}` : "a class"}.
             </p>
           </div>
-          <span className="rounded-full bg-[#1E2A5E] px-2.5 py-0.5 text-xs font-medium text-[#93ACFF]">
+          <span className="badge-info rounded-full px-2.5 py-0.5 text-xs font-medium">
             {subjectsData?.length ?? 0}
           </span>
         </div>
@@ -250,9 +249,9 @@ export function ClassesManager({
             name="name"
             required
             placeholder="New subject name"
-            className={`${theme.input} flex-1`}
+            className="ms-input flex-1"
           />
-          <button disabled={loading} type="submit" className={`${theme.btnPrimary} shrink-0`}>
+          <button disabled={loading} type="submit" className="ms-btn-primary shrink-0">
             Add
           </button>
         </form>
@@ -271,8 +270,8 @@ export function ClassesManager({
                     key={subject.id}
                     className={`flex cursor-pointer items-center justify-between rounded-lg border px-4 py-3 text-sm transition ${
                       linked
-                        ? "border-[#4F6EF7]/50 bg-[#1E2A5E] text-[#F0F2FA]"
-                        : "border-[#252A3A] bg-[#0F1117] text-[#8B90A7] hover:border-[#3D4357]"
+                        ? "border-accent-soft bg-theme-accent-muted text-theme-primary"
+                        : "border-theme bg-input text-theme-muted hover:border-theme-strong"
                     }`}
                   >
                     <span>{subject.name}</span>
@@ -281,7 +280,7 @@ export function ClassesManager({
                       checked={linked}
                       disabled={!selectedClass || loading}
                       onChange={() => void toggleSubject(subject.id, linked)}
-                      className="accent-[#4F6EF7]"
+                      className="accent-theme"
                     />
                   </label>
                 );
@@ -308,7 +307,7 @@ export function ClassesManager({
         onCancel={() => setConfirmDelete(null)}
       >
         {confirmDelete?.student_count ? (
-          <p className="text-sm text-rose-400">
+          <p className="alert-error rounded-lg px-3 py-2 text-sm">
             This class cannot be deleted until all students are moved out.
           </p>
         ) : null}

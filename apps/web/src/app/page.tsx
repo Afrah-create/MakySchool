@@ -16,25 +16,25 @@ export default async function PlatformHomePage() {
 
   if (tenant) {
     return (
-      <div className={`${inter.className} min-h-screen bg-[#0F1117] text-[#F0F2FA]`}>
-        <header className="border-b border-[#252A3A] px-6 py-4">
+      <div className={`${inter.className} min-h-screen bg-theme-page text-theme-primary`}>
+        <header className="border-b border-theme px-6 py-4">
           <div className="mx-auto flex max-w-5xl items-center">
-            <span className="text-sm font-bold tracking-tight text-[#F0F2FA]">MakySchool</span>
+            <span className="text-sm font-bold tracking-tight text-theme-primary">MakySchool</span>
           </div>
         </header>
 
         <main className="flex min-h-[calc(100vh-57px)] flex-col items-center justify-center px-6 py-16">
           <div className="flex w-full max-w-[480px] flex-col items-center text-center">
-            <p className="text-5xl font-bold tracking-tight text-[#F0F2FA] sm:text-6xl">MakySchool</p>
-            <p className="mt-3 text-sm text-[#8B90A7]">
+            <p className="text-5xl font-bold tracking-tight text-theme-primary sm:text-6xl">MakySchool</p>
+            <p className="mt-3 text-sm text-theme-muted">
               {tenant.schoolSlug}.{rootDomain}
             </p>
 
-            <div className="mt-10 w-full border-t border-[#252A3A]" />
+            <div className="mt-10 w-full border-t border-theme" />
 
             <Link
               href="/login"
-              className="mt-8 inline-flex rounded-full bg-[#4F6EF7] px-8 py-3 text-sm font-medium text-[#F0F2FA] transition hover:bg-[#4358d9]"
+              className="mt-8 inline-flex rounded-full bg-theme-accent px-8 py-3 text-sm font-medium text-on-accent transition hover:bg-theme-accent-hover"
             >
               Sign in
             </Link>
@@ -45,22 +45,22 @@ export default async function PlatformHomePage() {
   }
 
   return (
-    <div className={`${inter.className} min-h-screen bg-[#0F1117] text-[#F0F2FA]`}>
-      <header className="border-b border-[#252A3A] px-6 py-4">
+    <div className={`${inter.className} min-h-screen bg-theme-page text-theme-primary`}>
+      <header className="border-b border-theme px-6 py-4">
         <div className="mx-auto flex max-w-5xl items-center">
-          <span className="text-sm font-bold tracking-tight text-[#F0F2FA]">MakySchool</span>
+          <span className="text-sm font-bold tracking-tight text-theme-primary">MakySchool</span>
         </div>
       </header>
 
       <main className="flex min-h-[calc(100vh-57px)] flex-col items-center justify-center px-6 py-16">
         <div className="flex w-full max-w-[480px] flex-col items-center text-center">
-          <p className="text-5xl font-bold tracking-tight text-[#F0F2FA] sm:text-6xl">MakySchool</p>
+          <p className="text-5xl font-bold tracking-tight text-theme-primary sm:text-6xl">MakySchool</p>
 
-          <div className="mt-10 w-full border-t border-[#252A3A]" />
+          <div className="mt-10 w-full border-t border-theme" />
 
           <Link
             href="/login"
-            className="mt-8 inline-flex rounded-full bg-[#4F6EF7] px-8 py-3 text-sm font-medium text-[#F0F2FA] transition hover:bg-[#4358d9]"
+            className="mt-8 inline-flex rounded-full bg-theme-accent px-8 py-3 text-sm font-medium text-on-accent transition hover:bg-theme-accent-hover"
           >
             Sign in
           </Link>

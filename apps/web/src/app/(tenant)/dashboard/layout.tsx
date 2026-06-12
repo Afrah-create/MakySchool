@@ -59,14 +59,14 @@ export default async function TenantDashboardLayout({
             schoolName={status?.school?.name}
           />
         }
-      >
-        <div className="flex min-h-screen flex-1 flex-col">
+        header={
           <TenantMobileNav
             schoolName={status?.school?.name}
             schoolStatus={status?.school?.status}
           />
-          <div className="flex-1">{children}</div>
-        </div>
+        }
+      >
+        {children}
         {subscriptionsEnabled() ? <SubscriptionLockout /> : null}
       </DashboardShell>
     </TenantSchoolProvider>

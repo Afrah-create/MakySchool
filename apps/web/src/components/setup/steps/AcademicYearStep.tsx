@@ -1,12 +1,9 @@
 "use client";
 
-import { theme } from "@/lib/theme";
-
 type Term = { name: string; startDate: string; endDate: string };
 type AcademicYearValue = { year: number; terms: Term[] };
 
-const inputClass = theme.input;
-const labelClass = "mb-2 block text-sm font-medium text-[#8B90A7]";
+const labelClass = "mb-2 block text-sm font-medium text-theme-muted";
 
 export function AcademicYearStep({
   value,
@@ -23,7 +20,7 @@ export function AcademicYearStep({
           type="number"
           value={value.year}
           onChange={(event) => onChange({ ...value, year: Number(event.target.value) })}
-          className={inputClass}
+          className="ms-input"
         />
       </label>
 
@@ -31,7 +28,7 @@ export function AcademicYearStep({
         {value.terms.map((term, index) => (
           <div
             key={index}
-            className="grid gap-3 rounded-xl border border-[#252A3A] bg-[#0F1117] p-4 md:grid-cols-3"
+            className="grid gap-3 rounded-xl border border-theme bg-input p-4 md:grid-cols-3"
           >
             <input
               value={term.name}
@@ -44,7 +41,7 @@ export function AcademicYearStep({
                 })
               }
               placeholder={`Term ${index + 1}`}
-              className={inputClass}
+              className="ms-input"
             />
             <input
               type="date"
@@ -57,7 +54,7 @@ export function AcademicYearStep({
                   ),
                 })
               }
-              className={inputClass}
+              className="ms-input"
             />
             <input
               type="date"
@@ -70,7 +67,7 @@ export function AcademicYearStep({
                   ),
                 })
               }
-              className={inputClass}
+              className="ms-input"
             />
           </div>
         ))}

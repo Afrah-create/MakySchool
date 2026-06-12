@@ -1,5 +1,3 @@
-import { theme } from "@/lib/theme";
-
 type ReviewData = {
   profile: {
     name: string;
@@ -19,9 +17,9 @@ type ReviewData = {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className={`rounded-xl border border-[#252A3A] bg-[#0F1117] p-5`}>
-      <h3 className={`text-sm font-semibold ${theme.heading}`}>{title}</h3>
-      <div className={`mt-3 space-y-1 text-sm ${theme.muted}`}>{children}</div>
+    <div className="rounded-xl border border-theme bg-input p-5">
+      <h3 className="text-sm font-semibold text-theme-primary">{title}</h3>
+      <div className="mt-3 space-y-1 text-sm text-theme-muted">{children}</div>
     </div>
   );
 }

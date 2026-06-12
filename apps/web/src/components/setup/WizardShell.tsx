@@ -9,7 +9,6 @@ import { GradingScaleStep } from "@/components/setup/steps/GradingScaleStep";
 import { ReviewStep } from "@/components/setup/steps/ReviewStep";
 import { apiClient } from "@/lib/api/client";
 import { persistSchoolSlug } from "@/lib/auth/session";
-import { theme } from "@/lib/theme";
 
 type WizardState = {
   step: number;
@@ -123,10 +122,10 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
             <div
               className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${
                 isCompleted
-                  ? "bg-[#4F6EF7] text-white"
+                  ? "bg-theme-accent text-on-accent"
                   : isCurrent
-                    ? "border-2 border-[#4F6EF7] text-[#4F6EF7]"
-                    : "border border-[#252A3A] text-[#8B90A7]"
+                    ? "border-2 border-theme-accent text-theme-accent"
+                    : "border border-theme text-theme-muted"
               }`}
             >
               {stepNumber}
@@ -134,7 +133,7 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
             {stepNumber < STEP_LABELS.length ? (
               <div
                 className={`mx-2 h-px w-8 sm:w-12 ${
-                  stepNumber < currentStep ? "bg-[#4F6EF7]" : "bg-[#252A3A]"
+                  stepNumber < currentStep ? "bg-theme-accent" : "bg-theme-icon"
                 }`}
               />
             ) : null}
@@ -309,8 +308,8 @@ export function WizardShell({
   if (!statusChecked) {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3">
-        <span className="h-6 w-6 animate-spin rounded-full border-2 border-[#252A3A] border-t-[#4F6EF7]" />
-        <p className="text-sm text-[#8B90A7]">Preparing your setup wizard…</p>
+        <span className="h-6 w-6 animate-spin rounded-full border-2 border-theme border-t-theme-accent" />
+        <p className="text-sm text-theme-muted">Preparing your setup wizard…</p>
       </div>
     );
   }
@@ -319,17 +318,17 @@ export function WizardShell({
     <div className="relative mx-auto max-w-2xl px-4 py-10 sm:py-12">
       <div
         aria-hidden
-        className="pointer-events-none absolute -top-8 left-1/2 h-40 w-72 -translate-x-1/2 rounded-full bg-[#4F6EF7]/[0.06] blur-3xl"
+        className="wizard-glow pointer-events-none absolute -top-8 left-1/2 h-40 w-72 -translate-x-1/2 rounded-full blur-3xl"
       />
 
       <div className="relative mb-8 text-center">
-        <p className="text-xs font-medium uppercase tracking-wide text-[#8B90A7]">
+        <p className="text-xs font-medium uppercase tracking-wide text-theme-muted">
           Step {state.step} of 4
         </p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-[#F0F2FA]">
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-theme-primary">
           {STEP_LABELS[state.step - 1]}
         </h1>
-        <p className="mt-2 text-sm text-[#8B90A7]">
+        <p className="mt-2 text-sm text-theme-muted">
           {state.step === 4
             ? "Review everything before launching your school workspace."
             : "Complete each section to activate your school on MakySchool."}
@@ -339,7 +338,7 @@ export function WizardShell({
         </div>
       </div>
 
-      <div className="relative rounded-2xl border border-[#252A3A] bg-[#181C27] p-6 shadow-xl shadow-black/20 sm:p-8">
+      <div className="relative rounded-2xl border border-theme bg-theme-surface p-6 shadow-xl shadow-black/20 sm:p-8">
         {state.step === 1 ? (
           <ProfileStep
             value={state.profile}
@@ -361,7 +360,7 @@ export function WizardShell({
         {state.step === 4 ? <ReviewStep data={state} /> : null}
 
         {error ? (
-          <div className="mt-4 rounded-lg border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          <div className="mt-4 alert-error rounded-lg px-4 py-3 text-sm">
             {error}
           </div>
         ) : null}
@@ -371,7 +370,7 @@ export function WizardShell({
             type="button"
             onClick={() => setState({ ...state, step: Math.max(1, state.step - 1) })}
             disabled={state.step === 1 || loading}
-            className={`${theme.btnGhost} disabled:opacity-40`}
+            className="ms-btn-ghost disabled:opacity-40"
           >
             Back
           </button>
@@ -380,7 +379,7 @@ export function WizardShell({
               type="button"
               onClick={() => void goNext()}
               disabled={loading}
-              className={`${theme.btnPrimary} disabled:opacity-70`}
+              className="ms-btn-primary disabled:opacity-70"
             >
               {loading ? "Saving…" : "Next"}
             </button>
@@ -389,7 +388,7 @@ export function WizardShell({
               type="button"
               onClick={() => void finishSetup()}
               disabled={loading}
-              className={`${theme.btnPrimary} disabled:opacity-70`}
+              className="ms-btn-primary disabled:opacity-70"
             >
               {loading ? "Launching…" : "Confirm & Launch Dashboard"}
             </button>

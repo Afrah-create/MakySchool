@@ -31,8 +31,8 @@ export function DashboardStats() {
       value: classes?.length ?? 0,
       icon: GraduationCap,
       href: "/dashboard/classes",
-      accent: "text-[#4F6EF7]",
-      bg: "bg-[#1E2A5E]",
+      accent: "text-theme-accent",
+      bg: "bg-theme-accent-muted",
     },
     {
       key: "subjects",
@@ -40,8 +40,8 @@ export function DashboardStats() {
       value: subjects?.length ?? 0,
       icon: BookOpen,
       href: "/dashboard/classes",
-      accent: "text-[#93ACFF]",
-      bg: "bg-[#1E2A5E]",
+      accent: "text-theme-accent",
+      bg: "bg-theme-accent-muted",
     },
     {
       key: "students",
@@ -49,8 +49,8 @@ export function DashboardStats() {
       value: studentCount,
       icon: Users,
       href: "/dashboard/classes",
-      accent: "text-[#8B90A7]",
-      bg: "bg-[#252A3A]",
+      accent: "text-theme-muted",
+      bg: "bg-theme-icon",
     },
   ] as const;
 
@@ -72,7 +72,7 @@ export function DashboardStats() {
           <Link
             key={card.key}
             href={card.href}
-            className="group rounded-xl border border-[#252A3A] bg-[#181C27] p-5 transition hover:border-[#3D4357]"
+            className="group rounded-xl border border-theme bg-theme-surface p-5 transition hover:border-theme-strong"
           >
             <div className="flex items-center justify-between">
               <span
@@ -80,11 +80,11 @@ export function DashboardStats() {
               >
                 <Icon className="h-4 w-4" />
               </span>
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[#8B90A7]">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-theme-muted">
                 {card.label}
               </span>
             </div>
-            <p className="mt-4 text-3xl font-semibold tabular-nums text-[#F0F2FA]">
+            <p className="mt-4 text-3xl font-semibold tabular-nums text-theme-primary">
               {card.value}
             </p>
           </Link>

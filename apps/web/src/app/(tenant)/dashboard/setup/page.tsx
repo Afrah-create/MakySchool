@@ -33,19 +33,19 @@ export default async function SetupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0F1117]">
-      <header className="border-b border-[#252A3A] px-6 py-4">
+    <div className="min-h-screen bg-theme-page">
+      <header className="border-b border-theme px-6 py-4">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#4F6EF7] text-xs font-bold text-white">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-theme-accent text-xs font-bold text-on-accent">
               MS
             </span>
             <div>
-              <p className="text-sm font-semibold text-[#F0F2FA]">MakySchool</p>
-              <p className="text-xs text-[#8B90A7]">School setup</p>
+              <p className="text-sm font-semibold text-theme-primary">MakySchool</p>
+              <p className="text-xs text-theme-muted">School setup</p>
             </div>
           </div>
-          <span className="rounded-full bg-[#1E2A5E] px-2.5 py-1 font-mono text-xs text-[#93ACFF]">
+          <span className="badge-info rounded-full px-2.5 py-1 font-mono text-xs">
             {tenant.schoolSlug}
           </span>
         </div>

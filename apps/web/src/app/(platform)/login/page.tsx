@@ -16,7 +16,7 @@ export default async function LoginPage() {
       footer={
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-[#8B90A7] no-underline transition hover:text-[#F0F2FA]"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-theme-muted no-underline transition hover:text-theme-primary"
         >
           <span aria-hidden>←</span>
           Back to home
@@ -28,10 +28,10 @@ export default async function LoginPage() {
         subtitle={schoolSlug ? "Sign in to your school workspace" : "Sign in to your account"}
         badge={
           schoolSlug ? (
-            <div className="flex items-center justify-center gap-2.5 rounded-lg border border-[#252A3A] bg-[#0F1117]/60 px-3.5 py-2.5">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" aria-hidden />
-              <p className="text-xs leading-none text-[#8B90A7]">
-                <span className="font-medium text-[#F0F2FA]">
+            <div className="flex items-center justify-center gap-2.5 rounded-lg border border-theme bg-theme-subtle px-3.5 py-2.5">
+              <span className="badge-success h-1.5 w-1.5 shrink-0 rounded-full p-0" aria-hidden />
+              <p className="text-xs leading-none text-theme-muted">
+                <span className="font-medium text-theme-primary">
                   {schoolSlug}.{rootDomain}
                 </span>
               </p>
