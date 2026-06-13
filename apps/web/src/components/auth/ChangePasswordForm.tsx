@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { AuthAlert, AuthField, AuthSubmitButton } from "@/components/auth/AuthShell";
+import { Lock } from "lucide-react";
+import { AuthAlert, AuthInput, AuthSubmitButton } from "@/components/auth/AuthShell";
 import { apiClient } from "@/lib/api/client";
 import { persistSchoolSlug } from "@/lib/auth/session";
 
@@ -62,7 +63,7 @@ export function ChangePasswordForm() {
 
   return (
     <form onSubmit={(event) => void handleSubmit(event)} className="flex flex-col gap-5">
-      <AuthField
+      <AuthInput
         id="currentPassword"
         label="Temporary password"
         type="password"
@@ -70,9 +71,10 @@ export function ChangePasswordForm() {
         onChange={setCurrentPassword}
         autoComplete="current-password"
         placeholder="Enter your temporary password"
+        icon={Lock}
       />
 
-      <AuthField
+      <AuthInput
         id="newPassword"
         label="New password"
         type="password"
@@ -80,9 +82,10 @@ export function ChangePasswordForm() {
         onChange={setNewPassword}
         autoComplete="new-password"
         placeholder="At least 8 characters with a number"
+        icon={Lock}
       />
 
-      <AuthField
+      <AuthInput
         id="confirmPassword"
         label="Confirm new password"
         type="password"
@@ -90,11 +93,14 @@ export function ChangePasswordForm() {
         onChange={setConfirmPassword}
         autoComplete="new-password"
         placeholder="Re-enter your new password"
+        icon={Lock}
       />
 
       {error ? <AuthAlert message={error} /> : null}
 
-      <AuthSubmitButton loading={loading}>Set password</AuthSubmitButton>
+      <AuthSubmitButton loading={loading} loadingLabel="Saving…">
+        Set password
+      </AuthSubmitButton>
     </form>
   );
 }

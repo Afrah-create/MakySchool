@@ -77,7 +77,11 @@ export async function apiClient<T>(
 
   if (!response.ok) {
     const error = payload as ApiError;
-    throw new Error(error.error ?? "Request failed");
+    const requestError = new Error(error.error ?? "Request failed") as Error & {
+      code?: string;
+    };
+    requestError.code = error.code;
+    throw requestError;
   }
 
   return payload as ApiResponse<T>;

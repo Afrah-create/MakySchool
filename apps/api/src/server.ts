@@ -11,6 +11,7 @@ import { requireTenantAuth } from "./middleware/tenantAuth.js";
 import { requireActiveSubscription } from "./middleware/subscriptionGuard.js";
 import { authRouter } from "./routes/auth/login.js";
 import { changePasswordRouter } from "./routes/auth/changePassword.js";
+import { schoolPreviewRouter } from "./routes/auth/schoolPreview.js";
 import { superAdminAuthRouter } from "./routes/superadmin/auth.js";
 import { superAdminSchoolsRouter } from "./routes/superadmin/schools.js";
 import { healthRouter } from "./routes/health.js";
@@ -38,6 +39,7 @@ app.use("/api/health", healthRouter);
 app.use("/api/v1/health", healthRouter);
 
 app.use("/api/auth", authRouter);
+app.use("/api/auth/school", schoolPreviewRouter);
 app.use("/api/auth/change-password", changePasswordRouter);
 app.use("/api/superadmin/auth", superAdminAuthRouter);
 app.use("/api/superadmin/schools", superAdminSchoolsRouter);
