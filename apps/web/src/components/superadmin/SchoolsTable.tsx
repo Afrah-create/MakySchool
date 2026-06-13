@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import useSWR from "swr";
 import {
   Banknote,
   Building2,
@@ -11,9 +10,11 @@ import {
   Search,
   Settings2,
 } from "lucide-react";
-import { apiClient } from "@/lib/api/client";
-import { Skeleton } from "@/components/ui/Skeleton";
 import { AddSchoolPanel } from "@/components/superadmin/AddSchoolPanel";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { QueryState } from "@/components/ui/QueryState";
+import { SkeletonTable } from "@/components/ui/Skeleton";
+import { useApiSWR } from "@/hooks/useApiSWR";
 
 type SchoolsPayload = {
   items: Array<{
@@ -80,12 +81,9 @@ const statCards = [
 export function SchoolsTable() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
-  const { data, error, isLoading, mutate } = useSWR(
-    `/superadmin/schools?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}`,
-    async (path) => apiClient<SchoolsPayload>(path).then((response) => response.data),
-  );
+  const path = `/superadmin/schools?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}`;
 
-  const rows = data?.items ?? [];
+  const { data, error, isLoading, isValidating, mutate } = useApiSWR<SchoolsPayload>(path);
 
   return (
     <section>
@@ -105,7 +103,7 @@ export function SchoolsTable() {
                 </span>
               </div>
               <p className="mt-3 text-2xl font-semibold text-theme-primary">
-                {card.format(value)}
+                {isLoading && !data ? "—" : card.format(value)}
               </p>
             </div>
           );
@@ -135,98 +133,106 @@ export function SchoolsTable() {
         <AddSchoolPanel onCreated={() => void mutate()} />
       </div>
 
-      {isLoading ? (
-        <div className="space-y-3 rounded-xl border border-theme bg-theme-surface p-4">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-        </div>
-      ) : error ? (
-        <div className="rounded-xl border border-theme bg-theme-surface px-6 py-20 text-center">
-          <Building2 className="mx-auto mb-4 h-10 w-10 text-theme-faint" />
-          <h3 className="text-sm font-medium text-theme-primary">Could not load schools</h3>
-          <p className="mt-1 text-sm text-theme-muted">Check the API connection and try again.</p>
-          <button
-            type="button"
-            onClick={() => void mutate()}
-            className="mt-6 inline-flex items-center gap-2 rounded-lg border border-theme px-4 py-2 text-sm text-theme-accent hover:bg-theme-accent-muted"
-          >
-            Retry
-          </button>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-theme bg-theme-surface px-6 py-20 text-center">
-          <Building2 className="mx-auto mb-4 h-10 w-10 text-theme-faint" />
-          <h3 className="text-sm font-medium text-theme-primary">No schools yet</h3>
-          <p className="mt-1 text-sm text-theme-muted">Provision the first school to get started.</p>
-          <button
-            type="button"
-            onClick={() => document.getElementById("add-school-trigger")?.click()}
-            className="mt-6 inline-flex items-center gap-2 rounded-lg border border-theme px-4 py-2 text-sm text-theme-accent hover:bg-theme-accent-muted"
-          >
-            <Plus className="h-4 w-4" />
-            Provision a school
-          </button>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-table-header text-left text-xs font-medium uppercase tracking-wide text-theme-muted">
-                <tr>
-                  <th className="px-4 py-3">School</th>
-                  <th className="px-4 py-3">Slug</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Subscription</th>
-                  <th className="px-4 py-3">Added</th>
-                  <th className="px-4 py-3 text-right"> </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((school) => (
-                  <tr
-                    key={school.id}
-                    className="border-t border-theme transition hover:bg-theme-raised"
-                  >
-                    <td className="px-4 py-4">
-                      <div className="font-medium text-theme-primary">{school.name ?? "Unnamed school"}</div>
-                      <div className="text-sm text-theme-muted">{school.admin_email || "—"}</div>
-                    </td>
-                    <td className="px-4 py-4 text-sm text-theme-muted">{school.slug}</td>
-                    <td className="px-4 py-4 text-sm text-theme-muted">{school.school_type ?? "—"}</td>
-                    <td className="px-4 py-4">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusBadgeClass(school.status)}`}
-                      >
-                        {school.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${subscriptionBadgeClass(school.subscription_status)}`}
-                      >
-                        {school.subscription_status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-sm text-theme-muted">
-                      {new Date(school.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-4 text-right">
-                      <Link
-                        href={`/superadmin/schools/${school.id}`}
-                        className="text-xs text-theme-accent hover:underline"
-                      >
-                        View
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <QueryState
+        isLoading={isLoading}
+        isValidating={isValidating}
+        error={error}
+        data={data}
+        onRetry={() => void mutate()}
+        isEmpty={(payload) => payload.items.length === 0}
+        loading={
+          <div className="space-y-3 rounded-xl border border-theme bg-theme-surface p-4">
+            <SkeletonTable rows={3} />
           </div>
-        </div>
-      )}
+        }
+        errorView={
+          <EmptyState
+            variant="error"
+            icon={Building2}
+            title="Could not load schools"
+            description="Check the API connection and try again."
+            onRetry={() => void mutate()}
+          />
+        }
+        empty={
+          <EmptyState
+            icon={Building2}
+            title="No schools yet"
+            description="Provision the first school to get started."
+            action={
+              <button
+                type="button"
+                onClick={() => document.getElementById("add-school-trigger")?.click()}
+                className="ms-btn-ghost inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm"
+              >
+                <Plus className="h-4 w-4" />
+                Provision a school
+              </button>
+            }
+          />
+        }
+        showRefreshing={false}
+      >
+        {(payload) => (
+          <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead className="bg-table-header text-left text-xs font-medium uppercase tracking-wide text-theme-muted">
+                  <tr>
+                    <th className="px-4 py-3">School</th>
+                    <th className="px-4 py-3">Slug</th>
+                    <th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Subscription</th>
+                    <th className="px-4 py-3">Added</th>
+                    <th className="px-4 py-3 text-right"> </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payload.items.map((school) => (
+                    <tr
+                      key={school.id}
+                      className="border-t border-theme transition hover:bg-theme-raised"
+                    >
+                      <td className="px-4 py-4">
+                        <div className="font-medium text-theme-primary">{school.name ?? "Unnamed school"}</div>
+                        <div className="text-sm text-theme-muted">{school.admin_email || "—"}</div>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-theme-muted">{school.slug}</td>
+                      <td className="px-4 py-4 text-sm text-theme-muted">{school.school_type ?? "—"}</td>
+                      <td className="px-4 py-4">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusBadgeClass(school.status)}`}
+                        >
+                          {school.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${subscriptionBadgeClass(school.subscription_status)}`}
+                        >
+                          {school.subscription_status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-theme-muted">
+                        {new Date(school.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <Link
+                          href={`/superadmin/schools/${school.id}`}
+                          className="text-xs text-theme-accent hover:underline"
+                        >
+                          View
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </QueryState>
     </section>
   );
 }

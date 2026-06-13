@@ -1,17 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { SubjectWithDetails } from "@makyschool/shared/types";
-import { Pencil, Plus, Trash2 } from "lucide-react";
-import { AcademicEmpty } from "@/components/tenant/academic/AcademicEmpty";
+import { Plus } from "lucide-react";
+import {
+  AcademicPagination,
+  AcademicTableShell,
+  AcademicToolbar,
+  RowActions,
+} from "@/components/tenant/academic/AcademicLayout";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { LoadingButton } from "@/components/ui/LoadingButton";
+import { QueryState } from "@/components/ui/QueryState";
+import { SkeletonTable } from "@/components/ui/Skeleton";
 import { SlideOver } from "@/components/ui/SlideOver";
-import { Skeleton } from "@/components/ui/Skeleton";
+import { useListControls } from "@/lib/academic/useListControls";
 
 type SubjectsTabProps = {
   subjects: SubjectWithDetails[] | undefined;
   loading: boolean;
+  isValidating?: boolean;
   error: unknown;
+  onRetry?: () => void;
   actionLoading: boolean;
   onCreate: (name: string) => Promise<void>;
   onUpdate: (id: string, name: string) => Promise<void>;
@@ -21,7 +32,9 @@ type SubjectsTabProps = {
 export function SubjectsTab({
   subjects,
   loading,
+  isValidating = false,
   error,
+  onRetry,
   actionLoading,
   onCreate,
   onUpdate,
@@ -58,8 +71,9 @@ export function SubjectsTab({
 
   return (
     <div className="space-y-4">
-      <div className="ms-panel p-5 sm:p-6">
-        <h2 className="text-sm font-semibold text-theme-primary">Add subject</h2>
+      <section className="ms-card p-5 sm:p-6">
+        <h2 className="text-sm font-semibold text-theme-primary">Quick add</h2>
+        <p className="mt-1 text-sm text-theme-muted">Subjects can be linked to classes from the Assignments tab.</p>
         <form onSubmit={(event) => void handleCreate(event)} className="mt-4 flex flex-col gap-3 sm:flex-row">
           <input
             value={newName}
@@ -68,85 +82,45 @@ export function SubjectsTab({
             placeholder="e.g. Mathematics, English"
             className="ms-input flex-1"
           />
-          <button
-            disabled={actionLoading}
+          <LoadingButton
             type="submit"
-            className="ms-btn-primary inline-flex shrink-0 items-center justify-center gap-2"
+            loading={actionLoading}
+            loadingLabel="Adding…"
+            className="shrink-0 rounded-xl px-4 py-2.5"
           >
             <Plus className="h-4 w-4" />
             Add subject
-          </button>
+          </LoadingButton>
         </form>
-      </div>
+      </section>
 
-      <div className="ms-panel p-5 sm:p-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-theme-primary">Subjects</h2>
-            <p className="mt-1 text-sm text-theme-muted">
-              Manage the subjects taught at your school.
-            </p>
-          </div>
-          <span className="badge-info rounded-full px-2.5 py-0.5 text-xs font-medium">
-            {subjects?.length ?? 0}
-          </span>
-        </div>
-
-        {loading ? (
-          <Skeleton className="mt-4 h-40 rounded-xl" />
-        ) : error ? (
-          <div className="mt-4">
-            <AcademicEmpty
-              title="Subjects unavailable"
-              description="Unable to load subjects right now."
-            />
-          </div>
-        ) : subjects?.length === 0 ? (
-          <div className="mt-4">
-            <AcademicEmpty
-              title="No subjects yet"
-              description="Add subjects before linking them to classes."
-            />
-          </div>
-        ) : (
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {subjects?.map((subject) => (
-              <div
-                key={subject.id}
-                className="flex flex-col justify-between gap-3 rounded-xl border border-theme bg-input px-4 py-3"
-              >
-                <div>
-                  <div className="font-medium text-theme-primary">{subject.name}</div>
-                  <div className="mt-1 text-sm text-theme-muted">
-                    Linked to {subject.class_count} class{subject.class_count === 1 ? "" : "es"}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingSubject(subject);
-                      setEditName(subject.name);
-                    }}
-                    className="ms-btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDelete(subject)}
-                    className="ms-btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 dark:text-red-400"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <QueryState
+        isLoading={loading}
+        isValidating={isValidating}
+        error={error}
+        data={subjects}
+        onRetry={onRetry}
+        isEmpty={(items) => items.length === 0}
+        loading={<SkeletonTable rows={6} />}
+        empty={
+          <EmptyState
+            variant="compact"
+            icon={null}
+            title="No subjects yet"
+            description="Add subjects above, then link them to classes."
+          />
+        }
+        errorView={
+          <EmptyState
+            variant="error"
+            title="Subjects unavailable"
+            description="Unable to load subjects right now."
+            onRetry={onRetry}
+          />
+        }
+      >
+        {(items) => <SubjectsTable items={items} onEdit={(s) => { setEditingSubject(s); setEditName(s.name); }} onDelete={setConfirmDelete} />}
+      </QueryState>
 
       <SlideOver
         open={Boolean(editingSubject)}
@@ -168,14 +142,15 @@ export function SubjectsTab({
             >
               Cancel
             </button>
-            <button
+            <LoadingButton
               type="submit"
               form="edit-subject-form"
-              disabled={actionLoading}
-              className="ms-btn-primary rounded-xl px-4 py-2"
+              loading={actionLoading}
+              loadingLabel="Saving…"
+              className="rounded-xl px-4 py-2"
             >
               Save changes
-            </button>
+            </LoadingButton>
           </div>
         }
       >
@@ -218,9 +193,7 @@ export function SubjectsTab({
           setConfirmLoading(true);
           void onDelete(confirmDelete)
             .then(() => setConfirmDelete(null))
-            .catch(() => {
-              // Error feedback is shown by the parent.
-            })
+            .catch(() => {})
             .finally(() => setConfirmLoading(false));
         }}
         onCancel={() => {
@@ -236,5 +209,84 @@ export function SubjectsTab({
         ) : null}
       </ConfirmDialog>
     </div>
+  );
+}
+
+function SubjectsTable({
+  items,
+  onEdit,
+  onDelete,
+}: {
+  items: SubjectWithDetails[];
+  onEdit: (subject: SubjectWithDetails) => void;
+  onDelete: (subject: SubjectWithDetails) => void;
+}) {
+  const filterFn = useCallback(
+    (subject: SubjectWithDetails, query: string) =>
+      !query || subject.name.toLowerCase().includes(query),
+    [],
+  );
+
+  const {
+    query,
+    setQuery,
+    page,
+    setPage,
+    totalPages,
+    paged,
+    filteredCount,
+    rangeStart,
+    rangeEnd,
+  } = useListControls({ items, pageSize: 20, filterFn });
+
+  return (
+    <AcademicTableShell
+      toolbar={
+        <AcademicToolbar
+          searchPlaceholder="Search subjects…"
+          searchValue={query}
+          onSearchChange={setQuery}
+        />
+      }
+      footer={
+        <AcademicPagination
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          total={filteredCount}
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+        />
+      }
+    >
+      {filteredCount === 0 ? (
+        <div className="px-5 py-12">
+          <EmptyState variant="compact" icon={null} title="No matching subjects" description="Try a different search term." />
+        </div>
+      ) : (
+        <table className="min-w-full text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-table-header text-xs uppercase tracking-wide text-theme-muted">
+            <tr>
+              <th className="px-5 py-3 font-medium">Subject</th>
+              <th className="px-5 py-3 font-medium">Classes linked</th>
+              <th className="px-5 py-3 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-theme">
+            {paged.map((subject) => (
+              <tr key={subject.id} className="transition hover:bg-table-row-hover">
+                <td className="px-5 py-3.5 font-medium text-theme-primary">{subject.name}</td>
+                <td className="px-5 py-3.5 tabular-nums text-theme-muted">
+                  {subject.class_count} class{subject.class_count === 1 ? "" : "es"}
+                </td>
+                <td className="px-5 py-3.5">
+                  <RowActions onEdit={() => onEdit(subject)} onDelete={() => onDelete(subject)} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </AcademicTableShell>
   );
 }

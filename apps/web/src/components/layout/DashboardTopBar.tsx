@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, Plus, Search } from "lucide-react";
+import { DashboardNavProgress } from "@/components/layout/DashboardNavProgress";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 function primaryActionForPath(pathname: string) {
@@ -20,7 +21,8 @@ export function DashboardTopBar() {
   const action = primaryActionForPath(pathname);
 
   return (
-    <div className="border-b border-theme bg-theme-surface px-4 py-3 sm:px-6 lg:px-8">
+    <div className="relative border-b border-theme bg-theme-surface px-4 py-3 sm:px-6 lg:px-8">
+      <DashboardNavProgress />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative min-w-0 flex-1 sm:max-w-md">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-theme-muted" />

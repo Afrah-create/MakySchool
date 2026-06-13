@@ -2,6 +2,7 @@
 
 import { DashboardPage } from "@/components/layout/DashboardPage";
 import { ClassesManager } from "@/components/tenant/ClassesManager";
+import { SkeletonPanel } from "@/components/ui/Skeleton";
 import { useTenantSchool } from "@/providers/TenantSchoolProvider";
 
 export function ClassesPageContent() {
@@ -9,9 +10,13 @@ export function ClassesPageContent() {
 
   if (!school) {
     return (
-      <div className="flex h-full items-center justify-center px-4 text-sm text-theme-muted">
-        Loading school context…
-      </div>
+      <DashboardPage
+        eyebrow="Academic structure"
+        title="Classes & subjects"
+        description="Organise levels, streams, and subject assignments."
+      >
+        <SkeletonPanel />
+      </DashboardPage>
     );
   }
 

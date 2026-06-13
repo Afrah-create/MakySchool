@@ -1,23 +1,19 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import useSWR from "swr";
+import { useMemo, useState } from "react";
 import { formatClassLabel } from "@makyschool/shared/constants";
 import type { ClassWithDetails, SchoolType, SubjectWithDetails } from "@makyschool/shared/types";
 import { AssignmentsTab } from "@/components/tenant/academic/AssignmentsTab";
 import { ClassesTab } from "@/components/tenant/academic/ClassesTab";
 import { SubjectsTab } from "@/components/tenant/academic/SubjectsTab";
+import { AcademicSummaryCards, AcademicTabNav } from "@/components/tenant/academic/AcademicLayout";
 import { StatusBanner } from "@/components/ui/StatusBanner";
 import { apiClient } from "@/lib/api/client";
-import { parseAcademicError, type FeedbackState } from "@/lib/academic/feedback";
+import { parseAcademicError } from "@/lib/academic/feedback";
+import { useDashboardMutation } from "@/hooks/useDashboardMutation";
+import { useTenantSWR } from "@/hooks/useTenantSWR";
 
 type AcademicTab = "classes" | "subjects" | "assignments";
-
-const tabs: Array<{ id: AcademicTab; label: string }> = [
-  { id: "classes", label: "Classes" },
-  { id: "subjects", label: "Subjects" },
-  { id: "assignments", label: "Assignments" },
-];
 
 export function ClassesManager({
   schoolType,
@@ -27,52 +23,64 @@ export function ClassesManager({
   schoolSlug: string;
 }) {
   const [activeTab, setActiveTab] = useState<AcademicTab>("classes");
-  const [loading, setLoading] = useState(false);
-  const [feedback, setFeedback] = useState<FeedbackState>(null);
-
-  const dismissFeedback = useCallback(() => setFeedback(null), []);
 
   const {
     data: classesData,
     error: classesError,
     isLoading: loadingClasses,
+    isValidating: validatingClasses,
     mutate: mutateClasses,
-  } = useSWR(
-    ["/schools/classes", schoolSlug],
-    ([path, slug]) => apiClient<ClassWithDetails[]>(path, { schoolSlug: slug }).then((r) => r.data),
-  );
+  } = useTenantSWR<ClassWithDetails[]>("/schools/classes");
 
   const {
     data: subjectsData,
     error: subjectsError,
     isLoading: loadingSubjects,
+    isValidating: validatingSubjects,
     mutate: mutateSubjects,
-  } = useSWR(
-    ["/schools/subjects", schoolSlug],
-    ([path, slug]) =>
-      apiClient<SubjectWithDetails[]>(path, { schoolSlug: slug }).then((r) => r.data),
-  );
+  } = useTenantSWR<SubjectWithDetails[]>("/schools/subjects");
 
   async function refreshAll() {
     await Promise.all([mutateClasses(), mutateSubjects()]);
   }
 
-  async function runAction(action: () => Promise<void>, successMessage?: string) {
-    setLoading(true);
-    setFeedback(null);
-    try {
-      await action();
-      await refreshAll();
-      if (successMessage) {
-        setFeedback({ tone: "success", message: successMessage });
-      }
-    } catch (error) {
-      setFeedback({ tone: "error", message: parseAcademicError(error) });
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  }
+  const { loading, feedback, dismissFeedback, run } = useDashboardMutation({
+    onSuccess: refreshAll,
+    parseError: parseAcademicError,
+  });
+
+  const summary = useMemo(() => {
+    const classes = classesData ?? [];
+    const subjects = subjectsData ?? [];
+    const students = classes.reduce((sum, row) => sum + (row.student_count ?? 0), 0);
+    const needsAttention = classes.filter(
+      (row) =>
+        row.subjects.length === 0 ||
+        (row.capacity != null && row.student_count >= row.capacity),
+    ).length;
+
+    return [
+      { key: "classes", label: "Classes", value: classes.length, hint: "Levels & streams" },
+      { key: "subjects", label: "Subjects", value: subjects.length, hint: "Across all levels" },
+      { key: "students", label: "Enrolled", value: students, hint: "Total students" },
+      {
+        key: "attention",
+        label: "Needs attention",
+        value: needsAttention,
+        hint: "Missing subjects or at capacity",
+        tone: needsAttention > 0 ? ("warning" as const) : ("default" as const),
+      },
+    ];
+  }, [classesData, subjectsData]);
+
+  const tabs = useMemo(
+    () => [
+      { id: "classes" as const, label: "Classes", count: classesData?.length ?? 0 },
+      { id: "subjects" as const, label: "Subjects", count: subjectsData?.length ?? 0 },
+      { id: "assignments" as const, label: "Assignments" },
+    ],
+    [classesData?.length, subjectsData?.length],
+  );
 
   async function createClass(values: {
     level: string;
@@ -80,7 +88,7 @@ export function ClassesManager({
     capacity: number | null;
   }) {
     const label = formatClassLabel(values.level, values.stream);
-    await runAction(async () => {
+    await run(async () => {
       await apiClient("/schools/classes", {
         method: "POST",
         body: values,
@@ -94,7 +102,7 @@ export function ClassesManager({
     values: { level: string; stream: string | null; capacity: number | null },
   ) {
     const label = formatClassLabel(values.level, values.stream);
-    await runAction(async () => {
+    await run(async () => {
       await apiClient(`/schools/classes/${id}`, {
         method: "PATCH",
         body: values,
@@ -105,7 +113,7 @@ export function ClassesManager({
 
   async function deleteClass(classRow: ClassWithDetails) {
     const label = formatClassLabel(classRow.level, classRow.stream);
-    await runAction(async () => {
+    await run(async () => {
       await apiClient(`/schools/classes/${classRow.id}`, {
         method: "DELETE",
         schoolSlug,
@@ -114,7 +122,7 @@ export function ClassesManager({
   }
 
   async function createSubject(name: string) {
-    await runAction(async () => {
+    await run(async () => {
       await apiClient("/schools/subjects", {
         method: "POST",
         body: { name },
@@ -124,7 +132,7 @@ export function ClassesManager({
   }
 
   async function updateSubject(id: string, name: string) {
-    await runAction(async () => {
+    await run(async () => {
       await apiClient(`/schools/subjects/${id}`, {
         method: "PATCH",
         body: { name },
@@ -134,7 +142,7 @@ export function ClassesManager({
   }
 
   async function deleteSubject(subject: SubjectWithDetails) {
-    await runAction(async () => {
+    await run(async () => {
       await apiClient(`/schools/subjects/${subject.id}`, {
         method: "DELETE",
         schoolSlug,
@@ -150,7 +158,7 @@ export function ClassesManager({
       : "class";
     const subjectName = subject?.name ?? "Subject";
 
-    await runAction(async () => {
+    await run(async () => {
       await apiClient(
         linked
           ? `/schools/classes/${classId}/subjects/${subjectId}`
@@ -170,7 +178,7 @@ export function ClassesManager({
     const subject = subjectsData?.find((row) => row.id === subjectId);
     const subjectName = subject?.name ?? "Subject";
 
-    await runAction(async () => {
+    await run(async () => {
       await apiClient(`/schools/subjects/${subjectId}/classes`, {
         method: "PUT",
         body: { classIds },
@@ -181,22 +189,9 @@ export function ClassesManager({
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-2 overflow-x-auto border-b border-theme pb-2">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition ${
-              activeTab === tab.id
-                ? "bg-theme-accent-muted text-theme-primary"
-                : "text-theme-muted hover:bg-nav-hover hover:text-theme-primary"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <AcademicSummaryCards items={summary} />
+
+      <AcademicTabNav tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
       {feedback ? (
         <StatusBanner
@@ -212,7 +207,9 @@ export function ClassesManager({
           schoolType={schoolType}
           classes={classesData}
           loading={loadingClasses}
+          isValidating={validatingClasses}
           error={classesError}
+          onRetry={() => void mutateClasses()}
           actionLoading={loading}
           onCreate={createClass}
           onUpdate={updateClass}
@@ -224,7 +221,9 @@ export function ClassesManager({
         <SubjectsTab
           subjects={subjectsData}
           loading={loadingSubjects}
+          isValidating={validatingSubjects}
           error={subjectsError}
+          onRetry={() => void mutateSubjects()}
           actionLoading={loading}
           onCreate={createSubject}
           onUpdate={updateSubject}
@@ -237,6 +236,14 @@ export function ClassesManager({
           schoolType={schoolType}
           classes={classesData}
           subjects={subjectsData}
+          loadingClasses={loadingClasses}
+          loadingSubjects={loadingSubjects}
+          classesError={classesError}
+          subjectsError={subjectsError}
+          onRetry={() => {
+            void mutateClasses();
+            void mutateSubjects();
+          }}
           actionLoading={loading}
           onToggleClassSubject={toggleClassSubject}
           onBulkLinkSubject={bulkLinkSubject}

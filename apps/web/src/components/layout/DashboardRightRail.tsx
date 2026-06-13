@@ -2,12 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import useSWR from "swr";
 import { AlertCircle, BookOpen, ChevronRight } from "lucide-react";
 import { formatClassLabel } from "@makyschool/shared/constants";
 import type { ClassWithDetails } from "@makyschool/shared/types";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { QueryState } from "@/components/ui/QueryState";
+import { SkeletonAttentionList } from "@/components/ui/Skeleton";
+import { useTenantSWR } from "@/hooks/useTenantSWR";
 import { useAuth } from "@/hooks/useAuth";
-import { apiClient } from "@/lib/api/client";
 import { useTenantSchool } from "@/providers/TenantSchoolProvider";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -34,21 +36,12 @@ function isSameDay(a: Date, b: Date) {
 
 export function DashboardRightRail() {
   const { state } = useAuth();
-  const { school, schoolSlug } = useTenantSchool();
+  const { school } = useTenantSchool();
   const today = new Date();
   const weekDays = getWeekDays(today);
 
-  const { data: classes } = useSWR(
-    schoolSlug ? ["/schools/classes", schoolSlug, "right-rail"] : null,
-    ([path, slug]) => apiClient<ClassWithDetails[]>(path, { schoolSlug: slug }).then((r) => r.data),
-  );
-
-  const needsAttention =
-    classes?.filter(
-      (classRow) =>
-        classRow.subjects.length === 0 ||
-        (classRow.capacity != null && classRow.student_count >= classRow.capacity),
-    ) ?? [];
+  const { data: classes, isLoading, isValidating, error, mutate } =
+    useTenantSWR<ClassWithDetails[]>("/schools/classes");
 
   const displayName = state.user?.name?.split(" ")[0] ?? "Admin";
   const monthLabel = today.toLocaleString("default", { month: "long" });
@@ -112,47 +105,76 @@ export function DashboardRightRail() {
           </Link>
         </div>
 
-        <div className="mt-3 space-y-2">
-          {needsAttention.length === 0 ? (
-            <div className="ms-card p-4 text-sm text-theme-muted">
-              Everything looks good. No classes need action right now.
-            </div>
-          ) : (
-            needsAttention.slice(0, 5).map((classRow) => {
-              const label = formatClassLabel(classRow.level, classRow.stream);
-              const atCapacity =
-                classRow.capacity != null && classRow.student_count >= classRow.capacity;
+        <div className="mt-3">
+          <QueryState
+            isLoading={isLoading}
+            isValidating={isValidating}
+            error={error}
+            data={classes}
+            onRetry={() => void mutate()}
+            loading={<SkeletonAttentionList rows={3} />}
+            isEmpty={(items) => {
+              const needsAttention = items.filter(
+                (classRow) =>
+                  classRow.subjects.length === 0 ||
+                  (classRow.capacity != null && classRow.student_count >= classRow.capacity),
+              );
+              return needsAttention.length === 0;
+            }}
+            empty={
+              <div className="ms-card p-4 text-sm text-theme-muted">
+                Everything looks good. No classes need action right now.
+              </div>
+            }
+            showRefreshing={false}
+          >
+            {(items) => {
+              const needsAttention = items.filter(
+                (classRow) =>
+                  classRow.subjects.length === 0 ||
+                  (classRow.capacity != null && classRow.student_count >= classRow.capacity),
+              );
 
               return (
-                <Link
-                  key={classRow.id}
-                  href="/dashboard/classes"
-                  className="ms-card flex items-center gap-3 p-3 transition hover:border-accent-soft"
-                >
-                  <span
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                      atCapacity ? "badge-warning" : "badge-info"
-                    }`}
-                  >
-                    {atCapacity ? (
-                      <AlertCircle className="h-4 w-4" />
-                    ) : (
-                      <BookOpen className="h-4 w-4" />
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-theme-primary">{label}</p>
-                    <p className="truncate text-xs text-theme-muted">
-                      {atCapacity
-                        ? `At capacity (${classRow.student_count}/${classRow.capacity})`
-                        : "No subjects linked yet"}
-                    </p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-theme-muted" />
-                </Link>
+                <div className="space-y-2">
+                  {needsAttention.slice(0, 5).map((classRow) => {
+                    const label = formatClassLabel(classRow.level, classRow.stream);
+                    const atCapacity =
+                      classRow.capacity != null && classRow.student_count >= classRow.capacity;
+
+                    return (
+                      <Link
+                        key={classRow.id}
+                        href="/dashboard/classes"
+                        className="ms-card flex items-center gap-3 p-3 transition hover:border-accent-soft"
+                      >
+                        <span
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                            atCapacity ? "badge-warning" : "badge-info"
+                          }`}
+                        >
+                          {atCapacity ? (
+                            <AlertCircle className="h-4 w-4" />
+                          ) : (
+                            <BookOpen className="h-4 w-4" />
+                          )}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-theme-primary">{label}</p>
+                          <p className="truncate text-xs text-theme-muted">
+                            {atCapacity
+                              ? `At capacity (${classRow.student_count}/${classRow.capacity})`
+                              : "No subjects linked yet"}
+                          </p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-theme-muted" />
+                      </Link>
+                    );
+                  })}
+                </div>
               );
-            })
-          )}
+            }}
+          </QueryState>
         </div>
       </section>
     </div>

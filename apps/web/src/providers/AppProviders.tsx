@@ -1,12 +1,16 @@
 "use client";
 
+import { SWRConfig } from "swr";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { ThemeProvider } from "@/providers/ThemeProvider";
+import { swrConfig } from "@/lib/swr/config";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
-      <AuthProvider>{children}</AuthProvider>
+      <SWRConfig value={swrConfig}>
+        <AuthProvider>{children}</AuthProvider>
+      </SWRConfig>
     </ThemeProvider>
   );
 }

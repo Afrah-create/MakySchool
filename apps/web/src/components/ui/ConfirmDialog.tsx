@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { cn } from "@/lib/utils/cn";
+import { LoadingButton } from "@/components/ui/LoadingButton";
 
 type ConfirmDialogVariant = "default" | "danger" | "blocked";
 
@@ -57,17 +57,15 @@ export function ConfirmDialog({
             {isBlocked ? "Close" : cancelLabel}
           </button>
           {!isBlocked ? (
-            <button
-              type="button"
-              disabled={loading}
+            <LoadingButton
+              variant={variant === "danger" ? "danger" : "primary"}
+              loading={loading}
+              loadingLabel="Please wait…"
               onClick={() => void onConfirm?.()}
-              className={cn(
-                "rounded-xl px-4 py-2 disabled:opacity-60",
-                variant === "danger" ? "ms-btn-danger" : "ms-btn-primary",
-              )}
+              className="rounded-xl px-4 py-2"
             >
-              {loading ? "Please wait…" : confirmLabel}
-            </button>
+              {confirmLabel}
+            </LoadingButton>
           ) : null}
         </div>
       </div>
