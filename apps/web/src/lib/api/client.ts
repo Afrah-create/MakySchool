@@ -1,6 +1,6 @@
 import { TENANT_HEADERS } from "@makyschool/shared/constants";
 import type { ApiError, ApiResponse } from "@makyschool/shared/types";
-import { getClientApiBaseUrl } from "@/lib/api/base-url";
+import { normalizeApiPath, resolveClientApiUrl } from "@/lib/api/base-url";
 import { readStoredSchoolSlug } from "@/lib/auth/session";
 
 type RequestOptions = Omit<RequestInit, "body"> & {
@@ -29,7 +29,8 @@ export async function apiClient<T>(
 
   const headers = new Headers(initHeaders);
   const resolvedSlug = resolveSchoolSlug(schoolSlug);
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const normalizedPath = normalizeApiPath(path);
+  const requestUrl = resolveClientApiUrl(path);
 
   if (body !== undefined && !(body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
@@ -46,9 +47,10 @@ export async function apiClient<T>(
   let response: Response;
 
   try {
-    response = await fetch(`${getClientApiBaseUrl()}${normalizedPath}`, {
+    response = await fetch(requestUrl, {
       ...rest,
       credentials: "include",
+      redirect: "manual",
       headers,
       body:
         body === undefined
@@ -63,14 +65,37 @@ export async function apiClient<T>(
     );
   }
 
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get("location") ?? "unknown";
+    throw new Error(
+      `API redirected to ${location}. Expected JSON from ${requestUrl}.`,
+    );
+  }
+
   let payload: ApiResponse<T> | ApiError;
+  const raw = await response.text();
+
+  if (!raw.trim()) {
+    throw new Error(
+      response.ok
+        ? "Empty API response. The server returned success without a body."
+        : `API request failed (${response.status}). Is the backend running on port 4000?`,
+    );
+  }
+
+  const trimmed = raw.trimStart();
+  if (trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html")) {
+    throw new Error(
+      `Received a web page instead of JSON from ${requestUrl}. The API route may be missing — restart the dev server and confirm POST hits /api${normalizedPath}.`,
+    );
+  }
 
   try {
-    payload = (await response.json()) as ApiResponse<T> | ApiError;
+    payload = JSON.parse(raw) as ApiResponse<T> | ApiError;
   } catch {
     throw new Error(
       response.ok
-        ? "Unexpected API response"
+        ? `Unexpected API response from ${requestUrl}`
         : `API request failed (${response.status}). Is the backend running on port 4000?`,
     );
   }

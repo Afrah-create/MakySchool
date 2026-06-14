@@ -4,16 +4,43 @@ function stripTrailingSlash(value: string) {
 
 function withApiSuffix(value: string) {
   const normalized = stripTrailingSlash(value);
+  if (!normalized) {
+    return "/api";
+  }
   return normalized.endsWith("/api") ? normalized : `${normalized}/api`;
 }
 
-/** Browser/client API base — same-origin proxy in dev by default. */
-export function getClientApiBaseUrl() {
-  const configured = process.env.NEXT_PUBLIC_API_URL;
-  if (configured) {
-    return withApiSuffix(configured);
+/** Normalize an API path to `/auth/login`, `/schools/classes`, etc. (no `/api` prefix). */
+export function normalizeApiPath(path: string) {
+  const trimmed = path.startsWith("/") ? path : `/${path}`;
+  return trimmed.startsWith("/api/") ? trimmed.slice(4) : trimmed;
+}
+
+/**
+ * Browser/client absolute URL for API requests.
+ * Always targets the same-origin `/api/*` proxy unless an absolute remote base is configured.
+ */
+export function resolveClientApiUrl(path: string) {
+  const apiPath = normalizeApiPath(path);
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+
+  if (configured?.startsWith("http://") || configured?.startsWith("https://")) {
+    return `${withApiSuffix(configured)}${apiPath}`;
   }
 
+  if (typeof window !== "undefined") {
+    return new URL(`/api${apiPath}`, window.location.origin).href;
+  }
+
+  return `/api${apiPath}`;
+}
+
+/** @deprecated Use resolveClientApiUrl — kept for server-side callers. */
+export function getClientApiBaseUrl() {
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (configured?.startsWith("http://") || configured?.startsWith("https://")) {
+    return withApiSuffix(configured);
+  }
   return "/api";
 }
 

@@ -50,6 +50,7 @@ changePasswordRouter.post("/", requireTenantAuth, async (req: AuthenticatedTenan
     school_id: string;
     password_hash: string;
     school_slug: string;
+    setup_completed: boolean | null;
   }>(
     `SELECT
        u.id,
@@ -58,6 +59,7 @@ changePasswordRouter.post("/", requireTenantAuth, async (req: AuthenticatedTenan
        u.role,
        u.school_id,
        u.password_hash,
+       COALESCE(u.setup_completed, false) AS setup_completed,
        s.slug AS school_slug
      FROM users u
      INNER JOIN schools s ON s.id = u.school_id
@@ -86,6 +88,9 @@ changePasswordRouter.post("/", requireTenantAuth, async (req: AuthenticatedTenan
   );
 
   const normalizedRole = normalizeUserRole(user.role);
+  const setupCompleted = Boolean(user.setup_completed);
+  const redirect = setupCompleted ? "/dashboard" : "/dashboard/setup";
+
   const payload = {
     sub: user.id,
     email: user.email,
@@ -94,15 +99,15 @@ changePasswordRouter.post("/", requireTenantAuth, async (req: AuthenticatedTenan
     schoolId: user.school_id,
     schoolSlug: user.school_slug,
     mustChangePassword: false,
-    setupCompleted: false,
+    setupCompleted,
   };
 
   res.cookie(TENANT_ACCESS_COOKIE, signTenantToken(payload, "15m"), cookieOptions(15 * 60 * 1000));
   res.cookie(TENANT_REFRESH_COOKIE, signTenantToken(payload, "7d"), cookieOptions(7 * 24 * 60 * 60 * 1000));
 
-  return res.json({
+  return res.status(200).json({
     data: {
-      redirect: "/dashboard/setup",
+      redirect,
       schoolSlug: user.school_slug,
     },
   });

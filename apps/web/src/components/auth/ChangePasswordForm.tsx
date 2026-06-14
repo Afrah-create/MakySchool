@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Lock } from "lucide-react";
 import { AuthAlert, AuthInput, AuthSubmitButton } from "@/components/auth/AuthShell";
-import { apiClient } from "@/lib/api/client";
+import { changePasswordAction } from "@/lib/auth/change-password-action";
 import { persistSchoolSlug } from "@/lib/auth/session";
 
 export function ChangePasswordForm() {
@@ -28,7 +28,7 @@ export function ChangePasswordForm() {
     return null;
   }
 
-  async function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const validationError = validate();
     if (validationError) {
@@ -40,19 +40,18 @@ export function ChangePasswordForm() {
     setError(null);
 
     try {
-      const response = await apiClient<{ redirect: string; schoolSlug: string }>(
-        "/auth/change-password",
-        {
-          method: "POST",
-          body: { currentPassword, newPassword },
-        },
-      );
+      const result = await changePasswordAction(currentPassword, newPassword);
 
-      if (response.data.schoolSlug) {
-        persistSchoolSlug(response.data.schoolSlug);
+      if (result.error) {
+        setError(result.error);
+        return;
       }
 
-      router.push(response.data.redirect);
+      if (result.schoolSlug) {
+        persistSchoolSlug(result.schoolSlug);
+      }
+
+      router.push(result.redirect ?? "/dashboard");
       router.refresh();
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "Failed to change password");
