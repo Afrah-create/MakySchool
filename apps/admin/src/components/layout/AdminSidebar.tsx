@@ -2,20 +2,17 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, School } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { apiClient } from "@/lib/api/client";
-
+import { platformAdminNav } from "@/lib/platform-admin-nav";
 
 export function AdminSidebar() {
   const router = useRouter();
   const pathname = usePathname();
-  const schoolsActive =
-    pathname === "/dashboard" || pathname.startsWith("/schools");
 
   async function handleLogout() {
     await apiClient("/auth/logout", { method: "POST" });
-    
     router.push("/login");
     router.refresh();
   }
@@ -30,17 +27,24 @@ export function AdminSidebar() {
       </div>
 
       <nav className="dashboard-scroll flex min-h-0 flex-1 flex-col space-y-1 overflow-y-auto overscroll-contain text-sm">
-        <Link
-          href="/dashboard"
-          className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 font-medium transition ${
-            schoolsActive
-              ? "bg-nav-active text-nav-active"
-              : "text-theme-muted hover:bg-nav-hover hover:text-theme-primary"
-          }`}
-        >
-          <School className="h-4 w-4 shrink-0" />
-          Schools
-        </Link>
+        {platformAdminNav.map((item) => {
+          const Icon = item.icon;
+          const active = item.isActive(pathname);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 font-medium transition ${
+                active
+                  ? "bg-nav-active text-nav-active"
+                  : "text-theme-muted hover:bg-nav-hover hover:text-theme-primary"
+              }`}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              {item.label}
+            </Link>
+          );
+        })}
       </nav>
 
       <div className="mt-auto shrink-0 space-y-2 pt-6">

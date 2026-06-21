@@ -1,6 +1,5 @@
 import type { NextFunction, Response } from "express";
 import { Router } from "express";
-import { SUBSCRIPTION_FEE_UGX } from "@makyschool/shared/constants";
 import { pool } from "../../db/pool.js";
 import type { AuthenticatedTenantRequest } from "../../middleware/tenantAuth.js";
 import {
@@ -10,6 +9,7 @@ import {
 } from "../../services/makypay/billing.js";
 import { collectMobileMoney, getTransaction, makypayConfigured } from "../../services/makypay/client.js";
 import { normalizeUgandaPhone } from "../../services/makypay/phone.js";
+import { getSubscriptionFeeUgx } from "../../services/platformSettings.js";
 
 export const schoolBillingRouter = Router();
 
@@ -63,10 +63,11 @@ schoolBillingRouter.get("/quote", async (req: AuthenticatedTenantRequest, res) =
   }
 
   const period = resolveBillingPeriod(school.subscription_term, school.subscription_year);
+  const subscriptionFeeUgx = await getSubscriptionFeeUgx();
 
   return res.json({
     data: {
-      amount: SUBSCRIPTION_FEE_UGX,
+      amount: subscriptionFeeUgx,
       currency: "UGX",
       term: period.term,
       year: period.year,
@@ -138,6 +139,7 @@ schoolBillingRouter.post("/collect", async (req: AuthenticatedTenantRequest, res
   }
 
   const period = resolveBillingPeriod(school.subscription_term, school.subscription_year);
+  const subscriptionFeeUgx = await getSubscriptionFeeUgx();
   const reference = crypto.randomUUID();
   const description = `MakySchool subscription — ${school.name} (${period.term} ${period.year})`;
 
@@ -148,7 +150,7 @@ schoolBillingRouter.post("/collect", async (req: AuthenticatedTenantRequest, res
     [
       crypto.randomUUID(),
       schoolId,
-      SUBSCRIPTION_FEE_UGX,
+      subscriptionFeeUgx,
       period.term,
       period.year,
       reference,
@@ -158,7 +160,7 @@ schoolBillingRouter.post("/collect", async (req: AuthenticatedTenantRequest, res
   try {
     const collection = await collectMobileMoney({
       phoneNumber,
-      amount: SUBSCRIPTION_FEE_UGX,
+      amount: subscriptionFeeUgx,
       reference,
       description,
       callbackUrl: callbackUrl(),
@@ -206,8 +208,9 @@ schoolBillingRouter.get("/payments/:reference", async (req: AuthenticatedTenantR
     term: string;
     year: number;
     school_id: string;
+    amount: number;
   }>(
-    `SELECT status, provider_transaction_id, term, year, school_id
+    `SELECT status, provider_transaction_id, term, year, school_id, amount
      FROM subscription_payments
      WHERE payment_reference = $1 AND school_id = $2
      LIMIT 1`,
@@ -255,9 +258,10 @@ schoolBillingRouter.get("/payments/:reference", async (req: AuthenticatedTenantR
           schoolId: payment.school_id,
           reference,
           externalRef: remote.transactionId,
-          amount: remote.amount ?? SUBSCRIPTION_FEE_UGX,
+          amount: remote.amount ?? payment.amount,
           term: payment.term,
           year: payment.year,
+          expectedFeeUgx: payment.amount,
         });
 
         return res.json({

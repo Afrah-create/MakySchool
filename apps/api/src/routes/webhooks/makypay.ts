@@ -1,6 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Router } from "express";
-import { SUBSCRIPTION_FEE_UGX } from "@makyschool/shared/constants";
 import { pool } from "../../db/pool.js";
 import {
   fulfillSubscriptionPayment,
@@ -83,8 +82,9 @@ makyPayWebhookRouter.post("/", async (req, res) => {
       term: string;
       year: number;
       status: string;
+      amount: number;
     }>(
-      `SELECT school_id, term, year, status
+      `SELECT school_id, term, year, status, amount
        FROM subscription_payments
        WHERE payment_reference = $1
        LIMIT 1`,
@@ -139,9 +139,10 @@ makyPayWebhookRouter.post("/", async (req, res) => {
         schoolId: payment.school_id,
         reference,
         externalRef,
-        amount: amount || SUBSCRIPTION_FEE_UGX,
+        amount: amount || payment.amount,
         term: period.term,
         year: period.year,
+        expectedFeeUgx: payment.amount,
       });
       await pool.query("UPDATE webhook_logs SET processed_at = NOW() WHERE id = $1", [
         logResult.rows[0].id,

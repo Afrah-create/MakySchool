@@ -2,20 +2,17 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, School } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { apiClient } from "@/lib/api/client";
-
+import { platformAdminNav } from "@/lib/platform-admin-nav";
 
 export function AdminMobileNav() {
   const router = useRouter();
   const pathname = usePathname();
-  const schoolsActive =
-    pathname === "/dashboard" || pathname.startsWith("/schools");
 
   async function handleLogout() {
     await apiClient("/auth/logout", { method: "POST" });
-    
     router.push("/login");
     router.refresh();
   }
@@ -42,17 +39,24 @@ export function AdminMobileNav() {
         </div>
       </div>
       <nav className="flex gap-1 overflow-x-auto px-4 pb-3">
-        <Link
-          href="/dashboard"
-          className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition ${
-            schoolsActive
-              ? "bg-nav-active text-nav-active"
-              : "text-theme-muted hover:bg-nav-hover hover:text-theme-primary"
-          }`}
-        >
-          <School className="h-3.5 w-3.5" />
-          Schools
-        </Link>
+        {platformAdminNav.map((item) => {
+          const Icon = item.icon;
+          const active = item.isActive(pathname);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition ${
+                active
+                  ? "bg-nav-active text-nav-active"
+                  : "text-theme-muted hover:bg-nav-hover hover:text-theme-primary"
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {item.label}
+            </Link>
+          );
+        })}
       </nav>
     </header>
   );

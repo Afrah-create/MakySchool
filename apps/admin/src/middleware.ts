@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getSuperAdminPayloadFromRequest } from "@/lib/auth/verify-superadmin-token";
 
-const PROTECTED_PREFIXES = ["/dashboard", "/schools"];
+const PROTECTED_PREFIXES = ["/dashboard", "/schools", "/settings", "/admins"];
 
 function isProtectedRoute(pathname: string) {
   return PROTECTED_PREFIXES.some(
@@ -46,5 +46,7 @@ export const config = {
     "/login",
     "/dashboard/:path*",
     "/schools/:path*",
+    "/settings/:path*",
+    "/admins/:path*",
   ],
 };

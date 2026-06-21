@@ -37,3 +37,4 @@ export * from "./auth";
 export * from "./school";
 export * from "./classes";
 export * from "./subscription";
+export * from "./platform";

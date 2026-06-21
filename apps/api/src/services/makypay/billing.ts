@@ -1,4 +1,4 @@
-import { SUBSCRIPTION_FEE_UGX, UGANDA_TERMS } from "@makyschool/shared/constants";
+import { UGANDA_TERMS } from "@makyschool/shared/constants";
 import { pool } from "../../db/pool.js";
 
 export function resolveBillingPeriod(
@@ -28,8 +28,9 @@ export async function fulfillSubscriptionPayment(params: {
   amount: number;
   term: string;
   year: number;
+  expectedFeeUgx: number;
 }) {
-  const { schoolId, reference, externalRef, amount, term, year } = params;
+  const { schoolId, reference, externalRef, amount, term, year, expectedFeeUgx } = params;
 
   const pending = await pool.query<{
     id: string;
@@ -56,7 +57,7 @@ export async function fulfillSubscriptionPayment(params: {
     return "already_completed" as const;
   }
 
-  if (amount > 0 && amount !== SUBSCRIPTION_FEE_UGX) {
+  if (amount > 0 && amount !== expectedFeeUgx) {
     throw new Error("Unexpected payment amount");
   }
 
@@ -70,7 +71,7 @@ export async function fulfillSubscriptionPayment(params: {
              paid_at = NOW(),
              amount = $2
          WHERE id = $3`,
-        [externalRef, amount || SUBSCRIPTION_FEE_UGX, row.id],
+        [externalRef, amount || expectedFeeUgx, row.id],
       );
     } else {
       await pool.query(
@@ -81,7 +82,7 @@ export async function fulfillSubscriptionPayment(params: {
         [
           crypto.randomUUID(),
           schoolId,
-          amount || SUBSCRIPTION_FEE_UGX,
+          amount || expectedFeeUgx,
           term,
           year,
           externalRef,
