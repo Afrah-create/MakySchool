@@ -29,6 +29,7 @@ export interface ApiResponse<T> {
 export interface ApiError {
   error: string;
   code?: string;
+  redirectUrl?: string;
   details?: Record<string, string[]>;
 }
 

@@ -1,4 +1,4 @@
-import { DashboardPage } from "@/components/layout/DashboardPage";
+import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
 
 export default function AdminSetupPage() {
   return (

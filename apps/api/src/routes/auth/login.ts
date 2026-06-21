@@ -1,8 +1,9 @@
 import bcrypt from "bcrypt";
 import { Router } from "express";
+import { CLIENT_APP_HEADER, TENANT_HEADERS } from "@makyschool/shared/constants";
+import type { ClientAppKind } from "@makyschool/shared/constants";
 import { USER_DISPLAY_NAME_SQL, normalizeUserRole } from "../../db/userSql.js";
 import { pool } from "../../db/pool.js";
-import { TENANT_HEADERS } from "@makyschool/shared/constants";
 import { getCookie } from "../../utils/http.js";
 import {
   SUPERADMIN_ACCESS_COOKIE,
@@ -10,11 +11,11 @@ import {
   TENANT_ACCESS_COOKIE,
   TENANT_REFRESH_COOKIE,
   cookieOptions,
-  signSuperAdminToken,
   signTenantToken,
   verifySuperAdminToken,
   verifyTenantToken,
 } from "../../utils/auth.js";
+import { authenticateSuperAdmin, isSuperAdminEmail } from "../../utils/platformLogin.js";
 
 export const authRouter = Router();
 
@@ -25,6 +26,15 @@ type SchoolRow = {
   status: string;
   subscription_status: string;
 };
+
+function resolveClientApp(req: import("express").Request): ClientAppKind {
+  const header = req.header(CLIENT_APP_HEADER)?.trim().toLowerCase();
+  return header === "platform" ? "platform" : "tenant";
+}
+
+function platformAppUrl() {
+  return (process.env.PLATFORM_APP_URL ?? "http://localhost:3001").replace(/\/$/, "");
+}
 
 function resolveSchoolRedirectPath(
   isTempPassword: boolean,
@@ -63,44 +73,21 @@ authRouter.post("/login", async (req, res) => {
 
   clearAuthCookies(res);
 
-  const superAdminResult = await pool.query<{
-    id: string;
-    email: string;
-    password_hash: string;
-    name: string;
-  }>(
-    "SELECT id, email, password_hash, name FROM super_admins WHERE LOWER(email) = LOWER($1) LIMIT 1",
-    [normalizedEmail],
-  );
+  const clientApp = resolveClientApp(req);
 
-  const superAdmin = superAdminResult.rows[0];
-  if (superAdmin) {
-    const isValid = await bcrypt.compare(password, superAdmin.password_hash);
-    if (!isValid) {
-      return res.status(401).json({ error: "Invalid credentials" });
+  if (clientApp === "platform") {
+    const result = await authenticateSuperAdmin(normalizedEmail, password, res);
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error });
     }
+    return res.json({ data: result.data });
+  }
 
-    const payload = {
-      sub: superAdmin.id,
-      email: superAdmin.email,
-      name: superAdmin.name,
-      role: "super_admin" as const,
-    };
-
-    res.cookie(SUPERADMIN_ACCESS_COOKIE, signSuperAdminToken(payload, "15m"), cookieOptions(15 * 60 * 1000));
-    res.cookie(SUPERADMIN_REFRESH_COOKIE, signSuperAdminToken(payload, "7d"), cookieOptions(7 * 24 * 60 * 60 * 1000));
-
-    return res.json({
-      data: {
-        accountType: "platform" as const,
-        role: "super_admin" as const,
-        redirectTo: "/superadmin/dashboard",
-        user: {
-          id: superAdmin.id,
-          email: superAdmin.email,
-          name: superAdmin.name,
-        },
-      },
+  if (await isSuperAdminEmail(normalizedEmail)) {
+    return res.status(403).json({
+      error: "Platform administrator accounts must sign in on the platform console.",
+      code: "PLATFORM_ACCOUNT",
+      redirectUrl: `${platformAppUrl()}/login`,
     });
   }
 

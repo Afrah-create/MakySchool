@@ -2,7 +2,7 @@
 
 import { SWRConfig } from "swr";
 import { AuthProvider } from "@/providers/AuthProvider";
-import { ThemeProvider } from "@/providers/ThemeProvider";
+import { ThemeProvider } from "@makyschool/ui/providers/ThemeProvider";
 import { swrConfig } from "@/lib/swr/config";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {

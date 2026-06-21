@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import type { StatusBannerTone } from "@/components/ui/StatusBanner";
+import type { StatusBannerTone } from "@makyschool/ui/components/ui/StatusBanner";
 
 export type MutationFeedback = {
   tone: StatusBannerTone;

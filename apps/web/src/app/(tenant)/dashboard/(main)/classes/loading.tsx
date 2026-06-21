@@ -1,4 +1,4 @@
-import { SkeletonStatGrid, SkeletonTable } from "@/components/ui/Skeleton";
+import { SkeletonStatGrid, SkeletonTable } from "@makyschool/ui/components/ui/Skeleton";
 
 export default function ClassesPageLoading() {
   return (

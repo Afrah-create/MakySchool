@@ -1,6 +1,5 @@
 import Image from "next/image";
 import { BookOpen, GraduationCap, ShieldCheck } from "lucide-react";
-import { DEFAULT_ROOT_DOMAIN } from "@makyschool/shared/constants";
 import { getServerApiBaseUrl } from "@/lib/api/base-url";
 
 export type AuthSchoolPreview = {

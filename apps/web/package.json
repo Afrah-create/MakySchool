@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@makyschool/shared": "*",
+    "@makyschool/ui": "*",
     "jose": "^6.2.3",
     "lucide-react": "^1.17.0",
     "motion": "^12.40.0",

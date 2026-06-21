@@ -1,4 +1,4 @@
-import { TENANT_HEADERS } from "@makyschool/shared/constants";
+import { CLIENT_APP_HEADER, TENANT_HEADERS } from "@makyschool/shared/constants";
 import type { ApiError, ApiResponse } from "@makyschool/shared/types";
 import { normalizeApiPath, resolveClientApiUrl } from "@/lib/api/base-url";
 import { readStoredSchoolSlug } from "@/lib/auth/session";
@@ -43,6 +43,8 @@ export async function apiClient<T>(
   if (schoolId) {
     headers.set(TENANT_HEADERS.SCHOOL_ID, schoolId);
   }
+
+  headers.set(CLIENT_APP_HEADER, "tenant");
 
   let response: Response;
 
@@ -106,6 +108,9 @@ export async function apiClient<T>(
       code?: string;
     };
     requestError.code = error.code;
+    if (error.redirectUrl) {
+      (requestError as Error & { redirectUrl?: string }).redirectUrl = error.redirectUrl;
+    }
     throw requestError;
   }
 

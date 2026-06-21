@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import { AppProviders } from "@/providers/AppProviders";
 import { getTenantFromHeaders } from "@/lib/tenant/server";
-import "./globals.css";
+import "@makyschool/ui/styles/globals.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

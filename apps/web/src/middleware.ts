@@ -15,6 +15,14 @@ function clearTenantCookies(response: NextResponse) {
   response.cookies.delete(TENANT_REFRESH_COOKIE);
 }
 
+function platformAppUrl() {
+  return (
+    process.env.NEXT_PUBLIC_PLATFORM_APP_URL ??
+    process.env.PLATFORM_APP_URL ??
+    "http://localhost:3001"
+  ).replace(/\/$/, "");
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -22,9 +30,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  const hasSuperAdminSession =
-    request.cookies.get("superadmin_access_token") ??
-    request.cookies.get("superadmin_refresh_token");
+  if (pathname.startsWith("/superadmin")) {
+    return NextResponse.redirect(new URL(`${platformAppUrl()}${pathname.replace("/superadmin", "") || "/dashboard"}`, request.url));
+  }
 
   const hasTenantSession =
     request.cookies.get(TENANT_ACCESS_COOKIE) ?? request.cookies.get(TENANT_REFRESH_COOKIE);
@@ -68,20 +76,14 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (pathname === "/login") {
-    if (hasSuperAdminSession) {
-      return NextResponse.redirect(new URL("/superadmin/dashboard", request.url));
+  if (pathname === "/login" && tenantPayload) {
+    if (tenantPayload.mustChangePassword) {
+      return NextResponse.redirect(new URL("/auth/change-password", request.url));
     }
-
-    if (tenantPayload) {
-      if (tenantPayload.mustChangePassword) {
-        return NextResponse.redirect(new URL("/auth/change-password", request.url));
-      }
-      if (!tenantPayload.setupCompleted) {
-        return NextResponse.redirect(new URL(SETUP_PATH, request.url));
-      }
-      return NextResponse.redirect(new URL("/dashboard", request.url));
+    if (!tenantPayload.setupCompleted) {
+      return NextResponse.redirect(new URL(SETUP_PATH, request.url));
     }
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   const host = request.headers.get("host") ?? "";

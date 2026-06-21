@@ -1,0 +1,29 @@
+{
+  "name": "@makyschool/ui",
+  "version": "0.1.0",
+  "private": true,
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    "./styles/globals.css": "./src/styles/globals.css",
+    "./lib/cn": "./src/lib/cn.ts",
+    "./providers/ThemeProvider": "./src/providers/ThemeProvider.tsx",
+    "./hooks/useDelayedTrue": "./src/hooks/useDelayedTrue.ts",
+    "./components/ui/*": "./src/components/ui/*.tsx",
+    "./components/layout/*": "./src/components/layout/*.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "lucide-react": "^1.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.5",
+    "typescript": "^5.8.3"
+  }
+}

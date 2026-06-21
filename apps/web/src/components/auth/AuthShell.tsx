@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Eye, EyeOff } from "lucide-react";
-import { cn } from "@/lib/utils/cn";
+import { cn } from "@makyschool/ui/lib/cn";
 
 export function AuthInput({
   id,

@@ -2,7 +2,7 @@
 
 import { getLevelsForSchoolType } from "@makyschool/shared/constants";
 import type { ClassRecord, SchoolType } from "@makyschool/shared/types";
-import { SlideOver } from "@/components/ui/SlideOver";
+import { SlideOver } from "@makyschool/ui/components/ui/SlideOver";
 
 type ClassFormSlideOverProps = {
   open: boolean;

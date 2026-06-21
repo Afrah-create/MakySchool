@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { Pencil, Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils/cn";
+import { cn } from "@makyschool/ui/lib/cn";
 
 export function AcademicTabNav<T extends string>({
   tabs,

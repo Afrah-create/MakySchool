@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { SUBSCRIPTION_FEE_UGX } from "@makyschool/shared/constants";
-import { DashboardPage } from "@/components/layout/DashboardPage";
+import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
 import { apiFetch } from "@/lib/api/server";
 import { getServerTenantContext } from "@/lib/tenant/server";
 import type { SchoolRecord } from "@makyschool/shared/types";

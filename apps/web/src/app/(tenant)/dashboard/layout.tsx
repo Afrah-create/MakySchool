@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { DashboardRightRail } from "@/components/layout/DashboardRightRail";
-import { DashboardShell } from "@/components/layout/DashboardShell";
+import { DashboardShell } from "@makyschool/ui/components/layout/DashboardShell";
 import { DashboardTopBar } from "@/components/layout/DashboardTopBar";
 import { TenantMobileNav } from "@/components/layout/TenantMobileNav";
 import { TenantSidebar } from "@/components/layout/TenantSidebar";

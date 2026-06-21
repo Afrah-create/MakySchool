@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BookOpen, CreditCard, LayoutDashboard, LogOut } from "lucide-react";
 import { subscriptionsEnabled } from "@makyschool/shared/constants";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { apiClient } from "@/lib/api/client";
 import { clearSchoolSlug } from "@/lib/auth/session";
 

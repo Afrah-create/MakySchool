@@ -20,10 +20,10 @@ import {
   AcademicFilterSelect,
   AcademicPagination,
 } from "@/components/tenant/academic/AcademicLayout";
-import { Badge } from "@/components/ui/Badge";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { QueryState } from "@/components/ui/QueryState";
-import { SkeletonTable } from "@/components/ui/Skeleton";
+import { Badge } from "@makyschool/ui/components/ui/Badge";
+import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
+import { QueryState } from "@makyschool/ui/components/ui/QueryState";
+import { SkeletonTable } from "@makyschool/ui/components/ui/Skeleton";
 import { useListControls } from "@/lib/academic/useListControls";
 
 type LinkFilter = "all" | "linked" | "unlinked";
@@ -337,10 +337,16 @@ function BySubjectView({
   );
 
   useEffect(() => {
-    if (selectedSubject) {
+    if (!selectedSubject) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
       setDraftClassIds(selectedSubject.class_ids ?? []);
       setDirty(false);
-    }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [selectedSubject]);
 
   const filteredSubjects = useMemo(() => {
@@ -382,7 +388,10 @@ function BySubjectView({
     resetDeps: [levelFilter, linkFilter, selectedSubject?.id],
   });
 
-  const baselineIds = selectedSubject?.class_ids ?? [];
+  const baselineIds = useMemo(
+    () => selectedSubject?.class_ids ?? [],
+    [selectedSubject?.class_ids],
+  );
   const linkedCount = draftClassIds.length;
 
   function toggleClass(classId: string) {

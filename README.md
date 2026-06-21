@@ -1,18 +1,20 @@
 # MakySchool
 
-MakySchool is a multi-tenant school management platform built for Ugandan schools. A single deployment hosts many schools. Each school gets its own subdomain, isolated data, and an admin dashboard for day-to-day configuration. Platform operators use a separate superadmin console to provision schools and monitor subscription status.
+MakySchool is a multi-tenant school management platform built for Ugandan schools. School tenants run on `apps/web` (`school.makylegacy.com` + `*.school.makylegacy.com`). Platform operators use `apps/admin` (`myschool.makylegacy.com`) to provision schools. All frontends share one Express API.
 
-The codebase is a Node.js monorepo: a Next.js frontend, an Express API, and a shared package for types and constants used by both.
+The codebase is a Node.js monorepo: two Next.js frontends, an Express API, and shared packages for types, UI, and constants.
 
 ## Repository layout
 
 ```
 MakySchool/
 ├── apps/
+│   ├── admin/        Next.js 16 platform console (school provisioning)
 │   ├── api/          Express REST API, migrations, file uploads
-│   └── web/          Next.js 16 app (tenant UI, superadmin UI, auth)
+│   └── web/          Next.js 16 tenant app (school admin UI, auth)
 ├── packages/
-│   └── shared/       Shared types, constants, env loader
+│   ├── shared/       Shared types, constants, env loader
+│   └── ui/           Shared design system and dashboard shell
 ├── infrastructure/
 │   └── caddy/        Example reverse proxy config for local subdomains
 ├── .env.example      Copy to .env at the repo root
@@ -25,19 +27,20 @@ Legacy database tables from the original single-school product live in `apps/api
 
 ### Runtime split
 
-| Layer | Technology | Port (local) |
-|-------|------------|--------------|
-| Web | Next.js 16, React 19, Tailwind 4 | 3000 |
-| API | Express 5, TypeScript | 4000 |
-| Database | PostgreSQL (Supabase in production) | — |
+| Layer | Technology | Port (local) | Production domain |
+|-------|------------|--------------|-------------------|
+| Tenant web | Next.js 16, React 19, Tailwind 4 | 3000 | `school.makylegacy.com`, `*.school.makylegacy.com` |
+| Platform admin | Next.js 16 | 3001 | `myschool.makylegacy.com` |
+| API | Express 5, TypeScript | 4000 | Render (or similar) |
+| Database | PostgreSQL (Supabase) | — | — |
 
-The browser talks to Next.js on port 3000. API routes under `/api/*` are rewritten by `next.config.ts` to the Express server. This keeps cookies same-origin and avoids CORS issues during development.
+Each frontend proxies `/api/*` to Express via `next.config.ts` rewrites. This keeps cookies same-origin and avoids CORS issues.
 
 ### Multi-tenancy
 
 Tenants are identified by school slug, not by separate databases.
 
-1. **Subdomain routing.** In production, `greenfield-academy.makyschool.com` resolves the tenant `greenfield-academy`. Reserved subdomains (`www`, `api`, `admin`, `app`) are ignored.
+1. **Subdomain routing.** In production, `greenfield-academy.school.makylegacy.com` resolves the tenant `greenfield-academy`. Reserved subdomains (`www`, `api`, `admin`, `app`, `myschool`) are ignored.
 
 2. **Local development.** Plain `localhost` has no subdomain. Set `DEV_TENANT_SLUG` in `.env` to simulate a tenant, or use `schoolslug.localhost` with the Caddy config in `infrastructure/caddy/`.
 
@@ -45,15 +48,15 @@ Tenants are identified by school slug, not by separate databases.
 
 4. **Row isolation.** School-scoped queries filter on `school_id`. Tenant routes run only after `requireTenantAuth` confirms a valid JWT for that school.
 
-### Two portals, one login page
+### Two portals, separate apps
 
-`/login` handles both account types. The API checks `super_admins` first, then school `users`. Successful superadmin login sets `superadmin_*` cookies and redirects to `/superadmin/dashboard`. School admin login sets `tenant_*` cookies and follows the onboarding path below.
+| Portal | App | URL | Who uses it |
+|--------|-----|-----|-------------|
+| Platform admin | `apps/admin` | `myschool.makylegacy.com` (`/login`, `/dashboard`, `/schools/*`) | Platform operators |
+| School admin | `apps/web` | `{slug}.school.makylegacy.com` (`/login`, `/dashboard/*`) | School administrators |
+| Setup wizard | `apps/web` | `/dashboard/setup` | New schools (no sidebar) |
 
-| Portal | URL prefix | Who uses it |
-|--------|------------|-------------|
-| Superadmin | `/superadmin/*` | Platform operators |
-| School admin | `/dashboard/*` | School administrators |
-| Setup wizard | `/dashboard/setup` | New schools (no sidebar) |
+Platform login uses `POST /api/superadmin/auth/login`. Tenant login uses `POST /api/auth/login` with `x-makyschool-client-app: tenant` and rejects platform administrator emails.
 
 ### School provisioning and onboarding
 
@@ -89,7 +92,8 @@ Public routes (no tenant context):
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/api/health` | Health check |
-| POST | `/api/auth/login` | Superadmin or school login |
+| POST | `/api/auth/login` | Tenant school login |
+| POST | `/api/superadmin/auth/login` | Platform admin login |
 | POST | `/api/auth/logout` | Clear session cookies |
 | POST | `/api/auth/change-password` | First-login password change |
 | POST | `/api/superadmin/auth/*` | Superadmin session helpers |
@@ -109,12 +113,17 @@ Uploaded logos and stamps are stored under `apps/api/uploads/` and served at `/u
 
 ## Web application structure
 
-Route groups under `apps/web/src/app/`:
+**Tenant app** (`apps/web/src/app/`):
 
-- `(platform)/` — shared auth pages (`/login`, `/auth/change-password`)
+- `(platform)/` — auth pages (`/login`, `/auth/change-password`)
 - `(tenant)/dashboard/` — school admin area after onboarding
-- `superadmin/` — platform console
 - `page.tsx` — landing page; shows tenant subdomain when resolved from host
+
+**Platform admin** (`apps/admin/src/app/`):
+
+- `/login` — platform administrator sign-in
+- `/dashboard` — school list and provisioning
+- `/schools/[id]` — school detail
 
 Client components fetch through `apiClient` in `src/lib/api/client.ts`, which attaches tenant headers and sends cookies. Server components use `apiFetch` with headers injected by middleware.
 
@@ -133,7 +142,7 @@ The setup wizard (`WizardShell` + step components) saves each step to the API an
 - Constants (`TENANT_HEADERS`, cookie names, class levels, Uganda term names)
 - `loadMonorepoEnv()` — reads root `.env` and optional `.env.local`
 
-Both apps import from here so cookie names, header names, and types stay aligned.
+Both frontends import from `@makyschool/shared` and `@makyschool/ui` so cookie names, header names, types, and UI stay aligned.
 
 ## Database
 
@@ -166,8 +175,9 @@ All configuration lives in a single `.env` at the repository root. Copy `.env.ex
 
 Important groups:
 
-- **Next.js** — `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_API_URL` (use `/api` for same-origin proxy)
-- **API** — `PORT`, `API_INTERNAL_URL`, `CORS_ORIGIN`
+- **Tenant web** — `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_PLATFORM_APP_URL`, `NEXT_PUBLIC_API_URL`
+- **Platform admin** — `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_TENANT_APP_URL`, `SUPERADMIN_JWT_SECRET`
+- **API** — `PORT`, `API_INTERNAL_URL`, `CORS_ORIGIN` (comma-separated origins), `PLATFORM_APP_URL`
 - **Database** — `DATABASE_URL` (URL-encode special characters in passwords)
 - **Auth** — `TENANT_JWT_SECRET` must match between API and Next.js middleware; `SUPERADMIN_JWT_SECRET` for platform sessions
 - **Local tenant** — `DEV_TENANT_SLUG` when testing without subdomains
@@ -188,9 +198,11 @@ npm run seed
 npm run dev
 ```
 
-`npm run dev` starts both the API (port 4000) and Next.js (port 3000) via `concurrently`.
+`npm run dev` starts the tenant web (3000), platform admin (3001), and API (4000) via `concurrently`.
 
-Open `http://localhost:3000/login` for the unified login. Superadmin goes to `/superadmin/dashboard`. For a provisioned school, set `DEV_TENANT_SLUG` to that school's slug or log in with the school slug field on the login form.
+- Tenant login: `http://localhost:3000/login`
+- Platform admin: `http://localhost:3001/login`
+- For a provisioned school on localhost, set `DEV_TENANT_SLUG` or use the school slug field on the login form.
 
 ### Subdomain testing with Caddy
 
@@ -200,7 +212,8 @@ The sample `infrastructure/caddy/Caddyfile` proxies `*.localhost` to Next.js and
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | API + web in watch mode |
+| `npm run dev` | API + tenant web + platform admin |
+| `npm run dev:admin` | Platform admin only (port 3001) |
 | `npm run dev:api` | API only |
 | `npm run dev:web` | Next.js only |
 | `npm run migrate` | Apply pending SQL migrations |
@@ -211,7 +224,17 @@ The sample `infrastructure/caddy/Caddyfile` proxies `*.localhost` to Next.js and
 
 ## Deployment notes
 
-Run the API and Next.js as separate processes. Point `API_INTERNAL_URL` at the API service so Next.js rewrites work in production. Set strong values for both JWT secrets and superadmin credentials before going live.
+Deploy three services:
+
+| Service | Host | Root directory |
+|---------|------|----------------|
+| API | Render (or similar) | repo root |
+| Tenant web | Vercel | `apps/web` |
+| Platform admin | Vercel | `apps/admin` |
+
+Set `API_INTERNAL_URL` on both Vercel projects to the API URL. Set `CORS_ORIGIN` on the API to both frontend origins (comma-separated). Set `PLATFORM_APP_URL=https://myschool.makylegacy.com` on the API.
+
+Tenant Vercel domains: `school.makylegacy.com`, `*.school.makylegacy.com`. Admin Vercel domain: `myschool.makylegacy.com`.
 
 File uploads persist on the API filesystem. Mount a volume at `apps/api/uploads` or plan object storage if you scale beyond a single node.
 

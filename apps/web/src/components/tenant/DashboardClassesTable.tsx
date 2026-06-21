@@ -4,9 +4,9 @@ import Link from "next/link";
 import { GraduationCap } from "lucide-react";
 import { formatClassLabel, sortClasses } from "@makyschool/shared/constants";
 import type { ClassWithDetails } from "@makyschool/shared/types";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { QueryState } from "@/components/ui/QueryState";
-import { SkeletonTable } from "@/components/ui/Skeleton";
+import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
+import { QueryState } from "@makyschool/ui/components/ui/QueryState";
+import { SkeletonTable } from "@makyschool/ui/components/ui/Skeleton";
 import { useTenantSWR } from "@/hooks/useTenantSWR";
 import { useTenantSchool } from "@/providers/TenantSchoolProvider";
 

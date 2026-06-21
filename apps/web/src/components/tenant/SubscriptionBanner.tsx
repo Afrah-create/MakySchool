@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { subscriptionsEnabled } from "@makyschool/shared/constants";
-import { Badge } from "@/components/ui/Badge";
+import { Badge } from "@makyschool/ui/components/ui/Badge";
 import { useTenantSchool } from "@/providers/TenantSchoolProvider";
 
 export function SubscriptionBanner() {

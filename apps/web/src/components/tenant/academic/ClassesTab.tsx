@@ -16,11 +16,11 @@ import {
   RowActions,
 } from "@/components/tenant/academic/AcademicLayout";
 import { ClassFormSlideOver } from "@/components/tenant/academic/ClassFormSlideOver";
-import { Badge } from "@/components/ui/Badge";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { QueryState } from "@/components/ui/QueryState";
-import { SkeletonTable } from "@/components/ui/Skeleton";
+import { Badge } from "@makyschool/ui/components/ui/Badge";
+import { ConfirmDialog } from "@makyschool/ui/components/ui/ConfirmDialog";
+import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
+import { QueryState } from "@makyschool/ui/components/ui/QueryState";
+import { SkeletonTable } from "@makyschool/ui/components/ui/Skeleton";
 import { useListControls } from "@/lib/academic/useListControls";
 
 type ClassStatus = "all" | "active" | "needs_subjects" | "at_capacity";

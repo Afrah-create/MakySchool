@@ -3,7 +3,9 @@ export {
   SUPERADMIN_REFRESH_COOKIE,
   TENANT_ACCESS_COOKIE,
   TENANT_REFRESH_COOKIE,
+  CLIENT_APP_HEADER,
 } from "./auth";
+export type { ClientAppKind } from "./auth";
 
 export const TENANT_HEADERS = {
   SCHOOL_SLUG: "x-school-slug",
@@ -17,7 +19,7 @@ export const USER_ROLES = {
   LEARNER: "learner",
 } as const;
 
-export const DEFAULT_ROOT_DOMAIN = "makyschool.com";
+export const DEFAULT_ROOT_DOMAIN = "school.makylegacy.com";
 
 export const UGANDA_TERMS = ["Term 1", "Term 2", "Term 3"] as const;
 

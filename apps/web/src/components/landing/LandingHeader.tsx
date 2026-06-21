@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { fadeUp } from "@/components/landing/landingMotion";
 
 export function LandingHeader() {

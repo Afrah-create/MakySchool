@@ -1,6 +1,6 @@
 "use client";
 
-import { FileUpload } from "@/components/ui/FileUpload";
+import { FileUpload } from "@makyschool/ui/components/ui/FileUpload";
 
 type ProfileValue = {
   name: string;

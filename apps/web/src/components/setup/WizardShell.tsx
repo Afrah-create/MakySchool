@@ -67,6 +67,31 @@ function initialState(school?: SchoolRecord | null): WizardState {
   };
 }
 
+function loadWizardState(schoolId: string, school?: SchoolRecord | null): WizardState {
+  const base = initialState(school);
+
+  if (typeof window === "undefined") {
+    return base;
+  }
+
+  const saved = window.localStorage.getItem(draftKey(schoolId));
+  if (!saved) {
+    return base;
+  }
+
+  try {
+    const parsed = JSON.parse(saved) as Partial<WizardState>;
+    return {
+      ...base,
+      ...parsed,
+      profile: { ...base.profile, ...parsed.profile, logo: null, stamp: null },
+    };
+  } catch {
+    window.localStorage.removeItem(draftKey(schoolId));
+    return base;
+  }
+}
+
 function validateStep(state: WizardState, step: number) {
   if (step === 1) {
     if (!state.profile.name.trim()) return "School name is required";
@@ -154,7 +179,7 @@ export function WizardShell({
   schoolId: string;
 }) {
   const router = useRouter();
-  const [state, setState] = useState(() => initialState(school));
+  const [state, setState] = useState(() => loadWizardState(schoolId, school));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusChecked, setStatusChecked] = useState(false);
@@ -164,22 +189,6 @@ export function WizardShell({
   useEffect(() => {
     persistSchoolSlug(schoolSlug);
   }, [schoolSlug]);
-
-  useEffect(() => {
-    const saved = window.localStorage.getItem(storageKey);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as Partial<WizardState>;
-        setState((current) => ({
-          ...current,
-          ...parsed,
-          profile: { ...current.profile, ...parsed.profile, logo: null, stamp: null },
-        }));
-      } catch {
-        window.localStorage.removeItem(storageKey);
-      }
-    }
-  }, [storageKey]);
 
   useEffect(() => {
     if (!statusChecked) {

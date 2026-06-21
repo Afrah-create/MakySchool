@@ -2,16 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { ProgressBar } from "@/components/ui/ProgressBar";
+import { ProgressBar } from "@makyschool/ui/components/ui/ProgressBar";
 
 export function DashboardNavProgress() {
   const pathname = usePathname();
   const [active, setActive] = useState(false);
 
   useEffect(() => {
-    setActive(true);
-    const timer = window.setTimeout(() => setActive(false), 600);
-    return () => window.clearTimeout(timer);
+    const showTimer = window.setTimeout(() => setActive(true), 0);
+    const hideTimer = window.setTimeout(() => setActive(false), 600);
+    return () => {
+      window.clearTimeout(showTimer);
+      window.clearTimeout(hideTimer);
+    };
   }, [pathname]);
 
   if (!active) {

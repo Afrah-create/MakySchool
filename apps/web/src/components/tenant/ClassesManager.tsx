@@ -7,7 +7,7 @@ import { AssignmentsTab } from "@/components/tenant/academic/AssignmentsTab";
 import { ClassesTab } from "@/components/tenant/academic/ClassesTab";
 import { SubjectsTab } from "@/components/tenant/academic/SubjectsTab";
 import { AcademicSummaryCards, AcademicTabNav } from "@/components/tenant/academic/AcademicLayout";
-import { StatusBanner } from "@/components/ui/StatusBanner";
+import { StatusBanner } from "@makyschool/ui/components/ui/StatusBanner";
 import { apiClient } from "@/lib/api/client";
 import { parseAcademicError } from "@/lib/academic/feedback";
 import { useDashboardMutation } from "@/hooks/useDashboardMutation";

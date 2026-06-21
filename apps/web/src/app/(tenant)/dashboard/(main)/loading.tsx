@@ -1,4 +1,4 @@
-import { SkeletonPanel, SkeletonStatGrid, SkeletonTable } from "@/components/ui/Skeleton";
+import { SkeletonPanel, SkeletonStatGrid, SkeletonTable } from "@makyschool/ui/components/ui/Skeleton";
 
 export default function DashboardMainLoading() {
   return (

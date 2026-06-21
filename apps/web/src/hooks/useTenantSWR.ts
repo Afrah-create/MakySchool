@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR, { type SWRConfiguration } from "swr";
-import { useDelayedTrue } from "@/hooks/useDelayedTrue";
+import { useDelayedTrue } from "@makyschool/ui/hooks/useDelayedTrue";
 import { useTenantSchool } from "@/providers/TenantSchoolProvider";
 import { tenantFetcher, type TenantSWRKey } from "@/lib/swr/fetcher";
 

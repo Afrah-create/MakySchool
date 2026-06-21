@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, Plus, Search } from "lucide-react";
 import { DashboardNavProgress } from "@/components/layout/DashboardNavProgress";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 
 function primaryActionForPath(pathname: string) {
   if (pathname.startsWith("/dashboard/classes")) {

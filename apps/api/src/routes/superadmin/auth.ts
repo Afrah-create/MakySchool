@@ -8,6 +8,7 @@ import {
   TENANT_REFRESH_COOKIE,
   verifySuperAdminToken,
 } from "../../utils/auth.js";
+import { authenticateSuperAdmin } from "../../utils/platformLogin.js";
 
 export const superAdminAuthRouter = Router();
 
@@ -17,6 +18,23 @@ function clearAuthCookies(res: import("express").Response) {
   res.clearCookie(TENANT_ACCESS_COOKIE, { path: "/" });
   res.clearCookie(TENANT_REFRESH_COOKIE, { path: "/" });
 }
+
+superAdminAuthRouter.post("/login", async (req, res) => {
+  const { email, password } = req.body as { email?: string; password?: string };
+
+  if (!email?.trim() || !password) {
+    return res.status(400).json({ error: "Email and password are required" });
+  }
+
+  clearAuthCookies(res);
+
+  const result = await authenticateSuperAdmin(email, password, res);
+  if (!result.ok) {
+    return res.status(result.status).json({ error: result.error });
+  }
+
+  return res.json({ data: result.data });
+});
 
 superAdminAuthRouter.get("/me", async (req, res) => {
   const token = getCookie(req, SUPERADMIN_ACCESS_COOKIE) ?? getCookie(req, SUPERADMIN_REFRESH_COOKIE);
@@ -41,7 +59,6 @@ superAdminAuthRouter.get("/me", async (req, res) => {
   }
 });
 
-// Deprecated: use POST /api/auth/logout instead.
 superAdminAuthRouter.post("/logout", (_req, res) => {
   clearAuthCookies(res);
   return res.json({ data: { ok: true } });

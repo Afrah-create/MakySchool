@@ -10,7 +10,9 @@ services:
       - key: NODE_ENV
         value: production
       - key: CORS_ORIGIN
-        value: https://maky-school-web.vercel.app
+        value: https://school.makylegacy.com,https://myschool.makylegacy.com
+      - key: PLATFORM_APP_URL
+        value: https://myschool.makylegacy.com
       - key: RUN_MIGRATIONS
         value: "true"
       - key: DATABASE_URL

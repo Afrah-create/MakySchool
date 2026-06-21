@@ -3,7 +3,7 @@ import { DEFAULT_ROOT_DOMAIN } from "@makyschool/shared/constants";
 const LOCALHOST_SUFFIXES = [".localhost", "localhost"];
 
 /** Reserved subdomains that are not school tenants */
-const RESERVED_SUBDOMAINS = new Set(["www", "api", "admin", "app"]);
+const RESERVED_SUBDOMAINS = new Set(["www", "api", "admin", "app", "myschool"]);
 
 export function extractSchoolSlug(host: string): string | null {
   const hostname = host.split(":")[0]?.toLowerCase() ?? "";

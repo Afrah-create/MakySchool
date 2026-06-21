@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 
 export function AuthLoginPanel({
   title,

@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { BookOpen, GraduationCap, Users } from "lucide-react";
 import type { ClassWithDetails } from "@makyschool/shared/types";
-import { QueryState } from "@/components/ui/QueryState";
-import { SkeletonStatGrid } from "@/components/ui/Skeleton";
+import { QueryState } from "@makyschool/ui/components/ui/QueryState";
+import { SkeletonStatGrid } from "@makyschool/ui/components/ui/Skeleton";
 import { useTenantSWR } from "@/hooks/useTenantSWR";
 
 export function DashboardStats() {

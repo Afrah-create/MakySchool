@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Building2, Lock, Mail } from "lucide-react";
 import {
   AuthAlert,
@@ -16,7 +16,7 @@ import { clearSchoolSlug, persistSchoolSlug, readStoredSchoolSlug } from "@/lib/
 type LoginStep = "email" | "password" | "school";
 
 type LoginResponse = {
-  accountType: "platform" | "school";
+  accountType: "school";
   role: string;
   redirectTo: string;
   school?: { slug: string; name: string; status: string } | null;
@@ -37,7 +37,10 @@ export function LoginForm({
   const [step, setStep] = useState<LoginStep>("email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [schoolSlug, setSchoolSlug] = useState(initialSchoolSlug ?? readStoredSchoolSlug() ?? "");
+  const [schoolSlug, setSchoolSlug] = useState(
+    () => lockedSchoolSlug ?? initialSchoolSlug ?? readStoredSchoolSlug() ?? "",
+  );
+  const effectiveSchoolSlug = lockedSchoolSlug ?? schoolSlug;
   const [emailError, setEmailError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [needsSchoolSlug, setNeedsSchoolSlug] = useState(false);
@@ -45,12 +48,6 @@ export function LoginForm({
 
   const totalSteps = needsSchoolSlug || step === "school" ? 3 : 2;
   const currentStep = step === "email" ? 1 : step === "password" ? 2 : 3;
-
-  useEffect(() => {
-    if (lockedSchoolSlug) {
-      setSchoolSlug(lockedSchoolSlug);
-    }
-  }, [lockedSchoolSlug]);
 
   function goToEmailStep() {
     setStep("email");
@@ -84,7 +81,7 @@ export function LoginForm({
       return;
     }
 
-    if (step === "school" && !schoolSlug.trim()) {
+    if (step === "school" && !effectiveSchoolSlug.trim()) {
       setError("Enter your school slug");
       return;
     }
@@ -98,12 +95,12 @@ export function LoginForm({
         body: {
           email: email.trim(),
           password,
-          schoolSlug: lockedSchoolSlug ?? (schoolSlug.trim() || undefined),
+          schoolSlug: lockedSchoolSlug ?? (effectiveSchoolSlug.trim() || undefined),
         },
         schoolSlug: lockedSchoolSlug,
       });
 
-      if (response.data.accountType === "school" && response.data.school?.slug) {
+      if (response.data.school?.slug) {
         persistSchoolSlug(response.data.school.slug);
       } else {
         clearSchoolSlug();
@@ -112,10 +109,16 @@ export function LoginForm({
       router.push(response.data.redirectTo);
       router.refresh();
     } catch (submissionError) {
-      const err = submissionError as Error & { code?: string };
+      const err = submissionError as Error & { code?: string; redirectUrl?: string };
       const message = err.message ?? "Login failed";
 
-      if (err.code === "SCHOOL_SLUG_REQUIRED" || message.toLowerCase().includes("school slug")) {
+      if (err.code === "PLATFORM_ACCOUNT") {
+        const platformUrl =
+          err.redirectUrl ??
+          process.env.NEXT_PUBLIC_PLATFORM_APP_URL ??
+          "http://localhost:3001/login";
+        setError(`${message} Sign in at ${platformUrl}`);
+      } else if (err.code === "SCHOOL_SLUG_REQUIRED" || message.toLowerCase().includes("school slug")) {
         setNeedsSchoolSlug(true);
         setStep("school");
         setError("Your email is linked to multiple schools. Enter your school slug to continue.");
@@ -195,7 +198,7 @@ export function LoginForm({
           <AuthInput
             id="schoolSlug"
             label="School slug"
-            value={schoolSlug}
+            value={effectiveSchoolSlug}
             onChange={setSchoolSlug}
             disabled={Boolean(lockedSchoolSlug)}
             placeholder="e.g. easton-high"

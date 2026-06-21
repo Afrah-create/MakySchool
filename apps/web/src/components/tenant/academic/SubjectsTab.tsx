@@ -9,12 +9,12 @@ import {
   AcademicToolbar,
   RowActions,
 } from "@/components/tenant/academic/AcademicLayout";
-import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { LoadingButton } from "@/components/ui/LoadingButton";
-import { QueryState } from "@/components/ui/QueryState";
-import { SkeletonTable } from "@/components/ui/Skeleton";
-import { SlideOver } from "@/components/ui/SlideOver";
+import { ConfirmDialog } from "@makyschool/ui/components/ui/ConfirmDialog";
+import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
+import { LoadingButton } from "@makyschool/ui/components/ui/LoadingButton";
+import { QueryState } from "@makyschool/ui/components/ui/QueryState";
+import { SkeletonTable } from "@makyschool/ui/components/ui/Skeleton";
+import { SlideOver } from "@makyschool/ui/components/ui/SlideOver";
 import { useListControls } from "@/lib/academic/useListControls";
 
 type SubjectsTabProps = {

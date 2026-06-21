@@ -1,8 +1,8 @@
 "use client";
 
-import { DashboardPage } from "@/components/layout/DashboardPage";
+import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
 import { ClassesManager } from "@/components/tenant/ClassesManager";
-import { SkeletonPanel } from "@/components/ui/Skeleton";
+import { SkeletonPanel } from "@makyschool/ui/components/ui/Skeleton";
 import { useTenantSchool } from "@/providers/TenantSchoolProvider";
 
 export function ClassesPageContent() {
