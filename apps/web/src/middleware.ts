@@ -6,6 +6,12 @@ import {
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getTenantPayloadFromRequest } from "@/lib/auth/verify-tenant-token";
+import {
+  homePathForPortal,
+  isSchoolAdminRole,
+  portalForRole,
+  resolvePostLoginPath,
+} from "@/lib/roles";
 import { extractSchoolSlug } from "@/lib/tenant/extract-school-slug";
 
 const SETUP_PATH = "/dashboard/setup";
@@ -23,6 +29,17 @@ function platformAppUrl() {
   ).replace(/\/$/, "");
 }
 
+function portalPathPrefix(portal: ReturnType<typeof portalForRole>) {
+  switch (portal) {
+    case "school-admin":
+      return "/dashboard";
+    case "teacher":
+      return "/teacher";
+    case "learner":
+      return "/learner";
+  }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -31,7 +48,12 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname.startsWith("/superadmin")) {
-    return NextResponse.redirect(new URL(`${platformAppUrl()}${pathname.replace("/superadmin", "") || "/dashboard"}`, request.url));
+    return NextResponse.redirect(
+      new URL(
+        `${platformAppUrl()}${pathname.replace("/superadmin", "") || "/dashboard"}`,
+        request.url,
+      ),
+    );
   }
 
   const hasTenantSession =
@@ -39,10 +61,13 @@ export async function middleware(request: NextRequest) {
 
   const tenantPayload = hasTenantSession ? await getTenantPayloadFromRequest(request) : null;
 
-  const isTenantProtected =
-    pathname.startsWith("/dashboard") || pathname.startsWith("/auth/change-password");
+  const isProtected =
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/teacher") ||
+    pathname.startsWith("/learner") ||
+    pathname.startsWith("/auth/change-password");
 
-  if (isTenantProtected) {
+  if (isProtected) {
     if (!hasTenantSession) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
@@ -57,33 +82,52 @@ export async function middleware(request: NextRequest) {
   if (tenantPayload) {
     const mustChangePassword = Boolean(tenantPayload.mustChangePassword);
     const setupCompleted = Boolean(tenantPayload.setupCompleted);
+    const portal = portalForRole(tenantPayload.role);
+    const roleHome = homePathForPortal(portal);
 
     if (mustChangePassword && pathname !== "/auth/change-password") {
       return NextResponse.redirect(new URL("/auth/change-password", request.url));
     }
 
-    if (
-      !mustChangePassword &&
-      !setupCompleted &&
-      pathname.startsWith("/dashboard") &&
-      pathname !== SETUP_PATH
-    ) {
-      return NextResponse.redirect(new URL(SETUP_PATH, request.url));
-    }
+    if (!mustChangePassword) {
+      if (pathname.startsWith("/dashboard") && portal !== "school-admin") {
+        return NextResponse.redirect(new URL(roleHome, request.url));
+      }
 
-    if (!mustChangePassword && setupCompleted && pathname === SETUP_PATH) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
+      if (pathname.startsWith("/teacher") && portal !== "teacher") {
+        return NextResponse.redirect(new URL(roleHome, request.url));
+      }
+
+      if (pathname.startsWith("/learner") && portal !== "learner") {
+        return NextResponse.redirect(new URL(roleHome, request.url));
+      }
+
+      if (
+        isSchoolAdminRole(tenantPayload.role) &&
+        !setupCompleted &&
+        pathname.startsWith("/dashboard") &&
+        pathname !== SETUP_PATH
+      ) {
+        return NextResponse.redirect(new URL(SETUP_PATH, request.url));
+      }
+
+      if (!mustChangePassword && setupCompleted && pathname === SETUP_PATH) {
+        return NextResponse.redirect(new URL("/dashboard", request.url));
+      }
     }
   }
 
   if (pathname === "/login" && tenantPayload) {
-    if (tenantPayload.mustChangePassword) {
-      return NextResponse.redirect(new URL("/auth/change-password", request.url));
-    }
-    if (!tenantPayload.setupCompleted) {
-      return NextResponse.redirect(new URL(SETUP_PATH, request.url));
-    }
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(
+      new URL(
+        resolvePostLoginPath({
+          role: tenantPayload.role,
+          mustChangePassword: tenantPayload.mustChangePassword,
+          setupCompleted: tenantPayload.setupCompleted,
+        }),
+        request.url,
+      ),
+    );
   }
 
   const host = request.headers.get("host") ?? "";
@@ -105,6 +149,10 @@ export async function middleware(request: NextRequest) {
 
   if (pathname === SETUP_PATH || pathname.startsWith(`${SETUP_PATH}/`)) {
     requestHeaders.set("x-makyschool-setup", "1");
+  }
+
+  if (tenantPayload && pathname.startsWith(portalPathPrefix(portalForRole(tenantPayload.role)))) {
+    requestHeaders.set("x-makyschool-portal", portalForRole(tenantPayload.role));
   }
 
   return NextResponse.next({

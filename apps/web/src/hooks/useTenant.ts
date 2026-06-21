@@ -1,1 +1,2 @@
-export { useTenantSchool } from "@/providers/TenantSchoolProvider";
+/** @deprecated Use useSchool from @/hooks/useSchool */
+export { useSchool as useTenant } from "@/hooks/useSchool";

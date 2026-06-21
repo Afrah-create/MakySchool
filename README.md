@@ -48,13 +48,42 @@ Tenants are identified by school slug, not by separate databases.
 
 4. **Row isolation.** School-scoped queries filter on `school_id`. Tenant routes run only after `requireTenantAuth` confirms a valid JWT for that school.
 
-### Two portals, separate apps
+### Role-based portals inside `apps/web`
+
+School-side users share one tenant app but are organized by role portal:
+
+| Portal | Route group | URLs | Roles |
+|--------|-------------|------|-------|
+| Public auth | `(public)/` | `/login`, `/auth/change-password` | Unauthenticated |
+| School admin | `(school-admin)/` | `/dashboard/*` | `admin`, `head_teacher` |
+| Teacher | `(teacher)/` | `/teacher/*` | `teacher` |
+| Learner | `(learner)/` | `/learner/*` | `learner` |
+
+Source layout:
+
+```
+apps/web/src/
+├── app/(public)/           # shared login & password change
+├── app/(school-admin)/     # school management dashboard
+├── app/(teacher)/          # teacher portal (scaffolded)
+├── app/(learner)/          # learner portal (scaffolded)
+├── components/school-admin/
+├── components/layout/school-admin/
+├── components/layout/shared/
+└── lib/roles/              # nav config, portal guards, post-login routing
+```
+
+Middleware and layout guards redirect each role to its home path after login.
+
+### Two deployable apps
 
 | Portal | App | URL | Who uses it |
 |--------|-----|-----|-------------|
 | Platform admin | `apps/admin` | `myschool.makylegacy.com` (`/login`, `/dashboard`, `/schools/*`) | Platform operators |
-| School admin | `apps/web` | `{slug}.school.makylegacy.com` (`/login`, `/dashboard/*`) | School administrators |
-| Setup wizard | `apps/web` | `/dashboard/setup` | New schools (no sidebar) |
+| School admin | `apps/web` | `{slug}.school.makylegacy.com` (`/dashboard/*`) | `admin`, `head_teacher` |
+| Teacher | `apps/web` | `/teacher/dashboard` | `teacher` |
+| Learner | `apps/web` | `/learner/dashboard` | `learner` |
+| Setup wizard | `apps/web` | `/dashboard/setup` | New school admins |
 
 Platform login uses `POST /api/superadmin/auth/login`. Tenant login uses `POST /api/auth/login` with `x-makyschool-client-app: tenant` and rejects platform administrator emails.
 

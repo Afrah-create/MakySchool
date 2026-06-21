@@ -10,6 +10,8 @@ import {
   AuthStepIndicator,
   AuthSubmitButton,
 } from "@/components/auth/AuthShell";
+import type { UserRole } from "@makyschool/shared/types";
+import { resolvePostLoginPath } from "@/lib/roles";
 import { apiClient } from "@/lib/api/client";
 import { clearSchoolSlug, persistSchoolSlug, readStoredSchoolSlug } from "@/lib/auth/session";
 
@@ -106,7 +108,13 @@ export function LoginForm({
         clearSchoolSlug();
       }
 
-      router.push(response.data.redirectTo);
+      router.push(
+        resolvePostLoginPath({
+          role: response.data.role as UserRole,
+          mustChangePassword: response.data.redirectTo === "/auth/change-password",
+          setupCompleted: response.data.redirectTo !== "/dashboard/setup",
+        }),
+      );
       router.refresh();
     } catch (submissionError) {
       const err = submissionError as Error & { code?: string; redirectUrl?: string };

@@ -7,9 +7,9 @@ import { formatClassLabel } from "@makyschool/shared/constants";
 import type { ClassWithDetails } from "@makyschool/shared/types";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { SkeletonAttentionList } from "@makyschool/ui/components/ui/Skeleton";
-import { useTenantSWR } from "@/hooks/useTenantSWR";
+import { useSchoolSWR } from "@/hooks/useSchoolSWR";
 import { useAuth } from "@/hooks/useAuth";
-import { useTenantSchool } from "@/providers/TenantSchoolProvider";
+import { useSchool } from "@/providers/SchoolProvider";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
@@ -35,12 +35,12 @@ function isSameDay(a: Date, b: Date) {
 
 export function DashboardRightRail() {
   const { state } = useAuth();
-  const { school } = useTenantSchool();
+  const { school } = useSchool();
   const today = new Date();
   const weekDays = getWeekDays(today);
 
   const { data: classes, isLoading, isValidating, error, mutate } =
-    useTenantSWR<ClassWithDetails[]>("/schools/classes");
+    useSchoolSWR<ClassWithDetails[]>("/schools/classes");
 
   const displayName = state.user?.name?.split(" ")[0] ?? "Admin";
   const monthLabel = today.toLocaleString("default", { month: "long" });
