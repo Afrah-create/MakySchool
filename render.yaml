@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: makyschool-api
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build --workspace=@makyschool/api
+    startCommand: npm run start --workspace=@makyschool/api
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        value: https://maky-school-web.vercel.app
+      - key: RUN_MIGRATIONS
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: TENANT_JWT_SECRET
+        sync: false
+      - key: SUPERADMIN_JWT_SECRET
+        sync: false
+      - key: SUPERADMIN_EMAIL
+        sync: false
+      - key: SUPERADMIN_PASSWORD
+        sync: false
+      - key: SUPERADMIN_NAME
+        value: Platform Admin

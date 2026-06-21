@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts"
@@ -20,7 +20,8 @@
     "jsonwebtoken": "^9.0.2",
     "lru-cache": "^11.1.0",
     "multer": "^2.0.2",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "tsx": "^4.19.4"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
@@ -30,7 +31,6 @@
     "@types/multer": "^2.0.0",
     "@types/node": "^22.15.21",
     "@types/pg": "^8.20.0",
-    "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }
 }
