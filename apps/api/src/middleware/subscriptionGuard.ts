@@ -3,7 +3,7 @@ import type { NextFunction, Response } from "express";
 import { pool } from "../db/pool.js";
 import type { TenantRequest } from "./tenant.js";
 
-const EXEMPT_PREFIXES = ["/api/schools/setup"];
+const EXEMPT_PREFIXES = ["/api/schools/setup", "/api/schools/billing"];
 
 export async function requireActiveSubscription(
   req: TenantRequest,

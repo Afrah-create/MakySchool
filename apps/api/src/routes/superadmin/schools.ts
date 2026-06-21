@@ -76,9 +76,9 @@ superAdminSchoolsRouter.get("/", async (req, res) => {
   const statsResult = await pool.query(
     `SELECT
        COUNT(*)::int AS total_schools,
-       COUNT(*) FILTER (WHERE status = 'active')::int AS active_schools,
-       COUNT(*) FILTER (WHERE status = 'setup')::int AS setup_schools,
-       COALESCE(SUM(sp.amount), 0)::int AS revenue_current_term
+       COUNT(*) FILTER (WHERE s.status = 'active')::int AS active_schools,
+       COUNT(*) FILTER (WHERE s.status = 'setup')::int AS setup_schools,
+       COALESCE(SUM(sp.amount) FILTER (WHERE sp.status = 'completed'), 0)::int AS revenue_current_term
      FROM schools s
      LEFT JOIN subscription_payments sp ON sp.school_id = s.id
      ${status ? `WHERE s.status = $1` : ""}`,

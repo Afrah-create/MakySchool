@@ -16,6 +16,8 @@ import { superAdminAuthRouter } from "./routes/superadmin/auth.js";
 import { superAdminSchoolsRouter } from "./routes/superadmin/schools.js";
 import { healthRouter } from "./routes/health.js";
 import { schoolPayWebhookRouter } from "./routes/webhooks/schoolpay.js";
+import { makyPayWebhookRouter } from "./routes/webhooks/makypay.js";
+import { schoolBillingRouter } from "./routes/schools/billing.js";
 import { schoolSetupRouter } from "./routes/schools/setup.js";
 import { classesRouter } from "./routes/schools/classes.js";
 import { subjectsRouter } from "./routes/schools/subjects.js";
@@ -45,12 +47,14 @@ app.use("/api/auth/change-password", changePasswordRouter);
 app.use("/api/superadmin/auth", superAdminAuthRouter);
 app.use("/api/superadmin/schools", superAdminSchoolsRouter);
 app.use("/api/webhooks/schoolpay", schoolPayWebhookRouter);
+app.use("/api/webhooks/makypay", makyPayWebhookRouter);
 
 app.use(tenantMiddleware);
 
 app.use(requireTenantAuth);
 app.use(requireActiveSubscription);
 app.use("/api/schools/setup", schoolSetupRouter);
+app.use("/api/schools/billing", schoolBillingRouter);
 app.use("/api/schools/classes", classesRouter);
 app.use("/api/schools/subjects", subjectsRouter);
 

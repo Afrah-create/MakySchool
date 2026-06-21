@@ -1,27 +1,48 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { SUBSCRIPTION_FEE_UGX } from "@makyschool/shared/constants";
 import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
+import { BillingCheckout } from "@/components/school-admin/BillingCheckout";
 import { apiFetch } from "@/lib/api/server";
+import { getTenantPayloadFromCookies } from "@/lib/auth/server-tenant";
 import { getServerTenantContext } from "@/lib/tenant/server";
-import type { SchoolRecord } from "@makyschool/shared/types";
+import type { BillingQuote, SchoolRecord, SetupStatusResponse } from "@makyschool/shared/types";
 
 export default async function BillingPage() {
   const headerList = await headers();
   const tenant = await getServerTenantContext(headerList);
+  const session = await getTenantPayloadFromCookies();
 
   if (!tenant?.schoolSlug) {
     redirect("/login");
   }
 
+  if (session?.role !== "admin") {
+    return (
+      <DashboardPage title="Billing" description="MakySchool subscription" maxWidth="lg">
+        <div className="ms-panel p-6 text-sm leading-6 text-theme-muted">
+          Only school administrators can manage billing. Ask your school admin to complete the
+          subscription payment.
+        </div>
+      </DashboardPage>
+    );
+  }
+
   let school: SchoolRecord | null = null;
+  let quote: BillingQuote | null = null;
 
   try {
-    const payload = await apiFetch<{ school: SchoolRecord | null }>("/schools/setup/status", {
-      schoolSlug: tenant.schoolSlug,
-    });
-    school = payload.school;
+    const [statusPayload, quotePayload] = await Promise.all([
+      apiFetch<SetupStatusResponse>("/schools/setup/status", {
+        schoolSlug: tenant.schoolSlug,
+      }),
+      apiFetch<BillingQuote>("/schools/billing/quote", {
+        schoolSlug: tenant.schoolSlug,
+      }).catch(() => null),
+    ]);
+
+    school = statusPayload.school ?? null;
+    quote = quotePayload;
   } catch {
     redirect("/login");
   }
@@ -30,35 +51,28 @@ export default async function BillingPage() {
     redirect("/dashboard/setup");
   }
 
+  const needsPayment =
+    school.subscription_status === "unpaid" || school.subscription_status === "expired";
+
   return (
     <DashboardPage
       title="Billing"
-      description="MakySchool subscription"
+      description={
+        needsPayment
+          ? "Pay your term subscription to restore full access"
+          : "MakySchool subscription"
+      }
       maxWidth="lg"
     >
-      <div className="rounded-2xl border border-theme bg-theme-surface p-6">
-        <p className="text-sm text-theme-muted">
-          Status: <span className="font-medium text-theme-primary">{school.subscription_status}</span>
-        </p>
-        <p className="mt-4 text-sm leading-6 text-theme-muted">
-          UGX {SUBSCRIPTION_FEE_UGX.toLocaleString()} per term via SchoolPay.
-        </p>
-        {school.schoolpay_code ? (
-          <p className="mt-4 rounded-lg border border-theme bg-input px-4 py-3 font-mono text-sm text-theme-primary">
-            {school.schoolpay_code}
-          </p>
-        ) : (
-          <p className="mt-4 text-sm text-theme-muted">
-            Contact your platform administrator for your SchoolPay code.
-          </p>
-        )}
-        <Link
-          href="/dashboard"
-          className="mt-6 inline-flex ms-btn-ghost"
-        >
-          Back
-        </Link>
-      </div>
+      <BillingCheckout school={school} quote={quote} />
+
+      {school.subscription_status === "active" ? (
+        <div className="mt-6">
+          <Link href="/dashboard" className="inline-flex ms-btn-ghost">
+            Back to dashboard
+          </Link>
+        </div>
+      ) : null}
     </DashboardPage>
   );
 }

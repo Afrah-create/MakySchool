@@ -35,7 +35,7 @@ export function SubscriptionBanner() {
       {!isActive ? (
         <p className="mt-3 text-sm text-theme-muted">
           <Link href="/dashboard/billing" className="font-medium text-theme-accent hover:underline">
-            Payment instructions
+            Pay with Mobile Money
           </Link>
         </p>
       ) : null}
