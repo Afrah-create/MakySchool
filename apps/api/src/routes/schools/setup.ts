@@ -13,6 +13,7 @@ import {
   cookieOptions,
   signTenantToken,
 } from "../../utils/auth.js";
+import { auditSchoolSubscription } from "../../services/subscriptionTerm.js";
 
 export const schoolSetupRouter = Router();
 
@@ -57,6 +58,8 @@ schoolSetupRouter.get("/status", async (req: TenantRequest, res) => {
   if (!schoolId) {
     return res.status(400).json({ error: "Missing tenant context" });
   }
+
+  await auditSchoolSubscription(schoolId);
 
   const [schoolResult, yearResult, gradingResult] = await Promise.all([
     pool.query(

@@ -5,11 +5,14 @@ import type { AuthenticatedTenantRequest } from "../../middleware/tenantAuth.js"
 import {
   fulfillSubscriptionPayment,
   markPaymentFailed,
-  resolveBillingPeriod,
 } from "../../services/makypay/billing.js";
 import { collectMobileMoney, getTransaction, makypayConfigured } from "../../services/makypay/client.js";
 import { normalizeUgandaPhone } from "../../services/makypay/phone.js";
 import { getSubscriptionFeeUgx } from "../../services/platformSettings.js";
+import {
+  auditSchoolSubscription,
+  resolveRequiredBillingPeriod,
+} from "../../services/subscriptionTerm.js";
 
 export const schoolBillingRouter = Router();
 
@@ -46,6 +49,8 @@ schoolBillingRouter.get("/quote", async (req: AuthenticatedTenantRequest, res) =
     return res.status(400).json({ error: "Missing tenant context" });
   }
 
+  await auditSchoolSubscription(schoolId);
+
   const result = await pool.query<{
     subscription_status: string;
     subscription_term: string | null;
@@ -62,7 +67,7 @@ schoolBillingRouter.get("/quote", async (req: AuthenticatedTenantRequest, res) =
     return res.status(404).json({ error: "School not found" });
   }
 
-  const period = resolveBillingPeriod(school.subscription_term, school.subscription_year);
+  const period = await resolveRequiredBillingPeriod(schoolId);
   const subscriptionFeeUgx = await getSubscriptionFeeUgx();
 
   return res.json({
@@ -117,7 +122,27 @@ schoolBillingRouter.post("/collect", async (req: AuthenticatedTenantRequest, res
     return res.status(404).json({ error: "School not found" });
   }
 
-  if (school.subscription_status === "active") {
+  await auditSchoolSubscription(schoolId);
+
+  const refreshed = await pool.query<{
+    name: string;
+    subscription_status: string;
+    subscription_term: string | null;
+    subscription_year: number | null;
+  }>(
+    `SELECT name, subscription_status, subscription_term, subscription_year
+     FROM schools WHERE id = $1 LIMIT 1`,
+    [schoolId],
+  );
+
+  const currentSchool = refreshed.rows[0] ?? school;
+  const period = await resolveRequiredBillingPeriod(schoolId);
+
+  if (
+    currentSchool.subscription_status === "active" &&
+    currentSchool.subscription_term === period.term &&
+    currentSchool.subscription_year === period.year
+  ) {
     return res.status(400).json({
       error: "Your subscription is already active for this term",
       code: "ALREADY_ACTIVE",
@@ -138,10 +163,9 @@ schoolBillingRouter.post("/collect", async (req: AuthenticatedTenantRequest, res
     });
   }
 
-  const period = resolveBillingPeriod(school.subscription_term, school.subscription_year);
   const subscriptionFeeUgx = await getSubscriptionFeeUgx();
   const reference = crypto.randomUUID();
-  const description = `MakySchool subscription — ${school.name} (${period.term} ${period.year})`;
+  const description = `MakySchool subscription — ${currentSchool.name} (${period.term} ${period.year})`;
 
   await pool.query(
     `INSERT INTO subscription_payments (

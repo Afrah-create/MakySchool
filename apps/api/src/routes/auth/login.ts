@@ -16,6 +16,7 @@ import {
   verifyTenantToken,
 } from "../../utils/auth.js";
 import { authenticateSuperAdmin, isSuperAdminEmail } from "../../utils/platformLogin.js";
+import { auditSchoolSubscription } from "../../services/subscriptionTerm.js";
 
 export const authRouter = Router();
 
@@ -162,13 +163,27 @@ authRouter.post("/login", async (req, res) => {
     });
   }
 
+  await auditSchoolSubscription(candidate.school_id);
+
+  const refreshedSchool = await pool.query<{
+    subscription_status: string;
+    subscription_term: string | null;
+    subscription_year: number | null;
+  }>(
+    `SELECT subscription_status, subscription_term, subscription_year
+     FROM schools WHERE id = $1 LIMIT 1`,
+    [candidate.school_id],
+  );
+
+  const subscription = refreshedSchool.rows[0];
+
   const normalizedRole = normalizeUserRole(candidate.role);
   const school: SchoolRow = {
     id: candidate.school_id,
     slug: candidate.school_slug,
     name: candidate.school_name,
     status: candidate.school_status,
-    subscription_status: candidate.subscription_status,
+    subscription_status: subscription?.subscription_status ?? candidate.subscription_status,
   };
 
   const isTempPassword = Boolean(candidate.is_temp_password);

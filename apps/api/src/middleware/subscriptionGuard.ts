@@ -1,6 +1,7 @@
 import { subscriptionsEnabled } from "@makyschool/shared/constants";
 import type { NextFunction, Response } from "express";
 import { pool } from "../db/pool.js";
+import { auditSchoolSubscription } from "../services/subscriptionTerm.js";
 import type { TenantRequest } from "./tenant.js";
 
 const EXEMPT_PREFIXES = ["/api/schools/setup", "/api/schools/billing"];
@@ -22,6 +23,8 @@ export async function requireActiveSubscription(
   if (!schoolId) {
     return res.status(400).json({ error: "Missing tenant context" });
   }
+
+  await auditSchoolSubscription(schoolId);
 
   const result = await pool.query<{ status: string; subscription_status: string }>(
     "SELECT status, subscription_status FROM schools WHERE id = $1 LIMIT 1",

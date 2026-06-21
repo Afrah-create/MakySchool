@@ -34,8 +34,9 @@ export function SubscriptionLockout() {
       <div className="max-w-md rounded-2xl border border-theme bg-theme-surface p-8 text-center">
         <h2 className="text-xl font-semibold text-theme-primary">{title}</h2>
         <p className="mt-3 text-sm leading-6 text-theme-muted">
-          Pay your term subscription for {school.subscription_term ?? "the current term"}{" "}
-          {school.subscription_year ?? new Date().getFullYear()} with Mobile Money to restore access.
+          Your subscription for {school.subscription_term ?? "the current term"}{" "}
+          {school.subscription_year ?? new Date().getFullYear()} is due. Pay with Mobile Money to restore
+          access.
         </p>
         <Link href="/dashboard/billing" className="mt-6 inline-flex ms-btn-primary px-5 py-2.5">
           Pay with Mobile Money

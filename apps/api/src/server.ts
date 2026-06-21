@@ -16,6 +16,7 @@ import { superAdminAuthRouter } from "./routes/superadmin/auth.js";
 import { superAdminSchoolsRouter } from "./routes/superadmin/schools.js";
 import { superAdminAdminsRouter } from "./routes/superadmin/admins.js";
 import { superAdminSettingsRouter } from "./routes/superadmin/settings.js";
+import { superAdminSubscriptionsRouter } from "./routes/superadmin/subscriptions.js";
 import { healthRouter } from "./routes/health.js";
 import { schoolPayWebhookRouter } from "./routes/webhooks/schoolpay.js";
 import { makyPayWebhookRouter } from "./routes/webhooks/makypay.js";
@@ -50,6 +51,7 @@ app.use("/api/superadmin/auth", superAdminAuthRouter);
 app.use("/api/superadmin/schools", superAdminSchoolsRouter);
 app.use("/api/superadmin/admins", superAdminAdminsRouter);
 app.use("/api/superadmin/settings", superAdminSettingsRouter);
+app.use("/api/superadmin/subscriptions", superAdminSubscriptionsRouter);
 app.use("/api/webhooks/schoolpay", schoolPayWebhookRouter);
 app.use("/api/webhooks/makypay", makyPayWebhookRouter);
 

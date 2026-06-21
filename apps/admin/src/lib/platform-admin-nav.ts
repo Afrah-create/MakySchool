@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { School, Settings, Shield } from "lucide-react";
+import { School, Settings, Shield, Receipt } from "lucide-react";
 
 export type PlatformNavItem = {
   href: string;
@@ -14,6 +14,12 @@ export const platformAdminNav: PlatformNavItem[] = [
     label: "Schools",
     icon: School,
     isActive: (pathname) => pathname === "/dashboard" || pathname.startsWith("/schools"),
+  },
+  {
+    href: "/subscriptions",
+    label: "Subscriptions",
+    icon: Receipt,
+    isActive: (pathname) => pathname === "/subscriptions" || pathname.startsWith("/subscriptions/"),
   },
   {
     href: "/admins",
