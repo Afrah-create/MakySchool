@@ -22,6 +22,7 @@ type Tab = "overview" | "classes" | "activity";
 export function TeacherDetailContent({ teacherId }: { teacherId: string }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [editTeacher, setEditTeacher] = useState<TeacherDetail | null>(null);
+  const [editAssignmentsOnly, setEditAssignmentsOnly] = useState(false);
   const [deactivateTeacher, setDeactivateTeacher] = useState<TeacherDetail | null>(null);
   const [reactivateTeacher, setReactivateTeacher] = useState<TeacherDetail | null>(null);
   const [resetTeacher, setResetTeacher] = useState<TeacherDetail | null>(null);
@@ -87,7 +88,10 @@ export function TeacherDetailContent({ teacherId }: { teacherId: string }) {
               </div>
               <CanDo action="manageUsers">
                 <div className="flex gap-2">
-                  <button type="button" className="ms-btn-secondary" onClick={() => setEditTeacher(teacher)}>
+                  <button type="button" className="ms-btn-secondary" onClick={() => {
+                    setEditAssignmentsOnly(false);
+                    setEditTeacher(teacher);
+                  }}>
                     Edit
                   </button>
                   <DropdownMenu
@@ -173,7 +177,14 @@ export function TeacherDetailContent({ teacherId }: { teacherId: string }) {
             {tab === "classes" ? (
               <div className="space-y-4">
                 <CanDo action="manageUsers">
-                  <button type="button" className="ms-btn-secondary" onClick={() => setEditTeacher(teacher)}>
+                  <button
+                    type="button"
+                    className="ms-btn-secondary"
+                    onClick={() => {
+                      setEditAssignmentsOnly(true);
+                      setEditTeacher(teacher);
+                    }}
+                  >
                     Edit assignments
                   </button>
                 </CanDo>
@@ -187,23 +198,38 @@ export function TeacherDetailContent({ teacherId }: { teacherId: string }) {
                           <th>Class</th>
                           <th>Stream</th>
                           <th>Subjects</th>
-                          <th>Students</th>
                           <th>Marks status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {teacher.assignments.map((row, index) => {
-                          const submission = teacher.submission_status.find((s) => s.class_name === row.class_name);
-                          return (
-                            <tr key={`${row.assignment_id ?? row.class_id}-${index}`}>
-                              <td className="font-medium">{row.class_name}</td>
-                              <td>{row.stream || "—"}</td>
-                              <td>{row.subject_name || "—"}</td>
-                              <td>—</td>
-                              <td>{submission ? marksStatusLabel(submission.status) : "Pending"}</td>
-                            </tr>
-                          );
-                        })}
+                        {[...new Map(
+                          teacher.assignments.map((row) => {
+                            const subjects = teacher.assignments
+                              .filter((item) => item.class_id === row.class_id)
+                              .map((item) => item.subject_name)
+                              .filter(Boolean);
+                            return [
+                              row.class_id,
+                              {
+                                class_name: row.class_name,
+                                stream: row.stream,
+                                subjects: [...new Set(subjects)],
+                                submission: teacher.submission_status.find(
+                                  (s) => s.class_name === row.class_name,
+                                ),
+                              },
+                            ] as const;
+                          }),
+                        ).values()].map((row) => (
+                          <tr key={row.class_name}>
+                            <td className="font-medium">{row.class_name}</td>
+                            <td>{row.stream || "—"}</td>
+                            <td>{row.subjects.length ? row.subjects.join(", ") : "All / unspecified"}</td>
+                            <td>
+                              {row.submission ? marksStatusLabel(row.submission.status) : "Pending"}
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -223,7 +249,15 @@ export function TeacherDetailContent({ teacherId }: { teacherId: string }) {
         )}
       </QueryState>
 
-      <EditTeacherPanel teacher={editTeacher} onClose={() => setEditTeacher(null)} onSaved={() => void mutate()} />
+      <EditTeacherPanel
+        teacher={editTeacher}
+        assignmentsOnly={editAssignmentsOnly}
+        onClose={() => {
+          setEditTeacher(null);
+          setEditAssignmentsOnly(false);
+        }}
+        onSaved={() => void mutate()}
+      />
       <DeactivateDialog
         teacher={deactivateTeacher}
         onClose={() => setDeactivateTeacher(null)}

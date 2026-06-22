@@ -50,7 +50,7 @@ export function DashboardStatStrip() {
       label: "Subjects",
       value: subjects?.length ?? 0,
       icon: BookOpen,
-      href: "/dashboard/classes",
+      href: "/dashboard/subjects",
       tone: "badge-info",
     },
     {
@@ -58,7 +58,7 @@ export function DashboardStatStrip() {
       label: "Students",
       value: studentCount,
       icon: Users,
-      href: "/dashboard/classes",
+      href: "/dashboard/students",
       tone: "bg-theme-icon text-theme-muted",
     },
   ] as const;
@@ -78,7 +78,7 @@ export function DashboardStatStrip() {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-theme-primary">At a glance</h2>
             <Link
-              href="/dashboard/classes"
+              href="/dashboard/students"
               className="text-xs font-medium text-theme-accent hover:underline"
             >
               View all

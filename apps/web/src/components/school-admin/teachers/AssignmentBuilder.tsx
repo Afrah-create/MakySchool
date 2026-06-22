@@ -18,7 +18,7 @@ function ClassSubjects({
 }: {
   classId: string;
   selected: string[];
-  onToggle: (subjectId: string) => void;
+  onToggle: (subjectId: string, subjectName: string) => void;
 }) {
   const { data } = useApiSWR<SubjectOption[]>(`/schools/classes/${classId}/subjects`);
 
@@ -33,7 +33,7 @@ function ClassSubjects({
           <input
             type="checkbox"
             checked={selected.includes(subject.id)}
-            onChange={() => onToggle(subject.id)}
+            onChange={() => onToggle(subject.id, subject.name)}
           />
           {subject.name}
         </label>
@@ -108,8 +108,13 @@ export function AssignmentBuilder({
           <ClassSubjects
             classId={row.class_id}
             selected={row.subject_ids}
-            onToggle={(subjectId) =>
-              dispatch({ type: "toggle_subject", class_id: row.class_id, subject_id: subjectId })
+            onToggle={(subjectId, subjectName) =>
+              dispatch({
+                type: "toggle_subject",
+                class_id: row.class_id,
+                subject_id: subjectId,
+                subject_name: subjectName,
+              })
             }
           />
         </div>

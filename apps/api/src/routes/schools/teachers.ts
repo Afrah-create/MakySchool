@@ -5,14 +5,15 @@ import { Router } from "express";
 import { can } from "@makyschool/shared/constants";
 import { pool } from "../../db/pool.js";
 import { USER_DISPLAY_NAME_SQL, USER_LEARNER_ROLE_SQL } from "../../db/userSql.js";
+import {
+  getCurrentTermId,
+  scaffoldTermSubmissions,
+  syncTeacherAssignments,
+  type AssignmentInput,
+} from "../../lib/teacherAssignments.js";
 import type { AuthenticatedTenantRequest } from "../../middleware/tenantAuth.js";
 
 export const teachersRouter = Router();
-
-type AssignmentInput = {
-  class_id: string;
-  subject_id?: string | null;
-};
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?[0-9\s\-]{7,15}$/;
@@ -40,17 +41,6 @@ function sendError(
 
 function formatClassName(level: string, stream: string | null) {
   return stream ? `${level}${stream}` : level;
-}
-
-async function getCurrentTermId(schoolId: string): Promise<string | null> {
-  const result = await pool.query<{ id: string }>(
-    `SELECT id FROM terms
-     WHERE school_id = $1 AND is_current = true
-     ORDER BY id ASC
-     LIMIT 1`,
-    [schoolId],
-  );
-  return result.rows[0]?.id ?? null;
 }
 
 async function validateTeacherFields(
@@ -130,36 +120,11 @@ async function insertAssignments(
   assignedBy: string,
   assignments: AssignmentInput[],
 ) {
-  for (const item of assignments) {
-    await pool.query(
-      `INSERT INTO teacher_class_assignments
-         (id, school_id, teacher_id, class_id, subject_id, assigned_by, assigned_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NOW())
-       ON CONFLICT (school_id, teacher_id, class_id, subject_id) DO NOTHING`,
-      [schoolId, teacherId, item.class_id, item.subject_id ?? null, assignedBy],
-    );
-  }
-}
-
-async function scaffoldTermSubmissions(
-  schoolId: string,
-  teacherId: string,
-  assignments: AssignmentInput[],
-) {
-  const termId = await getCurrentTermId(schoolId);
-  if (!termId) {
-    return;
-  }
-
-  const classIds = [...new Set(assignments.map((a) => a.class_id))];
-  for (const classId of classIds) {
-    // TODO: Kweko — populate submission status when marks module is built
-    await pool.query(
-      `INSERT INTO teacher_term_submissions (school_id, teacher_id, class_id, term_id, status)
-       VALUES ($1, $2, $3, $4, 'pending')
-       ON CONFLICT (school_id, teacher_id, class_id, term_id) DO NOTHING`,
-      [schoolId, teacherId, classId, termId],
-    );
+  const result = await syncTeacherAssignments(schoolId, teacherId, assignedBy, assignments, {
+    acknowledge_warnings: true,
+  });
+  if (!result.ok) {
+    throw new Error(result.error);
   }
 }
 
@@ -617,11 +582,13 @@ teachersRouter.patch("/:id", async (req: AuthenticatedTenantRequest, res) => {
     phone,
     subject_specialization,
     assignments,
+    acknowledge_assignment_warnings,
   } = req.body as {
     full_name?: string;
     phone?: string | null;
     subject_specialization?: string | null;
     assignments?: AssignmentInput[];
+    acknowledge_assignment_warnings?: boolean;
   };
 
   const fields = await validateTeacherFields(schoolId, {
@@ -662,13 +629,33 @@ teachersRouter.patch("/:id", async (req: AuthenticatedTenantRequest, res) => {
     );
 
     if (assignments !== undefined) {
-      await pool.query(
-        "DELETE FROM teacher_class_assignments WHERE teacher_id = $1 AND school_id = $2",
-        [teacherId, schoolId],
+      const syncResult = await syncTeacherAssignments(
+        schoolId,
+        teacherId,
+        actor.sub,
+        assignments,
+        { acknowledge_warnings: acknowledge_assignment_warnings === true },
       );
-      if (assignments.length > 0) {
-        await insertAssignments(schoolId, teacherId, actor.sub, assignments);
-        await scaffoldTermSubmissions(schoolId, teacherId, assignments);
+
+      if (!syncResult.ok) {
+        await pool.query("ROLLBACK");
+        if (syncResult.code === "ASSIGNMENT_LOCKED") {
+          return res.status(409).json({
+            error: syncResult.error,
+            code: syncResult.code,
+            fields: syncResult.fields,
+            preview: syncResult.preview,
+          });
+        }
+        return res.status(409).json({
+          error: syncResult.error,
+          code: syncResult.code,
+          preview: syncResult.preview,
+        });
+      }
+
+      if (syncResult.preview.to_add.length > 0) {
+        await scaffoldTermSubmissions(schoolId, teacherId, syncResult.preview.to_add);
       }
     }
 

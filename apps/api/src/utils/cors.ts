@@ -12,6 +12,44 @@ function parseAllowedOrigins() {
     .filter(Boolean);
 }
 
+function originMatchesPattern(origin: string, pattern: string): boolean {
+  if (!pattern.includes("*")) {
+    return origin === pattern;
+  }
+
+  try {
+    const escaped = pattern
+      .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*/g, ".*");
+    return new RegExp(`^${escaped}$`).test(origin);
+  } catch {
+    return false;
+  }
+}
+
+function isOriginAllowed(origin: string, allowedOrigins: string[]): boolean {
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  if (allowedOrigins.some((pattern) => originMatchesPattern(origin, pattern))) {
+    return true;
+  }
+
+  if (process.env.CORS_ALLOW_VERCEL_PREVIEWS === "true") {
+    try {
+      const { hostname } = new URL(origin);
+      if (hostname.endsWith(".vercel.app")) {
+        return true;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 export function resolveCorsOptions(): CorsOptions {
   const allowedOrigins = parseAllowedOrigins();
 
@@ -21,7 +59,7 @@ export function resolveCorsOptions(): CorsOptions {
 
   return {
     origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || isOriginAllowed(origin, allowedOrigins)) {
         callback(null, true);
         return;
       }

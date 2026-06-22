@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { GraduationCap, MoreHorizontal, Plus, Search, Upload } from "lucide-react";
 import {
   PRIMARY_CLASS_LEVELS,
@@ -49,6 +49,7 @@ function groupClasses(classes: ClassOption[]) {
 
 export function StudentsPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { state } = useAuth();
   const canManage = state.user ? can(state.user.role, "manageUsers") : false;
 
@@ -92,6 +93,18 @@ export function StudentsPageContent() {
   const hasFilters = Boolean(debouncedSearch || classId || gender || status !== "active");
   const classGroups = useMemo(() => groupClasses(classes), [classes]);
   const distinctClasses = new Set(classes.map((item) => item.id)).size;
+
+  useEffect(() => {
+    if (!canManage) return;
+    if (searchParams.get("add") === "1") {
+      setAddOpen(true);
+      router.replace("/dashboard/students", { scroll: false });
+    }
+    if (searchParams.get("import") === "1") {
+      setImportOpen(true);
+      router.replace("/dashboard/students", { scroll: false });
+    }
+  }, [searchParams, canManage, router]);
 
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(page * PAGE_SIZE, total);

@@ -11,6 +11,7 @@ import {
 import type { TeacherDetail } from "@/lib/teachers/types";
 import { validateTeacherForm } from "@/lib/validation/teachers";
 import { AssignmentBuilder } from "./AssignmentBuilder";
+import { SubjectSpecializationSelect } from "./SubjectSpecializationSelect";
 
 type CreateResponse = {
   teacher: TeacherDetail;
@@ -208,15 +209,16 @@ export function AddTeacherPanel({
             </label>
             <label className="block">
               <span className="mb-1 block text-xs text-theme-muted">Subject specialisation</span>
-              <input
-                className="ms-input"
+              <SubjectSpecializationSelect
                 value={specialization}
-                placeholder="e.g. Mathematics, Physics"
-                onChange={(e) => {
-                  setSpecialization(e.target.value);
+                onChange={(next) => {
+                  setSpecialization(next);
                   setDirty(true);
                 }}
               />
+              <p className="mt-1 text-xs text-theme-faint">
+                Choose from subjects registered under Subjects in your school setup.
+              </p>
             </label>
           </section>
 

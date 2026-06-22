@@ -8,7 +8,19 @@ export type AssignmentAction =
   | { type: "reset"; rows: TeacherAssignmentRow[] }
   | { type: "add_class"; class_id: string; class_name: string }
   | { type: "remove_class"; class_id: string }
-  | { type: "toggle_subject"; class_id: string; subject_id: string };
+  | {
+      type: "toggle_subject";
+      class_id: string;
+      subject_id: string;
+      subject_name?: string;
+    };
+
+export function formatAssignmentLabel(item: TeacherAssignment) {
+  if (item.subject_name) {
+    return `${item.class_name ?? "Class"} — ${item.subject_name}`;
+  }
+  return item.class_name ?? "Class";
+}
 
 export function assignmentsFromRows(rows: TeacherAssignmentRow[]): TeacherAssignment[] {
   const output: TeacherAssignment[] = [];
@@ -18,7 +30,12 @@ export function assignmentsFromRows(rows: TeacherAssignmentRow[]): TeacherAssign
       continue;
     }
     for (const subject_id of row.subject_ids) {
-      output.push({ class_id: row.class_id, class_name: row.class_name, subject_id });
+      output.push({
+        class_id: row.class_id,
+        class_name: row.class_name,
+        subject_id,
+        subject_name: row.subject_names[subject_id],
+      });
     }
   }
   return output;
@@ -31,9 +48,13 @@ export function rowsFromAssignments(assignments: TeacherAssignment[]): TeacherAs
       class_id: item.class_id,
       class_name: item.class_name ?? item.class_id,
       subject_ids: [],
+      subject_names: {},
     };
     if (item.subject_id && !existing.subject_ids.includes(item.subject_id)) {
       existing.subject_ids.push(item.subject_id);
+      if (item.subject_name) {
+        existing.subject_names[item.subject_id] = item.subject_name;
+      }
     }
     map.set(item.class_id, existing);
   }
@@ -51,7 +72,12 @@ export function assignmentReducer(state: AssignmentState, action: AssignmentActi
       return {
         rows: [
           ...state.rows,
-          { class_id: action.class_id, class_name: action.class_name, subject_ids: [] },
+          {
+            class_id: action.class_id,
+            class_name: action.class_name,
+            subject_ids: [],
+            subject_names: {},
+          },
         ],
       };
     case "remove_class":
@@ -61,11 +87,19 @@ export function assignmentReducer(state: AssignmentState, action: AssignmentActi
         rows: state.rows.map((row) => {
           if (row.class_id !== action.class_id) return row;
           const has = row.subject_ids.includes(action.subject_id);
+          const subject_names = { ...row.subject_names };
+          if (!has && action.subject_name) {
+            subject_names[action.subject_id] = action.subject_name;
+          }
+          if (has) {
+            delete subject_names[action.subject_id];
+          }
           return {
             ...row,
             subject_ids: has
               ? row.subject_ids.filter((id) => id !== action.subject_id)
               : [...row.subject_ids, action.subject_id],
+            subject_names,
           };
         }),
       };
@@ -74,18 +108,42 @@ export function assignmentReducer(state: AssignmentState, action: AssignmentActi
   }
 }
 
-export function diffAssignments(
-  before: TeacherAssignmentRow[],
-  after: TeacherAssignmentRow[],
+export function diffAssignmentPairs(
+  before: TeacherAssignment[],
+  after: TeacherAssignment[],
 ) {
-  const key = (row: TeacherAssignmentRow) =>
-    `${row.class_id}:${[...row.subject_ids].sort().join(",")}`;
+  const key = (item: Pick<TeacherAssignment, "class_id" | "subject_id">) =>
+    `${item.class_id}:${item.subject_id ?? ""}`;
 
   const beforeKeys = new Set(before.map(key));
   const afterKeys = new Set(after.map(key));
 
-  const removed = before.filter((row) => !afterKeys.has(key(row)));
-  const added = after.filter((row) => !beforeKeys.has(key(row)));
+  const removed = before.filter((item) => !afterKeys.has(key(item)));
+  const added = after.filter((item) => !beforeKeys.has(key(item)));
 
   return { removed, added };
 }
+
+/** @deprecated Use diffAssignmentPairs for subject-level diffs */
+export function diffAssignments(before: TeacherAssignmentRow[], after: TeacherAssignmentRow[]) {
+  return diffAssignmentPairs(assignmentsFromRows(before), assignmentsFromRows(after));
+}
+
+export type AssignmentDetachWarning = {
+  class_id: string;
+  class_name: string;
+  status: string;
+  message: string;
+};
+
+export type AssignmentDetachBlock = {
+  class_id: string;
+  class_name: string;
+  status: string;
+  reason: string;
+};
+
+export type AssignmentSyncPreview = {
+  warnings: AssignmentDetachWarning[];
+  blocks: AssignmentDetachBlock[];
+};

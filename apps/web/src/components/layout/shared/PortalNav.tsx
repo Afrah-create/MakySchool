@@ -70,7 +70,7 @@ export function PortalMobileNav({
           const active = isActive(link.href, link.exact);
           return (
             <Link
-              key={link.href}
+              key={link.id}
               href={link.href}
               className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
                 active
@@ -131,7 +131,7 @@ export function PortalSidebar({
           const active = isActive(link.href, link.exact);
           return (
             <Link
-              key={link.href}
+              key={link.id}
               href={link.href}
               className={`flex items-center gap-3 rounded-xl px-3 py-2.5 font-medium transition ${
                 active

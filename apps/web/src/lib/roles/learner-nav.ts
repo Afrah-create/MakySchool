@@ -6,6 +6,7 @@ export type { PortalNavItem as NavItem };
 
 export const learnerNav: PortalNavItem[] = [
   {
+    id: "learner-dashboard",
     href: "/learner/dashboard",
     label: "Dashboard",
     icon: LayoutDashboard,
@@ -13,6 +14,7 @@ export const learnerNav: PortalNavItem[] = [
     roles: [USER_ROLES.LEARNER],
   },
   {
+    id: "learner-timetable",
     href: "/learner/timetable",
     label: "Timetable",
     icon: CalendarDays,

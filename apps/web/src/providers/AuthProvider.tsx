@@ -1,8 +1,15 @@
 "use client";
 
 import { createContext, useContext, useEffect, useReducer } from "react";
-import type { TenantUser } from "@makyschool/shared/types";
+import type { MakySchoolRole, TenantUser } from "@makyschool/shared/types";
 import { apiClient } from "@/lib/api/client";
+
+type AuthMeResponse = {
+  accountType: "school" | "platform";
+  role?: MakySchoolRole;
+  user?: TenantUser;
+  school?: { slug: string; id: string };
+};
 
 type AuthState = {
   user: TenantUser | null;
@@ -45,8 +52,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function refresh() {
     dispatch({ type: "LOADING" });
     try {
-      const response = await apiClient<TenantUser>("/auth/me");
-      dispatch({ type: "SET_USER", user: response.data });
+      const response = await apiClient<AuthMeResponse>("/auth/me");
+      const payload = response.data;
+
+      if (payload.accountType === "school" && payload.user) {
+        dispatch({
+          type: "SET_USER",
+          user: {
+            ...payload.user,
+            role: payload.user.role ?? payload.role ?? "admin",
+          },
+        });
+        return;
+      }
+
+      dispatch({ type: "SET_USER", user: null });
     } catch {
       dispatch({ type: "SET_USER", user: null });
     }

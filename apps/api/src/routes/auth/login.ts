@@ -1,8 +1,7 @@
 import bcrypt from "bcrypt";
 import { Router } from "express";
-import { CLIENT_APP_HEADER, ROLE_HOME, TENANT_HEADERS } from "@makyschool/shared/constants";
+import { CLIENT_APP_HEADER, ROLE_HOME, TENANT_HEADERS, isMakySchoolRole } from "@makyschool/shared/constants";
 import type { ClientAppKind } from "@makyschool/shared/constants";
-import { isMakySchoolRole } from "@makyschool/shared/types";
 import type { MakySchoolRole } from "@makyschool/shared/types";
 import { USER_DISPLAY_NAME_SQL, normalizeUserRole } from "../../db/userSql.js";
 import { pool } from "../../db/pool.js";

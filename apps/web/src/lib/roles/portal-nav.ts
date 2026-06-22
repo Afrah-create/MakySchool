@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import type { UserRole } from "@makyschool/shared/types";
 
 export type PortalNavItem = {
+  id: string;
   href: string;
   label: string;
   icon: LucideIcon;

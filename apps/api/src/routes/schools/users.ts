@@ -5,15 +5,17 @@ import { can } from "@makyschool/shared/constants";
 import type { MakySchoolRole } from "@makyschool/shared/types";
 import { pool } from "../../db/pool.js";
 import { USER_DISPLAY_NAME_SQL, normalizeUserRole } from "../../db/userSql.js";
+import {
+  scaffoldTermSubmissions,
+  syncTeacherAssignments,
+  type AssignmentInput,
+} from "../../lib/teacherAssignments.js";
 import type { AuthenticatedTenantRequest } from "../../middleware/tenantAuth.js";
 import { validatePassword } from "../../utils/password.js";
 
 export const usersRouter = Router();
 
-type ClassAssignmentInput = {
-  class_id: string;
-  subject_id?: string | null;
-};
+type ClassAssignmentInput = AssignmentInput;
 
 const CREATABLE_ROLES: MakySchoolRole[] = ["head_teacher", "teacher", "learner"];
 const ASSIGNABLE_ROLES: MakySchoolRole[] = ["head_teacher", "teacher"];
@@ -70,26 +72,18 @@ async function replaceTeacherAssignments(
   assignedBy: string,
   assignments: ClassAssignmentInput[],
 ) {
-  await pool.query(
-    "DELETE FROM teacher_class_assignments WHERE school_id = $1 AND teacher_id = $2",
-    [schoolId, teacherId],
-  );
-
-  for (const item of assignments) {
-    await pool.query(
-      `INSERT INTO teacher_class_assignments (
-         id, school_id, teacher_id, class_id, subject_id, assigned_by
-       ) VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (school_id, teacher_id, class_id, subject_id) DO NOTHING`,
-      [
-        crypto.randomUUID(),
-        schoolId,
-        teacherId,
-        item.class_id,
-        item.subject_id ?? null,
-        assignedBy,
-      ],
-    );
+  const result = await syncTeacherAssignments(schoolId, teacherId, assignedBy, assignments, {
+    acknowledge_warnings: true,
+  });
+  if (!result.ok) {
+    const message =
+      result.code === "ASSIGNMENT_LOCKED"
+        ? result.fields?.assignments ?? result.error
+        : result.error;
+    throw new Error(message);
+  }
+  if (result.preview.to_add.length > 0) {
+    await scaffoldTermSubmissions(schoolId, teacherId, result.preview.to_add);
   }
 }
 

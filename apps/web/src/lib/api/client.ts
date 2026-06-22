@@ -103,13 +103,15 @@ export async function apiClient<T>(
   }
 
   if (!response.ok) {
-    const error = payload as ApiError;
+    const error = payload as ApiError & { preview?: unknown };
     const requestError = new Error(error.error ?? "Request failed") as Error & {
       code?: string;
       fields?: Record<string, string>;
+      preview?: unknown;
     };
     requestError.code = error.code;
     requestError.fields = error.fields;
+    requestError.preview = error.preview;
     if (error.redirectUrl) {
       (requestError as Error & { redirectUrl?: string }).redirectUrl = error.redirectUrl;
     }

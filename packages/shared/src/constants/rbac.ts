@@ -1,5 +1,8 @@
 import type { MakySchoolRole } from "../types/rbac";
 
+export { MAKY_SCHOOL_ROLES, isMakySchoolRole } from "../types/rbac";
+export type { MakySchoolRole };
+
 export const ROLE_HOME: Record<MakySchoolRole, string> = {
   admin: "/dashboard",
   head_teacher: "/dashboard",

@@ -49,4 +49,4 @@ export {
 
 export { subscriptionsEnabled } from "./features";
 
-export { ROLE_HOME, CAN, can, type PermissionAction } from "./rbac";
+export { ROLE_HOME, CAN, can, isMakySchoolRole, MAKY_SCHOOL_ROLES, type PermissionAction, type MakySchoolRole } from "./rbac";

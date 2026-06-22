@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Search } from "lucide-react";
 import type { MakySchoolRole } from "@makyschool/shared/types";
 import { CanDo } from "@/components/ui/CanDo";
@@ -11,6 +12,8 @@ import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { SkeletonTable } from "@makyschool/ui/components/ui/Skeleton";
 import { useApiSWR } from "@/hooks/useApiSWR";
+import { useAuth } from "@/hooks/useAuth";
+import { can } from "@makyschool/shared/constants";
 import { formatClassAssignmentLabel, roleBadgeClass, roleLabel } from "@/lib/users/display";
 
 type UserRow = {
@@ -36,6 +39,10 @@ const TAB_EMPTY: Record<Exclude<Tab, "all">, string> = {
 };
 
 export function UsersPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { state } = useAuth();
+  const canManage = state.user ? can(state.user.role, "manageUsers") : false;
   const [tab, setTab] = useState<Tab>("all");
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -52,6 +59,13 @@ export function UsersPageContent() {
   const { data, error, isLoading, isValidating, mutate } = useApiSWR<UserRow[]>(query);
 
   const users = data ?? [];
+
+  useEffect(() => {
+    if (searchParams.get("add") === "1" && canManage) {
+      setAddOpen(true);
+      router.replace("/dashboard/users", { scroll: false });
+    }
+  }, [searchParams, canManage, router]);
 
   return (
     <section className="space-y-6">

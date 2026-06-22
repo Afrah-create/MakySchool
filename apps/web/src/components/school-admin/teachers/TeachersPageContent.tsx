@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { MoreHorizontal, Plus, Search, Users } from "lucide-react";
 import { formatClassLabel } from "@makyschool/shared/constants";
 import { CanDo } from "@/components/ui/CanDo";
@@ -40,6 +40,7 @@ function uniqueClassPills(assignments: TeacherListItem["assignments"]) {
 
 export function TeachersPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { state } = useAuth();
   const canManage = state.user ? can(state.user.role, "manageUsers") : false;
   const [search, setSearch] = useState("");
@@ -71,6 +72,13 @@ export function TeachersPageContent() {
   const teachers = data?.teachers ?? [];
   const total = data?.total ?? 0;
   const hasFilters = Boolean(debouncedSearch || status || classId);
+
+  useEffect(() => {
+    if (searchParams.get("add") === "1" && canManage) {
+      setAddOpen(true);
+      router.replace("/dashboard/teachers", { scroll: false });
+    }
+  }, [searchParams, canManage, router]);
 
   async function openEdit(teacher: TeacherListItem) {
     const response = await apiClient<TeacherDetail>(`/schools/teachers/${teacher.id}`);

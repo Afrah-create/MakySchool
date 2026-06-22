@@ -11,6 +11,7 @@ export type TeacherAssignmentRow = {
   class_id: string;
   class_name: string;
   subject_ids: string[];
+  subject_names: Record<string, string>;
 };
 
 export type TeacherListItem = {
