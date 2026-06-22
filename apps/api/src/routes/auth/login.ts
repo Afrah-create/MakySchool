@@ -149,6 +149,18 @@ authRouter.post("/login", async (req, res) => {
     return res.status(401).json({ error: "Invalid credentials" });
   }
 
+  const isActive =
+    candidate.is_active ??
+    (candidate.account_status === "ACTIVE" || candidate.account_status == null);
+
+  if (!isActive) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return res.status(403).json({
+      error: "Your account has been deactivated. Contact your school administrator.",
+      code: "ACCOUNT_DEACTIVATED",
+    });
+  }
+
   const isValid = await bcrypt.compare(password, candidate.password_hash);
   if (!isValid) {
     return res.status(401).json({ error: "Invalid credentials" });
@@ -158,16 +170,6 @@ authRouter.post("/login", async (req, res) => {
 
   if (clientApp === "tenant" && !isMakySchoolRole(normalizedRole)) {
     return res.status(403).json({ error: "Account not valid for this portal" });
-  }
-
-  const isActive =
-    candidate.is_active ??
-    (candidate.account_status === "ACTIVE" || candidate.account_status == null);
-
-  if (!isActive) {
-    return res.status(403).json({
-      error: "Your account has been deactivated. Contact your school administrator.",
-    });
   }
 
   if (candidate.account_status && candidate.account_status !== "ACTIVE") {

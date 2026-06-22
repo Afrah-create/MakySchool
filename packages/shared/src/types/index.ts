@@ -30,6 +30,7 @@ export interface ApiResponse<T> {
 export interface ApiError {
   error: string;
   code?: string;
+  fields?: Record<string, string>;
   redirectUrl?: string;
   details?: Record<string, string[]>;
 }

@@ -133,6 +133,35 @@ classesRouter.get("/:id", async (req: TeacherScopedRequest, res) => {
   });
 });
 
+classesRouter.get("/:id/subjects", async (req: TeacherScopedRequest, res) => {
+  const schoolId = req.schoolId;
+  const id = String(req.params.id);
+
+  if (!schoolId) {
+    return res.status(400).json({ error: "Missing tenant context" });
+  }
+
+  const classRow = await pool.query(
+    "SELECT id FROM school_classes WHERE id = $1 AND school_id = $2 LIMIT 1",
+    [id, schoolId],
+  );
+
+  if (!classRow.rowCount) {
+    return res.status(404).json({ error: "Class not found" });
+  }
+
+  const result = await pool.query(
+    `SELECT s.id, s.name
+     FROM school_class_subjects cs
+     JOIN school_subjects s ON s.id = cs.subject_id
+     WHERE cs.school_id = $1 AND cs.class_id = $2
+     ORDER BY s.name ASC`,
+    [schoolId, id],
+  );
+
+  return res.json({ data: result.rows });
+});
+
 classesRouter.get("/:id/students", async (req: TeacherScopedRequest, res) => {
   const schoolId = req.schoolId;
   const id = String(req.params.id);

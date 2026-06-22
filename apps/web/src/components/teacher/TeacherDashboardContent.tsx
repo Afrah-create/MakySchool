@@ -2,62 +2,65 @@
 
 import Link from "next/link";
 import { BookOpen, Users } from "lucide-react";
-import { formatClassLabel } from "@makyschool/shared/constants";
 import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { useApiSWR } from "@/hooks/useApiSWR";
-
-type ClassRow = {
-  id: string;
-  level: string;
-  stream: string | null;
-  student_count: number;
-  subjects: Array<{ id: string; name: string }>;
-};
+import type { TeacherDetail } from "@/lib/teachers/types";
+import { marksStatusLabel, teacherFirstName } from "@/lib/validation/teachers";
 
 export function TeacherDashboardContent() {
-  const { data, error, isLoading, mutate } = useApiSWR<ClassRow[]>("/schools/classes");
+  const { data, error, isLoading, mutate } = useApiSWR<TeacherDetail>("/schools/teachers/me");
 
   return (
-    <DashboardPage
-      eyebrow="Teacher portal"
-      title="Your dashboard"
-      description="Classes and learners assigned to you."
-      maxWidth="7xl"
-    >
+    <DashboardPage maxWidth="7xl">
       <QueryState
         error={error}
         isLoading={isLoading}
         data={data}
         onRetry={() => void mutate()}
         loading={
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Skeleton className="h-24" />
-            <Skeleton className="h-24" />
+          <div className="space-y-4">
+            <Skeleton className="h-8 w-64" />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Skeleton className="h-24" />
+              <Skeleton className="h-24" />
+            </div>
           </div>
         }
-        isEmpty={(classes) => classes.length === 0}
+        isEmpty={(teacher) => teacher.assignments.length === 0}
         empty={
           <EmptyState
-            title="No classes assigned"
-            description="Your school administrator will assign classes to you."
+            title="You haven't been assigned to any classes yet."
+            description="Contact your school administrator."
           />
         }
       >
-        {(classes) => {
-          const totalStudents = classes.reduce((sum, row) => sum + (row.student_count ?? 0), 0);
+        {(teacher) => {
+          const classMap = new Map<string, TeacherDetail["assignments"]>();
+          for (const item of teacher.assignments) {
+            const list = classMap.get(item.class_id) ?? [];
+            list.push(item);
+            classMap.set(item.class_id, list);
+          }
 
           return (
             <>
+              <div className="mb-8">
+                <p className="text-sm text-theme-muted">Teacher portal</p>
+                <h1 className="text-xl font-semibold text-theme-primary">
+                  Welcome back, {teacherFirstName(teacher.full_name)}
+                </h1>
+              </div>
+
               <div className="mb-8 grid gap-4 sm:grid-cols-2">
                 <div className="rounded-xl border border-theme bg-theme-surface p-5">
                   <div className="flex items-center gap-3">
                     <BookOpen className="h-5 w-5 text-theme-accent" />
                     <div>
                       <p className="text-xs text-theme-muted">My classes</p>
-                      <p className="text-2xl font-semibold text-theme-primary">{classes.length}</p>
+                      <p className="text-2xl font-semibold text-theme-primary">{classMap.size}</p>
                     </div>
                   </div>
                 </div>
@@ -65,31 +68,51 @@ export function TeacherDashboardContent() {
                   <div className="flex items-center gap-3">
                     <Users className="h-5 w-5 text-theme-accent" />
                     <div>
-                      <p className="text-xs text-theme-muted">Total students in my classes</p>
-                      <p className="text-2xl font-semibold text-theme-primary">{totalStudents}</p>
+                      <p className="text-xs text-theme-muted">My students</p>
+                      <p className="text-2xl font-semibold text-theme-primary">
+                        {teacher.total_students > 0 ? teacher.total_students : "—"}
+                      </p>
+                      {/* TODO: Ssekyanzi — student count */}
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {classes.map((classRow) => (
-                  <Link
-                    key={classRow.id}
-                    href={`/teacher/classes/${classRow.id}`}
-                    className="rounded-xl border border-theme bg-theme-surface p-5 transition hover:border-theme-accent"
-                  >
-                    <h3 className="font-semibold text-theme-primary">
-                      {formatClassLabel(classRow.level, classRow.stream)}
-                    </h3>
-                    <p className="mt-1 text-sm text-theme-muted">
-                      {classRow.student_count} student{classRow.student_count === 1 ? "" : "s"}
-                    </p>
-                    <p className="mt-2 text-xs text-theme-faint">
-                      {(classRow.subjects ?? []).map((s) => s.name).join(", ") || "No subjects linked"}
-                    </p>
-                  </Link>
-                ))}
+                {[...classMap.entries()].map(([classId, assignments]) => {
+                  const className = assignments[0]?.class_name ?? "Class";
+                  const subjects = assignments.map((a) => a.subject_name).filter(Boolean);
+                  const submission = teacher.submission_status.find((s) => s.class_name === className);
+
+                  return (
+                    <div key={classId} className="rounded-xl border border-theme bg-theme-surface p-5">
+                      <h3 className="text-lg font-semibold text-theme-primary">{className}</h3>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {subjects.length
+                          ? subjects.map((name) => (
+                              <span key={name} className="badge-info rounded-full px-2 py-0.5 text-xs">
+                                {name}
+                              </span>
+                            ))
+                          : null}
+                      </div>
+                      <p className="mt-3 flex items-center gap-1 text-sm text-theme-muted">
+                        <Users className="h-4 w-4" />
+                        — students
+                      </p>
+                      <p className="mt-2 text-xs text-theme-faint">
+                        {/* TODO: Kweko — marks entry */}
+                        Marks: {submission ? marksStatusLabel(submission.status) : "Pending"}
+                      </p>
+                      <Link
+                        href={`/teacher/classes/${classId}`}
+                        className="mt-4 inline-block text-sm font-medium text-theme-accent hover:underline"
+                      >
+                        View class →
+                      </Link>
+                    </div>
+                  );
+                })}
               </div>
             </>
           );

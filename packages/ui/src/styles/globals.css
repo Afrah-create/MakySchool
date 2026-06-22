@@ -459,7 +459,13 @@ textarea {
   .text-theme-muted    { color: var(--color-text-muted); }
   .text-theme-faint    { color: var(--color-text-faint); }
   .text-theme-accent   { color: var(--color-accent-text); }
+  .text-theme-success  { color: var(--color-success-text); }
+  .text-theme-danger   { color: var(--color-danger-text); }
+  .text-theme-warning  { color: var(--color-warning-text); }
   .text-theme-inverse  { color: var(--color-text-inverse); }
+  .bg-theme-danger-bg  { background-color: var(--color-danger-bg); }
+  .bg-theme-success-bg { background-color: var(--color-success-bg); }
+  .bg-theme-warning-bg { background-color: var(--color-warning-bg); }
   .text-on-accent      { color: var(--color-on-accent); }
 
   .border-theme        { border-color: var(--color-border); }
@@ -695,4 +701,9 @@ textarea {
     opacity: 0.6;
     box-shadow: none;
   }
+}
+
+@keyframes toast-progress {
+  from { width: 100%; }
+  to { width: 0%; }
 }

@@ -26,6 +26,7 @@ import { schoolSetupRouter } from "./routes/schools/setup.js";
 import { classesRouter } from "./routes/schools/classes.js";
 import { subjectsRouter } from "./routes/schools/subjects.js";
 import { usersRouter } from "./routes/schools/users.js";
+import { teachersRouter } from "./routes/schools/teachers.js";
 import { resolveCorsOptions } from "./utils/cors.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -68,6 +69,7 @@ app.use("/api/schools/billing", schoolBillingRouter);
 app.use("/api/schools/classes", classesRouter);
 app.use("/api/schools/subjects", subjectsRouter);
 app.use("/api/schools/users", usersRouter);
+app.use("/api/schools/teachers", teachersRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });

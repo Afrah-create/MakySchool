@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Banknote,
   BookOpen,
+  GraduationCap,
   LayoutDashboard,
   Layers,
   Settings,
@@ -32,6 +33,13 @@ export const schoolAdminNav: NavItem[] = [
     icon: BookOpen,
     exact: false,
     requiredAction: "viewAllClasses",
+  },
+  {
+    href: "/dashboard/teachers",
+    label: "Teachers",
+    icon: GraduationCap,
+    exact: false,
+    requiredAction: "viewAllStaff",
   },
   {
     href: "/dashboard/subjects",
