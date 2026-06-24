@@ -36,7 +36,7 @@ export function softwareApplicationJsonLd() {
     name: siteConfig.name,
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web",
-    description: "Uganda's best school management system for primary schools, secondary schools, and Islamic schools. Manage classes, academics, theology curriculum, teachers, learners, fees in UGX, and complete school operations from one platform.",
+    description: "Uganda's best school management system for primary schools, secondary schools, and theology-focused schools. Manage classes, academics, theology curriculum, teachers, learners, fees in UGX, and complete school operations from one platform.",
     url: siteUrl,
     offers: {
       "@type": "Offer",
@@ -61,9 +61,9 @@ export function softwareApplicationJsonLd() {
       },
       {
         "@type": "Review",
-        author: { "@type": "Person", name: "Sheikh Ibrahim Musa" },
+        author: { "@type": "Person", name: "Rev. John Mukasa" },
         reviewRating: { "@type": "Rating", ratingValue: "5", bestRating: "5" },
-        reviewBody: "Perfect for our Islamic school. Manages Islamic studies and theology alongside regular curriculum. MakySchool understands Muslim schools in Uganda.",
+        reviewBody: "Perfect for our theology-focused school. Manages religious studies and theology alongside regular curriculum. MakySchool understands faith-based schools in Uganda.",
       },
       {
         "@type": "Review",

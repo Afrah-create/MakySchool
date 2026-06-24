@@ -4,7 +4,7 @@ export const siteConfig = {
   name: "MakySchool",
   tagline: "Uganda's leading school management system",
   description:
-    "MakySchool is Uganda's best school management platform for primary, secondary, and Islamic schools — classes, academics, theology, teachers, learners, fees, and complete school operations in one modern system.",
+    "MakySchool is Uganda's best school management platform for primary, secondary, and theology-focused schools — classes, academics, theology curriculum, teachers, learners, fees, and complete school operations in one modern system.",
   company: "MakyLegacy",
   companyUrl: "https://makylegacy.com",
   contactEmail: "support@makylegacy.com",
@@ -175,12 +175,12 @@ export const faqItems = [
   {
     question: "What is the best school management system in Uganda?",
     answer:
-      "MakySchool is Uganda's leading school management platform, serving primary schools, secondary schools, and Islamic schools. It provides complete academic management, theology curriculum support, fees collection, teacher and learner portals, and comprehensive school operations from one modern cloud-based system.",
+      "MakySchool is Uganda's leading school management platform, serving primary schools, secondary schools, and theology-focused schools. It provides complete academic management, theology curriculum support, fees collection, teacher and learner portals, and comprehensive school operations from one modern cloud-based system.",
   },
   {
-    question: "Does MakySchool support Islamic schools and theology?",
+    question: "Does MakySchool support theology programs?",
     answer:
-      "Yes. MakySchool supports Islamic schools with theology curriculum management, Islamic studies tracking, and all standard academic features. Muslim schools can manage both religious and secular subjects within the same system.",
+      "Yes. MakySchool supports schools with theology curriculum management, religious studies tracking, and all standard academic features. Schools can manage both religious and secular subjects within the same system.",
   },
   {
     question: "How much does school management software cost in Uganda?",
@@ -195,7 +195,7 @@ export const faqItems = [
   {
     question: "Who uses MakySchool?",
     answer:
-      "School administrators, head teachers, teachers, bursars, and learners each get a dedicated portal tailored to their daily work. Used by primary schools, secondary schools, Islamic schools, and education groups across Uganda including Kampala, Gulu, Mbarara, and other regions.",
+      "School administrators, head teachers, teachers, bursars, and learners each get a dedicated portal tailored to their daily work. Used by primary schools, secondary schools, theology-focused schools, and education groups across Uganda including Kampala, Gulu, Mbarara, and other regions.",
   },
   {
     question: "Does MakySchool support PLE and UCE/UACE?",
@@ -205,7 +205,7 @@ export const faqItems = [
   {
     question: "What types of schools can use MakySchool?",
     answer:
-      "MakySchool serves primary schools (P1-P7), secondary schools (O-Level S1-S4, A-Level S5-S6), Islamic schools with theology programs, mixed schools, boarding schools, day schools, and multi-campus education groups throughout Uganda.",
+      "MakySchool serves primary schools (P1-P7), secondary schools (O-Level S1-S4, A-Level S5-S6), schools with theology programs, mixed schools, boarding schools, day schools, and multi-campus education groups throughout Uganda.",
   },
   {
     question: "How do schools get started with MakySchool?",
@@ -220,7 +220,7 @@ export const faqItems = [
   {
     question: "Is MakySchool only for Uganda?",
     answer:
-      "MakySchool is built specifically for Ugandan schools — three-term years, local currency, Islamic education support, and workflows common in East African schools. It can serve similar institutions across the region.",
+      "MakySchool is built specifically for Ugandan schools — three-term years, local currency, theology education support, and workflows common in East African schools. It can serve similar institutions across the region.",
   },
 ] as const;
 
@@ -281,15 +281,15 @@ export const solutions: Array<{
   },
   {
     slug: "islamic-schools",
-    title: "Islamic schools & theology",
-    summary: "Complete support for Islamic education and theology curriculum.",
+    title: "Theology programs",
+    summary: "Complete support for theology curriculum and religious education.",
     description:
-      "Manage Islamic studies, Quran memorization tracking, theology subjects alongside standard curriculum for Muslim schools in Uganda.",
+      "Manage theology studies, religious education tracking, and faith-based subjects alongside standard curriculum for schools with religious programs in Uganda.",
     bullets: [
-      "Islamic studies curriculum",
-      "Quran and theology subjects",
+      "Theology curriculum management",
+      "Religious studies and subjects",
       "Combined secular and religious education",
-      "Arabic language support",
+      "Faith-based education support",
       "Full school management features",
     ],
     imageKey: "theology",

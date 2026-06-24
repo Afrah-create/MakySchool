@@ -59,7 +59,7 @@ export const marketingImages = {
   },
   theology: {
     src: "/images/Teacher.png",
-    alt: "Islamic school teacher managing theology and Quran studies in MakySchool",
+    alt: "Teacher managing theology and religious studies curriculum in MakySchool",
     width: 1408,
     height: 768,
   },
