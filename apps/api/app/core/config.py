@@ -1,5 +1,5 @@
-from pydantic_settings import BaseSettings
-from typing import List
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import List, Union
 
 class Settings(BaseSettings):
     APP_NAME: str = "MakySchool API"
@@ -11,16 +11,19 @@ class Settings(BaseSettings):
     AUTH_JWT_SECRET: str  # Must match JWT_SECRET in auth service
     JWT_ALGORITHM: str = "HS256"
     
-    CORS_ORIGINS: List[str] = []
+    CORS_ORIGINS: Union[str, List[str]] = []
     
     API_INTERNAL_URL: str = "http://localhost:4000"
     PLATFORM_APP_URL: str = "http://localhost:3001"
     
     SUBSCRIPTIONS_ENABLED: bool = False
+    RUN_MIGRATIONS: bool = True
     
-    class Config:
-        env_file = "../../.env"
-        case_sensitive = True
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"
+    )
         
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

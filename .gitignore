@@ -3,6 +3,16 @@ node_modules/
 .pnp
 .pnp.js
 
+# Python
+venv/
+env/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
 # Build
 .next/
 out/
