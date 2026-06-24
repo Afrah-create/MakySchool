@@ -2,9 +2,9 @@ const trimTrailingSlash = (value: string) => value.replace(/\/$/, "");
 
 export const siteConfig = {
   name: "MakySchool",
-  tagline: "School management built for clarity",
+  tagline: "Uganda's leading school management system",
   description:
-    "MakySchool is a modern school management platform for Ugandan primary and secondary schools — classes, academics, teachers, learners, fees, and bursar workflows in one place.",
+    "MakySchool is Uganda's best school management platform for primary, secondary, and Islamic schools — classes, academics, theology, teachers, learners, fees, and complete school operations in one modern system.",
   company: "MakyLegacy",
   companyUrl: "https://makylegacy.com",
   contactEmail: "support@makylegacy.com",
@@ -173,14 +173,19 @@ export const testimonials = [
 
 export const faqItems = [
   {
-    question: "What is MakySchool?",
+    question: "What is the best school management system in Uganda?",
     answer:
-      "MakySchool is a cloud school management platform for Ugandan primary and secondary schools. It covers academic structure, staff and learner portals, and fees management with role-based access.",
+      "MakySchool is Uganda's leading school management platform, serving primary schools, secondary schools, and Islamic schools. It provides complete academic management, theology curriculum support, fees collection, teacher and learner portals, and comprehensive school operations from one modern cloud-based system.",
+  },
+  {
+    question: "Does MakySchool support Islamic schools and theology?",
+    answer:
+      "Yes. MakySchool supports Islamic schools with theology curriculum management, Islamic studies tracking, and all standard academic features. Muslim schools can manage both religious and secular subjects within the same system.",
   },
   {
     question: "Who uses MakySchool?",
     answer:
-      "School administrators, head teachers, teachers, bursars, and learners each get a dedicated portal tailored to their daily work.",
+      "School administrators, head teachers, teachers, bursars, and learners each get a dedicated portal tailored to their daily work. Used by primary schools, secondary schools, Islamic schools, and education groups across Uganda.",
   },
   {
     question: "Does MakySchool support school fees?",
@@ -188,18 +193,23 @@ export const faqItems = [
       "Yes. Schools can define fee structures, assign accounts to learners, record payments, generate receipts, and track outstanding balances. Bursars have a dedicated portal for this work.",
   },
   {
-    question: "How do schools get started?",
+    question: "What types of schools can use MakySchool?",
     answer:
-      "Book a demo with our team. We walk you through the platform, plan your rollout, and support onboarding for your staff.",
+      "MakySchool serves primary schools, secondary schools (O-Level and A-Level), Islamic schools with theology programs, mixed schools, boarding schools, day schools, and multi-campus education groups throughout Uganda.",
+  },
+  {
+    question: "How do schools get started with MakySchool?",
+    answer:
+      "Book a demo with our team. We walk you through the platform, plan your rollout including theology curriculum if needed, and support onboarding for your staff.",
   },
   {
     question: "Is MakySchool only for Uganda?",
     answer:
-      "MakySchool is built with Ugandan school operations in mind — three-term years, local currency, and workflows common in East African schools — and can serve similar institutions in the region.",
+      "MakySchool is built specifically for Ugandan schools — three-term years, local currency, Islamic education support, and workflows common in East African schools. It can serve similar institutions across the region.",
   },
 ] as const;
 
-export type SolutionSlug = "primary-schools" | "secondary-schools" | "fees-bursar";
+export type SolutionSlug = "primary-schools" | "secondary-schools" | "fees-bursar" | "islamic-schools";
 
 export const solutions: Array<{
   slug: SolutionSlug;
@@ -207,49 +217,67 @@ export const solutions: Array<{
   summary: string;
   description: string;
   bullets: string[];
-  imageKey: "primary" | "secondary" | "fees";
+  imageKey: "primary" | "secondary" | "fees" | "theology";
 }> = [
   {
     slug: "primary-schools",
     title: "Primary schools",
-    summary: "Structure, staff, and learner management for primary campuses.",
+    summary: "Complete management for Uganda's primary schools.",
     description:
-      "Run primary levels, streams, and subjects with portals tuned for younger learners and their teachers.",
+      "Run primary levels, streams, subjects, and learner management with portals designed for Ugandan primary school operations.",
     bullets: [
-      "Primary class levels and streams",
+      "Primary class levels P1-P7",
       "Teacher class assignments",
       "Learner profiles and guardians",
       "Term-based academic calendar",
+      "PLE preparation support",
     ],
     imageKey: "primary",
   },
   {
     slug: "secondary-schools",
     title: "Secondary schools",
-    summary: "O-Level and A-Level academic operations in one workspace.",
+    summary: "O-Level and A-Level operations for Uganda's secondary schools.",
     description:
-      "Manage secondary levels, subject linking, marks workflows, and staff roles without juggling disconnected tools.",
+      "Manage O-Level and A-Level programs, UCE/UACE preparation, subject combinations, and complete secondary school administration.",
     bullets: [
-      "Secondary class levels",
-      "Subject and teacher linking",
+      "O-Level (S1-S4) and A-Level (S5-S6)",
+      "Subject combinations and streaming",
+      "UCE and UACE exam management",
       "Marks and academic terms",
-      "Head teacher oversight",
+      "Head teacher oversight portal",
     ],
     imageKey: "secondary",
   },
   {
     slug: "fees-bursar",
     title: "Fees & bursar",
-    summary: "Fee structures, payments, receipts, and outstanding tracking.",
+    summary: "Complete fees management with UGX currency support.",
     description:
-      "Give your bursar a focused portal for collections while admins retain full visibility and control.",
+      "Fee structures, term payments, receipts in UGX, outstanding tracking, and dedicated bursar portal for Uganda's schools.",
     bullets: [
-      "Fee structures per term",
+      "Fee structures per term in UGX",
       "Student fee accounts",
       "Payment recording & voiding",
-      "PDF receipts and outstanding reports",
+      "PDF receipts and statements",
+      "Outstanding balance reports",
     ],
     imageKey: "fees",
+  },
+  {
+    slug: "islamic-schools",
+    title: "Islamic schools & theology",
+    summary: "Complete support for Islamic education and theology curriculum.",
+    description:
+      "Manage Islamic studies, Quran memorization tracking, theology subjects alongside standard curriculum for Muslim schools in Uganda.",
+    bullets: [
+      "Islamic studies curriculum",
+      "Quran and theology subjects",
+      "Combined secular and religious education",
+      "Arabic language support",
+      "Full school management features",
+    ],
+    imageKey: "theology",
   },
 ];
 

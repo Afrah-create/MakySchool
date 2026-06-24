@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { MarketingFooter } from "@/components/layout/MarketingFooter";
 import { MarketingHeader } from "@/components/layout/MarketingHeader";
 import { JsonLd } from "@/components/seo/JsonLd";
-import { organizationJsonLd, softwareApplicationJsonLd, webSiteJsonLd } from "@/lib/json-ld";
+import { organizationJsonLd, softwareApplicationJsonLd, webSiteJsonLd, localBusinessJsonLd, productJsonLd } from "@/lib/json-ld";
 import { createPageMetadata } from "@/lib/metadata";
 import { siteConfig } from "@/lib/site";
 import { MarketingProviders } from "@/providers/MarketingProviders";
@@ -60,7 +60,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className="marketing-site" data-scroll-behavior="smooth">
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        <JsonLd data={[organizationJsonLd(), softwareApplicationJsonLd(), webSiteJsonLd()]} />
+        <JsonLd data={[organizationJsonLd(), softwareApplicationJsonLd(), webSiteJsonLd(), localBusinessJsonLd(), productJsonLd()]} />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} min-h-screen antialiased`}>
         <MarketingProviders>
