@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
+import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { fadeUp } from "@/components/landing/landingMotion";
 
@@ -17,9 +18,7 @@ export function LandingHeader() {
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
         <Link href="/" className="flex items-center gap-2.5">
-          <span className="brand-gradient flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold text-on-accent shadow-theme-accent">
-            MS
-          </span>
+          <BrandLogo size={36} className="shadow-theme-accent" />
           <span className="text-sm font-bold tracking-tight text-theme-primary">MakySchool</span>
         </Link>
 

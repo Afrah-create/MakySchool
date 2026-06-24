@@ -19,6 +19,10 @@ export const metadata: Metadata = {
     template: "%s | MakySchool Platform",
   },
   description: "Platform administration for MakySchool",
+  icons: {
+    icon: "/makyschool-logo.jpeg",
+    apple: "/makyschool-logo.jpeg",
+  },
 };
 
 const themeInitScript = `

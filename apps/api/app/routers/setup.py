@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from typing import Annotated, Any
 
@@ -54,24 +53,22 @@ async def get_setup_status(
 
     await audit_school_subscription(conn, school_id)
 
-    school, year_row, grading_row = await asyncio.gather(
-        conn.fetchrow(
-            """
-            SELECT id, slug, name, logo_url, stamp_url, email, phone, address, school_type,
-                   status, subscription_status, subscription_term, subscription_year,
-                   schoolpay_code, setup_completed_at, created_at
-            FROM schools WHERE id = $1
-            """,
-            school_id,
-        ),
-        conn.fetchrow(
-            "SELECT COUNT(*)::int AS count FROM academic_years WHERE school_id = $1",
-            school_id,
-        ),
-        conn.fetchrow(
-            "SELECT COUNT(*)::int AS count FROM grading_scales WHERE school_id = $1",
-            school_id,
-        ),
+    school = await conn.fetchrow(
+        """
+        SELECT id, slug, name, logo_url, stamp_url, email, phone, address, school_type,
+               status, subscription_status, subscription_term, subscription_year,
+               schoolpay_code, setup_completed_at, created_at
+        FROM schools WHERE id = $1
+        """,
+        school_id,
+    )
+    year_row = await conn.fetchrow(
+        "SELECT COUNT(*)::int AS count FROM academic_years WHERE school_id = $1",
+        school_id,
+    )
+    grading_row = await conn.fetchrow(
+        "SELECT COUNT(*)::int AS count FROM grading_scales WHERE school_id = $1",
+        school_id,
     )
 
     profile = bool(school and school.get("name") and school.get("school_type"))

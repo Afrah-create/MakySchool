@@ -68,6 +68,7 @@ def create_app() -> FastAPI:
         docs_url="/api/docs" if not settings.is_production else None,
         redoc_url=None,
         lifespan=lifespan,
+        redirect_slashes=False,
     )
 
     add_exception_handlers(app)

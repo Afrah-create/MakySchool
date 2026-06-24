@@ -5,12 +5,11 @@ import uuid
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from jose import JWTError
-from passlib.context import CryptContext
 from pydantic import BaseModel
 
 from app.db.pool import get_db
 from app.lib.jwt_utils import verify_superadmin_token
-from app.lib.password import validate_password
+from app.lib.password import hash_password, validate_password, verify_password
 from app.middleware.auth import (
     clear_auth_cookies,
     extract_superadmin_token,
@@ -19,7 +18,6 @@ from app.middleware.auth import (
 from app.services.platform_login import authenticate_superadmin
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class LoginBody(BaseModel):
@@ -136,13 +134,13 @@ async def superadmin_change_password(
             detail={"error": "Not authenticated"},
         )
 
-    if not pwd_context.verify(body.currentPassword, admin["password_hash"]):
+    if not verify_password(body.currentPassword, admin["password_hash"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": "Current password is incorrect"},
         )
 
-    password_hash = pwd_context.hash(body.newPassword)
+    password_hash = hash_password(body.newPassword)
     await conn.execute(
         "UPDATE super_admins SET password_hash = $1 WHERE id = $2",
         password_hash,

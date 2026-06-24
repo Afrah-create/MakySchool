@@ -10,13 +10,12 @@ import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { useApiSWR } from "@/hooks/useApiSWR";
+import { useFeesBasePath } from "@/hooks/useFeesBasePath";
 import { formatUGX } from "@/lib/formatCurrency";
-import { feesBasePath, type FeeStructure } from "@/lib/fees/types";
-import { useAuth } from "@/hooks/useAuth";
+import { type FeeStructure } from "@/lib/fees/types";
 
 export function FeeStructuresContent() {
-  const { state } = useAuth();
-  const base = feesBasePath(state.user?.role ?? "bursar");
+  const base = useFeesBasePath();
   const [addOpen, setAddOpen] = useState(false);
   const [assignStructure, setAssignStructure] = useState<FeeStructure | null>(null);
   const { data, error, isLoading, mutate } = useApiSWR<FeeStructure[]>("/schools/fees/structures");

@@ -5,7 +5,7 @@ from typing import Annotated, Any
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from passlib.context import CryptContext
+from app.lib.password import hash_password
 from pydantic import BaseModel, Field
 
 from app.db.pool import get_db
@@ -21,8 +21,6 @@ from app.lib.user_sql import USER_DISPLAY_NAME_SQL, USER_LEARNER_ROLE_SQL
 from app.middleware.subscription_guard import require_tenant_with_subscription
 
 router = APIRouter()
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 PHONE_RE = re.compile(r"^\+?[0-9\s\-]{7,15}$")
@@ -320,7 +318,7 @@ async def get_my_teacher_profile(
     return {"data": teacher}
 
 
-@router.get("/")
+@router.get("")
 async def list_teachers(
     ctx: TenantCtx,
     conn: asyncpg.Connection = Depends(get_db),
@@ -423,7 +421,7 @@ async def list_teachers(
     return {"data": {"teachers": teachers, "total": int(total or 0), "page": page, "limit": limit}}
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_teacher(
     body: CreateTeacherBody,
     ctx: TenantCtx,
@@ -484,7 +482,7 @@ async def create_teacher(
         )
 
     temp_password = secrets.token_hex(10)
-    password_hash = pwd_context.hash(temp_password)
+    password_hash = hash_password(temp_password)
     actor_id = uuid.UUID(str(actor["sub"]))
 
     try:
@@ -916,7 +914,7 @@ async def reset_teacher_password(
         )
 
     temp_password = secrets.token_hex(10)
-    password_hash = pwd_context.hash(temp_password)
+    password_hash = hash_password(temp_password)
 
     row = await conn.fetchrow(
         """

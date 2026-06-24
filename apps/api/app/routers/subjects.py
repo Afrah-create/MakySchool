@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app.db.pool import get_db
 from app.lib.classes import get_allowed_levels_sql_param, get_school_type
+from app.lib.pg_json import parse_uuid_list, parse_uuid_string_list
 from app.middleware.subscription_guard import require_tenant_with_subscription
 
 router = APIRouter()
@@ -37,7 +38,13 @@ def _row(row: asyncpg.Record | None) -> Any:
     return jsonable_encoder(dict(row))
 
 
-@router.get("/")
+def _subject_row(row: asyncpg.Record) -> dict[str, Any]:
+    data = dict(row)
+    data["class_ids"] = parse_uuid_string_list(data.get("class_ids"))
+    return jsonable_encoder(data)
+
+
+@router.get("")
 async def list_subjects(
     ctx: Ctx,
     conn: asyncpg.Connection = Depends(get_db),
@@ -67,10 +74,10 @@ async def list_subjects(
         school_id,
     )
 
-    return {"data": _rows(rows)}
+    return {"data": [_subject_row(row) for row in rows]}
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_subject(
     body: CreateSubjectBody,
     ctx: Ctx,
@@ -190,11 +197,11 @@ async def update_subject_classes(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "Subject not found"})
 
     unique_class_ids = list(dict.fromkeys(body.classIds))
+    class_uuids = parse_uuid_list(unique_class_ids) if unique_class_ids else []
 
-    if unique_class_ids:
+    if class_uuids:
         school_type = await get_school_type(conn, school_id)
         allowed_levels = get_allowed_levels_sql_param(school_type)
-        class_uuids = [uuid.UUID(class_id) for class_id in unique_class_ids]
 
         valid_classes = await conn.fetch(
             """
@@ -208,7 +215,7 @@ async def update_subject_classes(
             allowed_levels,
         )
 
-        if len(valid_classes) != len(unique_class_ids):
+        if len(valid_classes) != len(class_uuids):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
@@ -224,7 +231,7 @@ async def update_subject_classes(
             subject_id,
         )
 
-        for class_id in unique_class_ids:
+        for class_id in class_uuids:
             await conn.execute(
                 """
                 INSERT INTO school_class_subjects (id, school_id, class_id, subject_id)
@@ -232,11 +239,11 @@ async def update_subject_classes(
                 """,
                 uuid.uuid4(),
                 school_id,
-                uuid.UUID(class_id),
+                class_id,
                 subject_id,
             )
 
-    return {"data": {"ok": True, "classIds": unique_class_ids}}
+    return {"data": {"ok": True, "classIds": [str(class_id) for class_id in class_uuids]}}
 
 
 @router.delete("/{subject_id}")

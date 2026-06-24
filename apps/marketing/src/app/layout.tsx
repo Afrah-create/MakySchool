@@ -34,6 +34,10 @@ export const metadata: Metadata = {
     template: `%s | ${siteConfig.name}`,
   },
   description: siteConfig.description,
+  icons: {
+    icon: "/makyschool-logo.jpeg",
+    apple: "/makyschool-logo.jpeg",
+  },
   alternates: rootMetadata.alternates,
   openGraph: rootMetadata.openGraph,
   twitter: rootMetadata.twitter,

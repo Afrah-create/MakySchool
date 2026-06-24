@@ -4,10 +4,10 @@ from typing import Annotated, Any
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 
 from app.db.pool import get_db
+from app.lib.password import hash_password
 from app.lib.permissions import can
 from app.lib.teacher_assignments import (
     AssignmentInput,
@@ -18,8 +18,6 @@ from app.lib.user_sql import USER_DISPLAY_NAME_SQL, normalize_user_role
 from app.middleware.subscription_guard import require_tenant_with_subscription
 
 router = APIRouter()
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 CREATABLE_ROLES = frozenset({"head_teacher", "teacher", "bursar", "learner"})
 ASSIGNABLE_ROLES = frozenset({"head_teacher", "teacher"})
@@ -162,7 +160,7 @@ async def _replace_teacher_assignments(
         await scaffold_term_submissions(conn, school_id, teacher_id, to_add)
 
 
-@router.get("/")
+@router.get("")
 async def list_users(
     ctx: TenantCtx,
     conn: asyncpg.Connection = Depends(get_db),
@@ -231,7 +229,7 @@ async def list_users(
     return {"data": data}
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_user(
     body: CreateUserBody,
     ctx: TenantCtx,
@@ -274,7 +272,7 @@ async def create_user(
         )
 
     temp_password = secrets.token_hex(10)
-    password_hash = pwd_context.hash(temp_password)
+    password_hash = hash_password(temp_password)
     user_id = uuid.uuid4()
     actor_id = uuid.UUID(str(actor["sub"]))
 
@@ -509,7 +507,7 @@ async def reset_user_password(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "Forbidden"})
 
     temp_password = secrets.token_hex(10)
-    password_hash = pwd_context.hash(temp_password)
+    password_hash = hash_password(temp_password)
 
     row = await conn.fetchrow(
         """

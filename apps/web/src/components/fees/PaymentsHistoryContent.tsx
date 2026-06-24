@@ -8,6 +8,7 @@ import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { useApiSWR } from "@/hooks/useApiSWR";
+import { useFeesPortal } from "@/hooks/useFeesBasePath";
 import { formatUGX } from "@/lib/formatCurrency";
 import { paymentMethodLabel, type FeePayment } from "@/lib/fees/types";
 import { resolveClientApiUrl } from "@/lib/api/base-url";
@@ -20,6 +21,7 @@ type PaymentsResponse = {
 };
 
 export function PaymentsHistoryContent() {
+  const isAdminPortal = useFeesPortal() === "admin";
   const [page, setPage] = useState(1);
   const [voidPayment, setVoidPayment] = useState<FeePayment | null>(null);
   const query = useMemo(() => `/schools/fees/payments?page=${page}&limit=25`, [page]);
@@ -53,7 +55,11 @@ export function PaymentsHistoryContent() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-theme-primary">Payment history</h1>
-          <p className="mt-1 text-sm text-theme-muted">All recorded fee payments</p>
+          <p className="mt-1 text-sm text-theme-muted">
+            {isAdminPortal
+              ? "Read-only ledger of payments recorded by your bursar"
+              : "All recorded fee payments"}
+          </p>
         </div>
         <button type="button" className="ms-btn-secondary" onClick={exportCsv}>
           Export CSV

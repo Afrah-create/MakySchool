@@ -7,7 +7,7 @@ export function organizationJsonLd() {
     name: siteConfig.company,
     alternateName: siteConfig.name,
     url: siteConfig.companyUrl,
-    logo: `${siteUrl}/images/Hero.png`,
+    logo: `${siteUrl}/makyschool-logo.jpeg`,
     description: siteConfig.description,
     address: {
       "@type": "PostalAddress",
@@ -85,7 +85,7 @@ export function localBusinessJsonLd() {
     "@context": "https://schema.org",
     "@type": "LocalBusiness",
     name: siteConfig.name,
-    image: `${siteUrl}/images/Hero.png`,
+    image: `${siteUrl}/makyschool-logo.jpeg`,
     "@id": siteUrl,
     url: siteUrl,
     telephone: siteConfig.contactPhone,

@@ -59,6 +59,11 @@ def is_maky_school_role(role: str) -> bool:
     return role in MAKY_SCHOOL_ROLES
 
 
+def is_school_setup_completed(setup_completed_at: Any) -> bool:
+    """Match /schools/setup/status — completed when the school has setup_completed_at."""
+    return setup_completed_at is not None
+
+
 def resolve_school_redirect_path(role: str, is_temp_password: bool, setup_completed: bool) -> str:
     if is_temp_password:
         return "/auth/change-password"

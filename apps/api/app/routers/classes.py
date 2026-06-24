@@ -15,11 +15,12 @@ from app.lib.classes import (
     get_school_type,
     is_level_allowed_for_school_type,
 )
+from app.lib.pg_json import parse_pg_json
 from app.lib.user_sql import USER_LEARNER_ROLE_SQL
 from app.middleware.subscription_guard import require_tenant_with_subscription
 from app.middleware.teacher_scope import assert_class_access, get_allowed_class_ids
 
-router = APIRouter(dependencies=[Depends(get_allowed_class_ids)])
+router = APIRouter()
 
 Ctx = Annotated[tuple[uuid.UUID, dict[str, Any]], Depends(require_tenant_with_subscription)]
 AllowedClassIds = Annotated[list[uuid.UUID] | None, Depends(get_allowed_class_ids)]
@@ -51,7 +52,14 @@ def _row(row: asyncpg.Record | None) -> Any:
     return jsonable_encoder(dict(row))
 
 
-@router.get("/")
+def _class_row(row: asyncpg.Record) -> dict[str, Any]:
+    data = dict(row)
+    subjects = parse_pg_json(data.get("subjects"), default=[])
+    data["subjects"] = subjects if isinstance(subjects, list) else []
+    return jsonable_encoder(data)
+
+
+@router.get("")
 async def list_classes(
     ctx: Ctx,
     allowed_class_ids: AllowedClassIds,
@@ -102,7 +110,7 @@ async def list_classes(
         *query_params,
     )
 
-    return {"data": _rows(rows)}
+    return {"data": [_class_row(row) for row in rows]}
 
 
 @router.get("/{class_id}")
@@ -148,7 +156,7 @@ async def get_class(
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "Class not found"})
 
-    data = dict(row)
+    data = _class_row(row)
     teacher_subjects: list[dict[str, Any]] = []
     if user.get("role") == "teacher":
         teacher_rows = await conn.fetch(
@@ -165,7 +173,7 @@ async def get_class(
         teacher_subjects = _rows(teacher_rows)
 
     data["teacher_subjects"] = teacher_subjects
-    return {"data": jsonable_encoder(data)}
+    return {"data": data}
 
 
 @router.get("/{class_id}/subjects")
@@ -231,7 +239,7 @@ async def get_class_students(
     return {"data": _rows(rows)}
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_class(
     body: CreateClassBody,
     ctx: Ctx,

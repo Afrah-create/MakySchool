@@ -7,14 +7,13 @@ import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { useApiSWR } from "@/hooks/useApiSWR";
+import { useFeesBasePath } from "@/hooks/useFeesBasePath";
 import { formatUGX } from "@/lib/formatCurrency";
-import { feesBasePath, paymentMethodLabel, type StudentFeeAccount } from "@/lib/fees/types";
+import { paymentMethodLabel, type StudentFeeAccount } from "@/lib/fees/types";
 import { resolveClientApiUrl } from "@/lib/api/base-url";
-import { useAuth } from "@/hooks/useAuth";
 
 export function StudentFeesTab({ studentId }: { studentId: string }) {
-  const { state } = useAuth();
-  const base = feesBasePath(state.user?.role ?? "admin");
+  const base = useFeesBasePath();
   const { data, error, isLoading, mutate } = useApiSWR<{ accounts: StudentFeeAccount[] }>(
     `/schools/fees/accounts/student/${studentId}`,
   );

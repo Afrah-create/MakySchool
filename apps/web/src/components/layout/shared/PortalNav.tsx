@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import type { UserRole } from "@makyschool/shared/types";
+import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { apiClient } from "@/lib/api/client";
 import { clearSchoolSlug } from "@/lib/auth/session";
@@ -42,9 +43,7 @@ export function PortalMobileNav({
     <header className="border-b border-theme bg-sidebar">
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-theme-accent text-xs font-bold text-on-accent">
-            MS
-          </span>
+          <BrandLogo size={32} rounded="md" />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-theme-primary">
               {schoolName ?? "Your school"}
@@ -114,9 +113,7 @@ export function PortalSidebar({
     <aside className="hidden h-dvh w-64 shrink-0 flex-col border-r border-sidebar bg-sidebar px-4 py-6 lg:flex">
       <div className="mb-8 shrink-0 px-2">
         <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-theme-accent text-sm font-bold text-on-accent shadow-theme-accent">
-            MS
-          </span>
+          <BrandLogo size={36} className="shadow-theme-accent" />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-theme-primary">MakySchool</p>
             <p className="truncate text-xs text-theme-muted">{schoolName ?? "School"}</p>

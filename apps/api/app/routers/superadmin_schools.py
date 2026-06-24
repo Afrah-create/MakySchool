@@ -6,7 +6,7 @@ from typing import Any
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from passlib.context import CryptContext
+from app.lib.password import hash_password
 from pydantic import BaseModel, EmailStr
 
 from app.db.pool import get_db
@@ -15,8 +15,6 @@ from app.lib.user_sql import USER_ADMIN_ROLE_SQL, USER_DISPLAY_NAME_SQL, USER_LE
 from app.middleware.auth import get_current_superadmin
 
 router = APIRouter(dependencies=[Depends(get_current_superadmin)])
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 async def _generate_unique_slug(conn: asyncpg.Connection, name: str) -> str:
     base_slug = slugify_school_name(name)
@@ -65,7 +63,7 @@ class ManualSubscriptionBody(BaseModel):
     schoolpayRef: str | None = None
 
 
-@router.get("/")
+@router.get("")
 async def list_schools(
     search: str = Query(""),
     status_filter: str = Query("", alias="status"),
@@ -150,7 +148,7 @@ async def list_schools(
     }
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_school(
     body: CreateSchoolBody,
     conn: asyncpg.Connection = Depends(get_db),
@@ -179,7 +177,7 @@ async def create_school(
     school_id = uuid.uuid4()
     temp_password = secrets.token_hex(10)
     slug = await _generate_unique_slug(conn, body.schoolName)
-    password_hash = pwd_context.hash(temp_password)
+    password_hash = hash_password(temp_password)
 
     async with conn.transaction():
         await conn.execute(

@@ -1,19 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, FileText, History, PlusCircle } from "lucide-react";
+import { FileText, History } from "lucide-react";
 import { CanDo } from "@/components/ui/CanDo";
 import { AddUserPanel } from "@/components/users/AddUserPanel";
-import { SmsReminderPanel } from "@/components/fees/SmsReminderPanel";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { useApiSWR } from "@/hooks/useApiSWR";
+import { useFeesBasePath, useFeesPortal } from "@/hooks/useFeesBasePath";
 import { formatUGX } from "@/lib/formatCurrency";
-import { feesBasePath, paymentMethodLabel, type FeePayment, type FeesDashboardStats } from "@/lib/fees/types";
+import { paymentMethodLabel, type FeePayment, type FeesDashboardStats } from "@/lib/fees/types";
 import { resolveClientApiUrl } from "@/lib/api/base-url";
-import { useAuth } from "@/hooks/useAuth";
 
 type DashboardData = {
   stats: FeesDashboardStats;
@@ -21,10 +20,10 @@ type DashboardData = {
 };
 
 export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar" | "admin" }) {
-  const { state } = useAuth();
-  const base = feesBasePath(state.user?.role ?? "bursar");
+  const portal = useFeesPortal();
+  const isAdmin = variant === "admin" || portal === "admin";
+  const base = useFeesBasePath();
   const { data, error, isLoading, mutate } = useApiSWR<DashboardData>("/schools/fees/dashboard-stats");
-  const [smsOpen, setSmsOpen] = useState(false);
   const [addBursarOpen, setAddBursarOpen] = useState(false);
 
   const hasData = useMemo(
@@ -38,28 +37,26 @@ export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar
         <div>
           <h1 className="text-xl font-semibold text-theme-primary">Fees</h1>
           <p className="mt-1 text-sm text-theme-muted">
-            {variant === "admin" ? "School fee collection overview" : "Bursar dashboard"}
+            {isAdmin
+              ? "Configure fee structures and monitor collections. Day-to-day payments are handled by your bursar."
+              : "Bursar dashboard — record payments and follow up on balances."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {variant === "admin" ? (
+          {isAdmin ? (
             <CanDo action="manageUsers">
               <button type="button" className="ms-btn-secondary" onClick={() => setAddBursarOpen(true)}>
                 Add bursar user
               </button>
             </CanDo>
           ) : null}
-          <CanDo action="manageFees">
-            <button type="button" className="ms-btn-secondary" onClick={() => setSmsOpen(true)}>
-              Send SMS reminders
-            </button>
-          </CanDo>
-          <CanDo action="recordPayments">
-            <Link href={`${base}/payments/new`} className="ms-btn-primary inline-flex items-center gap-2">
-              <PlusCircle className="h-4 w-4" />
-              Record payment
-            </Link>
-          </CanDo>
+          {!isAdmin ? (
+            <CanDo action="recordPayments">
+              <Link href={`${base}/payments/new`} className="ms-btn-primary inline-flex items-center gap-2">
+                Record payment
+              </Link>
+            </CanDo>
+          ) : null}
         </div>
       </div>
 
@@ -81,11 +78,15 @@ export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar
         empty={
           <EmptyState
             title="No fees recorded yet."
-            description="Start by setting up a fee structure."
+            description={
+              isAdmin
+                ? "Create a fee structure for each class and term to get started."
+                : "Start by setting up a fee structure."
+            }
             action={
               <CanDo action="manageFees">
                 <Link href={`${base}/structures`} className="ms-btn-primary inline-flex">
-                  Manage fee structures
+                  {isAdmin ? "Set up fee structures" : "Manage fee structures"}
                 </Link>
               </CanDo>
             }
@@ -103,16 +104,6 @@ export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <CanDo action="recordPayments">
-                <Link href={`${base}/payments/new`} className="ms-btn-secondary inline-flex items-center gap-2">
-                  <PlusCircle className="h-4 w-4" />
-                  Record payment
-                </Link>
-              </CanDo>
-              <Link href={`${base}/outstanding`} className="ms-btn-secondary inline-flex items-center gap-2">
-                <AlertCircle className="h-4 w-4" />
-                View outstanding
-              </Link>
               <Link href={`${base}/structures`} className="ms-btn-secondary inline-flex items-center gap-2">
                 <FileText className="h-4 w-4" />
                 Fee structures
@@ -121,11 +112,26 @@ export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar
                 <History className="h-4 w-4" />
                 Payment history
               </Link>
+              {!isAdmin ? (
+                <>
+                  <CanDo action="recordPayments">
+                    <Link href={`${base}/payments/new`} className="ms-btn-secondary inline-flex items-center gap-2">
+                      Record payment
+                    </Link>
+                  </CanDo>
+                  <Link href={`${base}/outstanding`} className="ms-btn-secondary inline-flex items-center gap-2">
+                    View outstanding
+                  </Link>
+                </>
+              ) : null}
             </div>
 
             <div className="overflow-hidden rounded-xl border border-theme">
-              <div className="border-b border-theme px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-theme px-4 py-3">
                 <h2 className="text-sm font-semibold text-theme-primary">Recent payments</h2>
+                <Link href={`${base}/payments`} className="text-xs font-medium text-theme-accent hover:underline">
+                  View all
+                </Link>
               </div>
               {dashboard.recent_payments.length === 0 ? (
                 <p className="px-4 py-6 text-sm text-theme-muted">No payments recorded yet.</p>
@@ -165,9 +171,13 @@ export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar
         )}
       </QueryState>
 
-      <SmsReminderPanel open={smsOpen} onClose={() => setSmsOpen(false)} students={[]} />
-      {variant === "admin" ? (
-        <AddUserPanel open={addBursarOpen} onClose={() => setAddBursarOpen(false)} onSaved={() => setAddBursarOpen(false)} defaultRole="bursar" />
+      {isAdmin ? (
+        <AddUserPanel
+          open={addBursarOpen}
+          onClose={() => setAddBursarOpen(false)}
+          onSaved={() => setAddBursarOpen(false)}
+          defaultRole="bursar"
+        />
       ) : null}
     </section>
   );

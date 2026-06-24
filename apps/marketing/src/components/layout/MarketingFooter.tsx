@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { GraduationCap } from "lucide-react";
+import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { bookDemoUrl, navLinks, siteConfig, siteUrl } from "@/lib/site";
 import { marketingContainer, sectionY } from "@/lib/layout";
 
@@ -37,9 +37,7 @@ export function MarketingFooter() {
         <div className="grid gap-8 sm:grid-cols-2 sm:gap-10 lg:grid-cols-4">
           <div className="sm:col-span-2 lg:col-span-1">
             <Link href="/" className="flex items-center gap-2.5">
-              <span className="brand-gradient flex h-9 w-9 items-center justify-center rounded-xl shadow-theme-accent">
-                <GraduationCap className="h-4 w-4 text-on-accent" />
-              </span>
+              <BrandLogo size={36} className="shadow-theme-accent" />
               <span className="text-sm font-bold tracking-tight text-theme-primary">
                 {siteConfig.name}
               </span>

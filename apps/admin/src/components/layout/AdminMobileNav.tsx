@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
+import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { apiClient } from "@/lib/api/client";
 import { platformAdminNav } from "@/lib/platform-admin-nav";
@@ -21,9 +22,7 @@ export function AdminMobileNav() {
     <header className="border-b border-theme bg-sidebar lg:hidden">
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-theme-accent text-xs font-bold text-on-accent">
-            MS
-          </span>
+          <BrandLogo size={32} rounded="md" />
           <p className="truncate text-sm font-semibold text-theme-primary">MakySchool</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">

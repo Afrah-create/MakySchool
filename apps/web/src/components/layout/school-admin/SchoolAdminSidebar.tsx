@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { subscriptionsEnabled } from "@makyschool/shared/constants";
 import type { UserRole } from "@makyschool/shared/types";
+import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { apiClient } from "@/lib/api/client";
 import { clearSchoolSlug } from "@/lib/auth/session";
 import {
@@ -53,9 +54,7 @@ export function SchoolAdminSidebar({
     <aside className="hidden h-dvh w-64 shrink-0 flex-col border-r border-sidebar bg-sidebar px-4 py-6 lg:flex">
       <div className="mb-8 shrink-0 px-2">
         <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-theme-accent text-sm font-bold text-on-accent shadow-theme-accent">
-            MS
-          </span>
+          <BrandLogo size={36} className="shadow-theme-accent" />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-theme-primary">MakySchool</p>
             <p className="truncate text-xs text-theme-muted">{schoolName ?? schoolSlug ?? "School"}</p>

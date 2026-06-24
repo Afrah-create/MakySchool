@@ -2,11 +2,9 @@ import asyncio
 import uuid
 
 import asyncpg
-from passlib.context import CryptContext
 
 from app.config import settings
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+from app.lib.password import hash_password
 
 
 def _require_production_secrets() -> None:
@@ -41,7 +39,7 @@ async def seed_super_admin() -> None:
             "SELECT id FROM super_admins WHERE LOWER(email) = LOWER($1) LIMIT 1",
             email,
         )
-        password_hash = pwd_context.hash(settings.SUPERADMIN_PASSWORD)
+        password_hash = hash_password(settings.SUPERADMIN_PASSWORD)
 
         if existing and not settings.SUPERADMIN_FORCE_RESET:
             print(f"Super admin already exists: {email}")

@@ -15,7 +15,7 @@ CAN: dict[str, list[str]] = {
     "viewFinance": ["admin"],
     "viewFees": ["admin", "head_teacher", "bursar"],
     "manageFees": ["admin", "bursar"],
-    "recordPayments": ["admin", "bursar"],
+    "recordPayments": ["bursar"],
     "voidPayments": ["admin"],
     "waiveFees": ["admin"],
     "viewReports": ["admin", "head_teacher", "bursar"],

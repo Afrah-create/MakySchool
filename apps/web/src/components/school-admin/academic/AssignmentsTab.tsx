@@ -28,6 +28,20 @@ import { useListControls } from "@/lib/academic/useListControls";
 
 type LinkFilter = "all" | "linked" | "unlinked";
 
+function normalizeClassIds(raw: string[] | string | undefined): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export function AssignmentsTab({
   schoolType,
   classes,
@@ -342,7 +356,7 @@ function BySubjectView({
     }
 
     const timer = window.setTimeout(() => {
-      setDraftClassIds(selectedSubject.class_ids ?? []);
+      setDraftClassIds(normalizeClassIds(selectedSubject.class_ids));
       setDirty(false);
     }, 0);
 
@@ -389,7 +403,7 @@ function BySubjectView({
   });
 
   const baselineIds = useMemo(
-    () => selectedSubject?.class_ids ?? [],
+    () => normalizeClassIds(selectedSubject?.class_ids),
     [selectedSubject?.class_ids],
   );
   const linkedCount = draftClassIds.length;

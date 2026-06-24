@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 
 import asyncpg
 from fastapi import APIRouter, Depends, Request, Response
-from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 
 from app.config import settings
@@ -15,12 +14,13 @@ from app.lib.email import send_password_reset_email
 from app.lib.jwt_utils import (
     cookie_options,
     is_maky_school_role,
+    is_school_setup_completed,
     resolve_school_redirect_path,
     sign_tenant_token,
     verify_superadmin_token,
     verify_tenant_token,
 )
-from app.lib.password import validate_password
+from app.lib.password import hash_password, validate_password, verify_password
 from app.lib.user_sql import USER_DISPLAY_NAME_SQL, normalize_user_role
 from app.middleware.auth import (
     clear_auth_cookies,
@@ -30,8 +30,6 @@ from app.middleware.auth import (
 )
 from app.services.platform_login import authenticate_superadmin, is_superadmin_email
 from app.services.subscription import audit_school_subscription
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter()
 change_password_router = APIRouter()
@@ -102,7 +100,7 @@ async def login(
                u.role, u.school_id, u.account_status,
                COALESCE(u.is_active, u.account_status = 'ACTIVE' OR u.account_status IS NULL) AS is_active,
                COALESCE(u.is_temp_password, false) AS is_temp_password,
-               COALESCE(u.setup_completed, false) AS setup_completed,
+               s.setup_completed_at,
                s.slug AS school_slug, s.name AS school_name,
                s.status AS school_status, s.subscription_status
         FROM users u
@@ -151,7 +149,7 @@ async def login(
             media_type="application/json",
         )
 
-    if not pwd_context.verify(body.password, candidate["password_hash"]):
+    if not verify_password(body.password, candidate["password_hash"]):
         return Response(
             content='{"error":"Invalid credentials"}',
             status_code=401,
@@ -188,7 +186,7 @@ async def login(
     )
 
     is_temp = bool(candidate["is_temp_password"])
-    setup_completed = bool(candidate["setup_completed"])
+    setup_completed = is_school_setup_completed(candidate["setup_completed_at"])
 
     payload = {
         "sub": str(candidate["id"]),
@@ -337,7 +335,7 @@ class ChangePasswordBody(BaseModel):
     newPassword: str
 
 
-@change_password_router.post("/")
+@change_password_router.post("")
 async def change_password(
     body: ChangePasswordBody,
     response: Response,
@@ -351,8 +349,7 @@ async def change_password(
     user = await conn.fetchrow(
         f"""
         SELECT u.id, u.email, {USER_DISPLAY_NAME_SQL} AS name, u.role, u.school_id,
-               u.password_hash, COALESCE(u.setup_completed, false) AS setup_completed,
-               s.slug AS school_slug
+               u.password_hash, s.setup_completed_at, s.slug AS school_slug
         FROM users u INNER JOIN schools s ON s.id = u.school_id
         WHERE u.id = $1 LIMIT 1
         """,
@@ -361,14 +358,14 @@ async def change_password(
     if not user:
         return Response(content='{"error":"User not found"}', status_code=404, media_type="application/json")
 
-    if not pwd_context.verify(body.currentPassword, user["password_hash"]):
+    if not verify_password(body.currentPassword, user["password_hash"]):
         return Response(
             content='{"error":"Current password is incorrect"}',
             status_code=401,
             media_type="application/json",
         )
 
-    password_hash = pwd_context.hash(body.newPassword)
+    password_hash = hash_password(body.newPassword)
     await conn.execute(
         "UPDATE users SET password_hash = $1, is_temp_password = false, updated_at = NOW() WHERE id = $2",
         password_hash,
@@ -376,7 +373,7 @@ async def change_password(
     )
 
     role = normalize_user_role(user["role"])
-    setup_completed = bool(user["setup_completed"])
+    setup_completed = is_school_setup_completed(user["setup_completed_at"])
     redirect = "/dashboard" if setup_completed else "/dashboard/setup"
     payload = {
         "sub": str(user["id"]),
@@ -405,7 +402,7 @@ class ForgotPasswordBody(BaseModel):
     email: EmailStr
 
 
-@forgot_password_router.post("/")
+@forgot_password_router.post("")
 async def forgot_password(body: ForgotPasswordBody, conn: asyncpg.Connection = Depends(get_db)):
     normalized = body.email.lower().strip()
     raw_token = secrets.token_hex(32)
@@ -442,7 +439,7 @@ class ResetPasswordBody(BaseModel):
     new_password: str
 
 
-@reset_password_router.post("/")
+@reset_password_router.post("")
 async def reset_password(body: ResetPasswordBody, conn: asyncpg.Connection = Depends(get_db)):
     err = validate_password(body.new_password)
     if err:
@@ -477,7 +474,7 @@ async def reset_password(body: ResetPasswordBody, conn: asyncpg.Connection = Dep
             media_type="application/json",
         )
 
-    password_hash = pwd_context.hash(body.new_password)
+    password_hash = hash_password(body.new_password)
     await conn.execute(
         """
         UPDATE users SET password_hash = $1, is_temp_password = false,

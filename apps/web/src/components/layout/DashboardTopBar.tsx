@@ -47,6 +47,9 @@ function primaryActionForPath(pathname: string): TopBarAction {
   if (pathname.startsWith("/dashboard/classes")) {
     return { href: "/dashboard/classes", label: "Add class" };
   }
+  if (pathname.startsWith("/dashboard/fees")) {
+    return { href: "/dashboard/fees/structures", label: "Add fee structure" };
+  }
   if (pathname.startsWith("/dashboard/billing")) {
     return { href: "/dashboard/billing", label: "View billing" };
   }

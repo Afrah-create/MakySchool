@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { BookOpen, GraduationCap, ShieldCheck } from "lucide-react";
+import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { getServerApiBaseUrl } from "@/lib/api/base-url";
 
 export type AuthSchoolPreview = {
@@ -50,9 +51,7 @@ export function AuthBrandPanel({
               />
             </div>
           ) : (
-            <span className="auth-brand-icon flex h-12 w-12 items-center justify-center rounded-xl text-sm font-bold text-auth-brand-primary">
-              MS
-            </span>
+            <BrandLogo size={48} className="auth-brand-icon shadow-theme-accent ring-1 ring-theme-subtle" />
           )}
           <div>
             <p className="text-sm font-semibold text-auth-brand-primary">MakySchool</p>

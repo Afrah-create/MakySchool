@@ -7,6 +7,7 @@ import { PRIMARY_CLASS_LEVELS, SECONDARY_CLASS_LEVELS, formatClassLabel } from "
 import { SlideOver } from "@makyschool/ui/components/ui/SlideOver";
 import { apiClient } from "@/lib/api/client";
 import { useApiSWR } from "@/hooks/useApiSWR";
+import { useSchool } from "@/providers/SchoolProvider";
 import type { ClassOption, CreateStudentResponse } from "@/lib/students/types";
 import { validateStudentForm } from "@/lib/validation/students";
 
@@ -36,6 +37,7 @@ export function AddStudentPanel({
   onSaved: () => void;
 }) {
   const router = useRouter();
+  const { schoolSlug } = useSchool();
   const { data: classes = [] } = useApiSWR<ClassOption[]>("/schools/classes");
 
   const [fullName, setFullName] = useState("");
@@ -146,6 +148,7 @@ export function AddStudentPanel({
       const response = await apiClient<CreateStudentResponse>("/schools/students", {
         method: "POST",
         body: formData,
+        schoolSlug,
       });
 
       setSuccess(response.data);

@@ -21,6 +21,10 @@ export const metadata: Metadata = {
     template: "%s | MakySchool",
   },
   description: "Multi-tenant school management platform for Uganda",
+  icons: {
+    icon: "/makyschool-logo.jpeg",
+    apple: "/makyschool-logo.jpeg",
+  },
 };
 
 const themeInitScript = `

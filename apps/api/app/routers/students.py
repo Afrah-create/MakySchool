@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 import re
 import uuid
 from datetime import date
@@ -19,6 +20,7 @@ from app.lib.user_sql import USER_DISPLAY_NAME_SQL
 from app.middleware.subscription_guard import require_tenant_with_subscription
 
 router = APIRouter()
+logger = logging.getLogger("makyschool")
 
 PHONE_RE = re.compile(r"^\+?[0-9\s\-]{7,15}$")
 GENDERS = frozenset({"male", "female", "other"})
@@ -89,6 +91,14 @@ def _normalize_gender(value: str | None) -> str | None:
 def _normalize_relationship(value: str | None) -> str:
     raw = (value or "parent").strip().lower()
     return raw if raw in RELATIONSHIPS else "parent"
+
+
+def _parse_optional_date(value: str | date | None) -> date | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
 
 
 async def _load_class_map(
@@ -431,10 +441,10 @@ async def import_students(
                 "message": f"Row {row_num} has an invalid parent name.",
             })
 
-        date_of_birth: str | None = None
+        date_of_birth: date | None = None
         if dob_raw:
             try:
-                date_of_birth = date.fromisoformat(dob_raw[:10]).isoformat()
+                date_of_birth = date.fromisoformat(dob_raw[:10])
             except ValueError:
                 row_errors.append({
                     "row": row_num,
@@ -696,7 +706,7 @@ async def promote_class(
     }
 
 
-@router.get("/")
+@router.get("")
 async def list_students(
     ctx: TenantCtx,
     conn: asyncpg.Connection = Depends(get_db),
@@ -773,7 +783,7 @@ async def list_students(
     }
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_student(
     ctx: TenantCtx,
     conn: asyncpg.Connection = Depends(get_db),
@@ -841,6 +851,7 @@ async def create_student(
 
     student_id = uuid.uuid4()
     actor_id = uuid.UUID(str(actor["sub"]))
+    parsed_dob = _parse_optional_date(date_of_birth)
 
     try:
         async with conn.transaction():
@@ -866,7 +877,7 @@ async def create_student(
                 school_id,
                 learner_id,
                 full_name.strip(),
-                date_of_birth or None,
+                parsed_dob,
                 gender or None,
                 photo_url,
                 class_id,
@@ -898,7 +909,8 @@ async def create_student(
                 class_id,
                 actor_id,
             )
-    except Exception:
+    except Exception as exc:
+        logger.exception("create_student failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
@@ -1008,7 +1020,7 @@ async def update_student(
         index += 1
     if body.date_of_birth is not None:
         updates.append(f"date_of_birth = ${index}")
-        params.append(body.date_of_birth or None)
+        params.append(_parse_optional_date(body.date_of_birth))
         index += 1
     if body.gender is not None:
         updates.append(f"gender = ${index}")

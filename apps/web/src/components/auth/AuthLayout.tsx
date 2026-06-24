@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 
 export function AuthLayout({
   brandPanel,
@@ -33,9 +34,7 @@ export function AuthCard({
 
       <div className="px-8 pb-8 pt-10 sm:px-10 sm:pb-10 sm:pt-12">
         <div className="flex flex-col items-center text-center">
-          <span className="brand-gradient flex h-11 w-11 items-center justify-center rounded-xl text-sm font-bold text-on-accent shadow-theme-accent ring-1 ring-theme-subtle">
-            MS
-          </span>
+          <BrandLogo size={44} className="shadow-theme-accent ring-1 ring-theme-subtle" />
           <h1 className="mt-5 text-[1.625rem] font-semibold leading-tight tracking-tight text-theme-primary">
             {title}
           </h1>

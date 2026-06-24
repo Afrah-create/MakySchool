@@ -1,12 +1,10 @@
 import uuid
 
 import asyncpg
-from passlib.context import CryptContext
 
 from app.config import settings
 from app.lib.jwt_utils import cookie_options, sign_superadmin_token
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+from app.lib.password import hash_password, verify_password
 
 
 def platform_app_url() -> str:
@@ -32,7 +30,7 @@ async def authenticate_superadmin(
         "SELECT id, email, password_hash, name FROM super_admins WHERE LOWER(email) = LOWER($1) LIMIT 1",
         normalized,
     )
-    if not admin or not pwd_context.verify(password, admin["password_hash"]):
+    if not admin or not verify_password(password, admin["password_hash"]):
         return {"ok": False, "status": 401, "error": "Invalid credentials"}
 
     payload = {

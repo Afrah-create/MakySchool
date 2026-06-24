@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   CalendarDays,
-  GraduationCap,
   Layers3,
   Mail,
   Menu,
@@ -13,6 +12,7 @@ import {
   Tag,
   X,
 } from "lucide-react";
+import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { cn } from "@makyschool/ui/lib/cn";
@@ -68,9 +68,7 @@ export function MarketingHeader() {
     >
       <div className={`${marketingContainer} flex items-center justify-between gap-3 sm:gap-4`}>
         <Link href="/" className="group flex min-w-0 items-center gap-2.5 sm:gap-3">
-          <span className="brand-gradient flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-theme-accent transition group-hover:scale-[1.02] sm:h-10 sm:w-10">
-            <GraduationCap className="h-5 w-5 text-on-accent" strokeWidth={2.25} />
-          </span>
+          <BrandLogo size={40} className="shadow-theme-accent transition group-hover:scale-[1.02]" />
           <span className="flex min-w-0 flex-col">
             <span className="truncate text-sm font-bold tracking-tight text-theme-primary">
               {siteConfig.name}

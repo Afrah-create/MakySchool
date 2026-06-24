@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 
 export function AuthLoginPanel({
@@ -22,11 +23,9 @@ export function AuthLoginPanel({
   return (
     <div className="auth-login-panel flex min-h-dvh flex-col">
       <header className="flex shrink-0 items-center justify-between border-b border-theme bg-theme-surface/80 px-4 py-4 backdrop-blur-sm sm:px-6 lg:border-none lg:bg-transparent lg:px-10 lg:pt-8">
-        <Link
-          href="/"
-          className="text-sm font-bold tracking-tight text-theme-primary transition hover:text-theme-accent lg:hidden"
-        >
-          MakySchool
+        <Link href="/" className="flex items-center gap-2 lg:hidden">
+          <BrandLogo size={32} />
+          <span className="text-sm font-bold tracking-tight text-theme-primary">MakySchool</span>
         </Link>
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
@@ -37,9 +36,7 @@ export function AuthLoginPanel({
         <div className="w-full max-w-[440px]">
           {mobileBanner ? <div className="mb-6 lg:hidden">{mobileBanner}</div> : null}
           <div className="mb-8 lg:mb-10">
-            <span className="brand-gradient inline-flex h-11 w-11 items-center justify-center rounded-xl text-sm font-bold text-on-accent shadow-theme-accent ring-1 ring-theme-subtle lg:hidden">
-              MS
-            </span>
+            <BrandLogo size={44} className="shadow-theme-accent ring-1 ring-theme-subtle lg:hidden" />
             <h1 className="mt-5 text-2xl font-semibold tracking-tight text-theme-primary sm:text-[1.75rem]">
               {title}
             </h1>

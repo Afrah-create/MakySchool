@@ -55,10 +55,36 @@ async def invalidate_tenant_cache(slug: str) -> None:
 
 async def get_tenant_and_user(
     request: Request,
-    school_id: uuid.UUID = Depends(resolve_tenant),
     current_user: dict = Depends(get_current_user),
     conn: asyncpg.Connection = Depends(get_db),
 ) -> tuple[uuid.UUID, dict[str, Any]]:
+    slug = (request.headers.get(TENANT_HEADER_SLUG) or "").strip().lower()
+    if not slug:
+        slug = (current_user.get("schoolSlug") or "").strip().lower()
+    if not slug:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "Missing tenant context", "code": "TENANT_CONTEXT_REQUIRED"},
+        )
+
+    async with _cache_lock:
+        cached = _slug_cache.get(slug)
+    if cached:
+        school_id = cached
+    else:
+        row = await conn.fetchrow(
+            "SELECT id FROM schools WHERE slug = $1 LIMIT 1",
+            slug,
+        )
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": "School not found"},
+            )
+        school_id = row["id"]
+        async with _cache_lock:
+            _slug_cache[slug] = school_id
+
     jwt_school_id = current_user.get("schoolId")
     if jwt_school_id and uuid.UUID(str(jwt_school_id)) != school_id:
         raise HTTPException(

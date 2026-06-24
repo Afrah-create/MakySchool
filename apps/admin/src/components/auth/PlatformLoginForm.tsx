@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
+import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { apiClient } from "@/lib/api/client";
 
@@ -66,9 +67,7 @@ export function PlatformLoginForm() {
       <div className="flex flex-1 items-center justify-center px-4 pb-16">
         <div className="w-full max-w-md rounded-2xl border border-theme bg-theme-surface p-8 shadow-sm">
           <div className="mb-8 text-center">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-theme-accent text-sm font-bold text-on-accent">
-              MS
-            </span>
+            <BrandLogo size={40} className="mx-auto shadow-theme-accent" />
             <h1 className="mt-4 text-xl font-semibold text-theme-primary">Platform admin</h1>
             <p className="mt-1 text-sm text-theme-muted">
               Sign in to manage schools on MakySchool.

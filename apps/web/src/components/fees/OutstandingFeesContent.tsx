@@ -10,9 +10,9 @@ import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { useApiSWR } from "@/hooks/useApiSWR";
+import { useFeesBasePath } from "@/hooks/useFeesBasePath";
 import { formatUGX } from "@/lib/formatCurrency";
-import { feesBasePath, type OutstandingStudent } from "@/lib/fees/types";
-import { useAuth } from "@/hooks/useAuth";
+import { type OutstandingStudent } from "@/lib/fees/types";
 
 type OutstandingResponse = {
   students: OutstandingStudent[];
@@ -27,8 +27,7 @@ type OutstandingResponse = {
 };
 
 export function OutstandingFeesContent() {
-  const { state } = useAuth();
-  const base = feesBasePath(state.user?.role ?? "bursar");
+  const base = useFeesBasePath();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [smsOpen, setSmsOpen] = useState(false);
   const [waiveStudent, setWaiveStudent] = useState<OutstandingStudent | null>(null);
@@ -108,7 +107,7 @@ export function OutstandingFeesContent() {
             </div>
 
             {selected.size > 0 ? (
-              <CanDo action="manageFees">
+              <CanDo action="recordPayments">
                 <button type="button" className="ms-btn-secondary" onClick={() => setSmsOpen(true)}>
                   Send SMS reminder to selected ({selected.size})
                 </button>

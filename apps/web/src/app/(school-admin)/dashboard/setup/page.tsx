@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { WizardShell } from "@/components/school-admin/setup/WizardShell";
 import { apiFetch } from "@/lib/api/server";
 import { getServerTenantContext } from "@/lib/tenant/server";
@@ -37,9 +38,7 @@ export default async function SetupPage() {
       <header className="border-b border-theme px-6 py-4">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-theme-accent text-xs font-bold text-on-accent">
-              MS
-            </span>
+            <BrandLogo size={32} rounded="md" />
             <div>
               <p className="text-sm font-semibold text-theme-primary">MakySchool</p>
               <p className="text-xs text-theme-muted">School setup</p>

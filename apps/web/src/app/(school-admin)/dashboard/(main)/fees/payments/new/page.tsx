@@ -1,5 +1,5 @@
-import { RecordPaymentContent } from "@/components/fees/RecordPaymentContent";
+import { redirect } from "next/navigation";
 
 export default function AdminRecordPaymentPage() {
-  return <RecordPaymentContent />;
+  redirect("/dashboard/fees/payments");
 }

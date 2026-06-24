@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
+import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { apiClient } from "@/lib/api/client";
 import { platformAdminNav } from "@/lib/platform-admin-nav";
@@ -20,9 +21,7 @@ export function AdminSidebar() {
   return (
     <aside className="hidden h-dvh w-72 shrink-0 flex-col border-r border-sidebar bg-sidebar p-6 lg:flex">
       <div className="mb-6 flex shrink-0 items-center gap-3 border-b border-theme pb-6">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-theme-accent text-xs font-bold text-on-accent">
-          MS
-        </span>
+        <BrandLogo size={32} rounded="md" />
         <span className="text-sm font-semibold text-theme-primary">MakySchool</span>
       </div>
 

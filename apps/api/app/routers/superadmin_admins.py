@@ -4,7 +4,7 @@ import uuid
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, status
-from passlib.context import CryptContext
+from app.lib.password import hash_password
 from pydantic import BaseModel, EmailStr
 
 from app.db.pool import get_db
@@ -12,8 +12,6 @@ from app.lib.password import validate_password
 from app.middleware.auth import get_current_superadmin
 
 router = APIRouter(dependencies=[Depends(get_current_superadmin)])
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 class CreateAdminBody(BaseModel):
     name: str | None = None
@@ -21,7 +19,7 @@ class CreateAdminBody(BaseModel):
     password: str | None = None
 
 
-@router.get("/")
+@router.get("")
 async def list_admins(conn: asyncpg.Connection = Depends(get_db)):
     rows = await conn.fetch(
         """
@@ -33,7 +31,7 @@ async def list_admins(conn: asyncpg.Connection = Depends(get_db)):
     return {"data": [dict(r) for r in rows]}
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_admin(
     body: CreateAdminBody,
     conn: asyncpg.Connection = Depends(get_db),
@@ -63,7 +61,7 @@ async def create_admin(
         )
 
     admin_id = uuid.uuid4()
-    password_hash = pwd_context.hash(body.password)
+    password_hash = hash_password(body.password)
     await conn.execute(
         """
         INSERT INTO super_admins (id, email, password_hash, name)

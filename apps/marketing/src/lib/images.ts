@@ -40,10 +40,10 @@ export const marketingImages = {
     height: 768,
   },
   branding: {
-    src: "/images/Hero.png",
-    alt: "Branded MakySchool workspace for Greenfield Academy",
-    width: 1408,
-    height: 768,
+    src: "/makyschool-logo.jpeg",
+    alt: "MakySchool logo",
+    width: 512,
+    height: 512,
   },
   primary: {
     src: "/images/Registration.png",
@@ -64,10 +64,10 @@ export const marketingImages = {
     height: 768,
   },
   og: {
-    src: "/images/Hero.png",
+    src: "/makyschool-logo.jpeg",
     alt: "MakySchool — school management platform",
-    width: 1408,
-    height: 768,
+    width: 512,
+    height: 512,
   },
 } as const;
 
