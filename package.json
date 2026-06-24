@@ -20,7 +20,7 @@
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "postinstall": "bash scripts/ensure-caddy.sh 2>/dev/null || true"
+    "postinstall": "node -e \"process.exit(0)\""
   },
   "engines": {
     "node": ">=20.9.0"

@@ -57,6 +57,12 @@ export const marketingImages = {
     width: 1408,
     height: 768,
   },
+  theology: {
+    src: "/images/Teacher.png",
+    alt: "Islamic school teacher managing theology and Quran studies in MakySchool",
+    width: 1408,
+    height: 768,
+  },
   og: {
     src: "/images/Hero.png",
     alt: "MakySchool — school management platform",

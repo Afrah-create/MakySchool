@@ -183,24 +183,39 @@ export const faqItems = [
       "Yes. MakySchool supports Islamic schools with theology curriculum management, Islamic studies tracking, and all standard academic features. Muslim schools can manage both religious and secular subjects within the same system.",
   },
   {
-    question: "Who uses MakySchool?",
+    question: "How much does school management software cost in Uganda?",
     answer:
-      "School administrators, head teachers, teachers, bursars, and learners each get a dedicated portal tailored to their daily work. Used by primary schools, secondary schools, Islamic schools, and education groups across Uganda.",
+      "MakySchool offers flexible pricing for Ugandan schools. Contact us for a demo and custom quote based on your school size, whether primary, secondary, or Islamic school. Pricing includes all features: academics, fees management, portals, and support.",
   },
   {
-    question: "Does MakySchool support school fees?",
+    question: "Can MakySchool handle school fees in UGX?",
     answer:
-      "Yes. Schools can define fee structures, assign accounts to learners, record payments, generate receipts, and track outstanding balances. Bursars have a dedicated portal for this work.",
+      "Yes. MakySchool is built for Ugandan schools with full UGX currency support. Define term fees, record payments in shillings, generate receipts, track balances, and manage complete fee collection workflows.",
+  },
+  {
+    question: "Who uses MakySchool?",
+    answer:
+      "School administrators, head teachers, teachers, bursars, and learners each get a dedicated portal tailored to their daily work. Used by primary schools, secondary schools, Islamic schools, and education groups across Uganda including Kampala, Gulu, Mbarara, and other regions.",
+  },
+  {
+    question: "Does MakySchool support PLE and UCE/UACE?",
+    answer:
+      "Yes. MakySchool supports Uganda's national exams including PLE for primary schools (P7) and UCE/UACE for secondary schools (S4 and S6). Manage candidate registration, marks tracking, and exam preparation workflows.",
   },
   {
     question: "What types of schools can use MakySchool?",
     answer:
-      "MakySchool serves primary schools, secondary schools (O-Level and A-Level), Islamic schools with theology programs, mixed schools, boarding schools, day schools, and multi-campus education groups throughout Uganda.",
+      "MakySchool serves primary schools (P1-P7), secondary schools (O-Level S1-S4, A-Level S5-S6), Islamic schools with theology programs, mixed schools, boarding schools, day schools, and multi-campus education groups throughout Uganda.",
   },
   {
     question: "How do schools get started with MakySchool?",
     answer:
-      "Book a demo with our team. We walk you through the platform, plan your rollout including theology curriculum if needed, and support onboarding for your staff.",
+      "Book a demo with our team. We walk you through the platform, plan your rollout including theology curriculum if needed, and support onboarding for your staff. Setup typically takes less than a week.",
+  },
+  {
+    question: "Does MakySchool work offline or require internet?",
+    answer:
+      "MakySchool is a cloud-based platform requiring internet access. However, it works on any device with a browser - desktop, laptop, tablet, or smartphone - making it accessible across your school campus.",
   },
   {
     question: "Is MakySchool only for Uganda?",
