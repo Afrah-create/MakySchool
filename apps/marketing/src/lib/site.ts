@@ -4,7 +4,7 @@ export const siteConfig = {
   name: "MakySchool",
   tagline: "Uganda's leading school management system",
   description:
-    "MakySchool is Uganda's best school management platform for primary, secondary, and theology-focused schools — classes, academics, theology curriculum, teachers, learners, fees, and complete school operations in one modern system.",
+    "MakySchool is Uganda's best school management platform for traditional and international schools — primary, secondary, and theology-focused schools. Manage classes, academics, theology curriculum, teachers, learners, fees, and complete school operations in one modern system.",
   company: "MakyLegacy",
   companyUrl: "https://makylegacy.com",
   contactEmail: "support@makylegacy.com",
