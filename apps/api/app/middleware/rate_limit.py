@@ -7,7 +7,12 @@ from limits import parse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from app.lib.rate_limit import get_user_key, is_rate_limit_exempt, limiter
+from app.lib.rate_limit import (
+    get_user_key,
+    is_rate_limit_exempt,
+    limiter,
+    prepare_slowapi_request_state,
+)
 
 logger = logging.getLogger("makyschool")
 
@@ -21,6 +26,7 @@ class RateLimitContextMiddleware(BaseHTTPMiddleware):
     """Populate request.state with JWT claims for rate-limit key functions (no DB)."""
 
     async def dispatch(self, request: Request, call_next):
+        prepare_slowapi_request_state(request)
         from app.lib.rate_limit import _superadmin_payload, _tenant_payload
 
         request.state.tenant_jwt = _tenant_payload(request)

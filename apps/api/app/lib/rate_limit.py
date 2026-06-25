@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import Request
 from jose import JWTError
+from limits.strategies import STRATEGIES
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -100,31 +101,53 @@ def get_user_key(request: Request) -> str:
     return f"anon:{_remote_address(request)}"
 
 
+def prepare_slowapi_request_state(request: Request) -> None:
+    """slowapi decorators read these after the handler; initialize before routing."""
+    request.state.view_rate_limit = None
+    request.state._rate_limiting_complete = False
+
+
 def build_limiter() -> Limiter:
+    strategy = settings.RATE_LIMIT_STRATEGY
+    if strategy not in STRATEGIES:
+        logger.error(
+            "Invalid RATE_LIMIT_STRATEGY=%r; falling back to fixed-window", strategy
+        )
+        strategy = "fixed-window"
+
     if not settings.RATE_LIMIT_ENABLED:
         logger.info("Rate limiting disabled (RATE_LIMIT_ENABLED=false)")
-        return Limiter(key_func=_remote_address, enabled=False)
+        return Limiter(key_func=_remote_address, enabled=False, strategy=strategy)
 
     redis_url = settings.REDIS_URL.strip()
     if not redis_url:
         logger.warning("Rate limiting disabled (REDIS_URL not configured)")
-        return Limiter(key_func=_remote_address, enabled=False)
+        return Limiter(key_func=_remote_address, enabled=False, strategy=strategy)
 
     try:
         import redis
 
         redis.from_url(redis_url, socket_connect_timeout=2).ping()
-        logger.info("Rate limiting enabled with Redis backend")
+        logger.info(
+            "Rate limiting enabled (strategy=%s, redis=%s, key_prefix=%s)",
+            strategy,
+            redis_url.split("@")[-1] if "@" in redis_url else redis_url,
+            settings.RATE_LIMIT_KEY_PREFIX,
+        )
     except Exception as exc:
         logger.warning(
-            "Redis ping failed at startup; rate limits will fail open if storage is unreachable: %s",
+            "Rate limiting disabled (Redis unavailable at startup): %s",
             exc,
         )
+        return Limiter(key_func=_remote_address, enabled=False, strategy=strategy)
 
     return Limiter(
         key_func=_remote_address,
         storage_uri=redis_url,
+        strategy=strategy,
+        key_prefix=settings.RATE_LIMIT_KEY_PREFIX,
         swallow_errors=True,
+        headers_enabled=False,
         enabled=True,
     )
 

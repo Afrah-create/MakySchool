@@ -1,8 +1,9 @@
 from pathlib import Path
-from typing import List
+from typing import List, Literal
 
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+RateLimitStrategy = Literal["fixed-window", "moving-window", "sliding-window-counter"]
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _API_ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +67,11 @@ class Settings(BaseSettings):
 
     REDIS_URL: str = ""
     RATE_LIMIT_ENABLED: bool = True
+    # fixed-window: count per calendar window (e.g. per minute). Default; works well with Redis.
+    # moving-window: rolling window; smoother limits, higher Redis memory use.
+    # sliding-window-counter: approximates sliding window with two fixed windows.
+    RATE_LIMIT_STRATEGY: RateLimitStrategy = "fixed-window"
+    RATE_LIMIT_KEY_PREFIX: str = "makyschool:rl"
 
     @property
     def cors_origins(self) -> List[str]:

@@ -1,0 +1,23 @@
+# Optional local Redis for API rate limiting (slowapi).
+# Start:  docker compose -f docker-compose.redis.yml up -d
+# Stop:   docker compose -f docker-compose.redis.yml down
+# Logs:   docker compose -f docker-compose.redis.yml logs -f redis
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: makyschool-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - makyschool_redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  makyschool_redis_data:
