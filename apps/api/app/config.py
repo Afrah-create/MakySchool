@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     NEXT_PUBLIC_APP_URL: str = "http://localhost:8080"
     RUN_MIGRATIONS: bool = True
 
+    REDIS_URL: str = ""
+    RATE_LIMIT_ENABLED: bool = True
+
     @property
     def cors_origins(self) -> List[str]:
         if not self.CORS_ORIGIN.strip():

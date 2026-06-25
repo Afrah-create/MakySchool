@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from app.db.pool import get_db, get_pool
 from app.lib.permissions import can
+from app.lib.rate_limit import get_school_key, limiter
 from app.lib.sequences import generate_learner_id
 from app.lib.teacher_assignments import format_class_name
 from app.lib.uploads import ALLOWED_STUDENT_PHOTO_TYPES, save_student_photo
@@ -337,7 +338,9 @@ async def download_import_template(ctx: TenantCtx):
 
 
 @router.post("/import", status_code=status.HTTP_201_CREATED)
+@limiter.limit("2/minute", key_func=get_school_key)
 async def import_students(
+    request: Request,
     ctx: TenantCtx,
     file: UploadFile = File(...),
 ):

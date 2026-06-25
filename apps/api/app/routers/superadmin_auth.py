@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.db.pool import get_db
 from app.lib.jwt_utils import verify_superadmin_token
 from app.lib.password import hash_password, validate_password, verify_password
+from app.lib.rate_limit import get_superadmin_auth_ip, limiter
 from app.middleware.auth import (
     clear_auth_cookies,
     extract_superadmin_token,
@@ -31,7 +32,10 @@ class ChangePasswordBody(BaseModel):
 
 
 @router.post("/login")
+@limiter.limit("20/hour", key_func=get_superadmin_auth_ip)
+@limiter.limit("5/minute", key_func=get_superadmin_auth_ip)
 async def superadmin_login(
+    request: Request,
     body: LoginBody,
     response: Response,
     conn: asyncpg.Connection = Depends(get_db),

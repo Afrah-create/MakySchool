@@ -2,18 +2,24 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
 
 from app.config import settings
 from app.db.migrate import run_migrations_on_startup
 from app.db.pool import close_pool, get_pool
 from app.lib.cors import is_origin_allowed
+from app.lib.rate_limit import limiter
 from app.middleware.errors import add_exception_handlers
+from app.middleware.rate_limit import (
+    DefaultAuthenticatedRateLimitMiddleware,
+    RateLimitContextMiddleware,
+)
 from app.middleware.request_id import RequestIDMiddleware
 from app.routers import (
     analytics,
@@ -77,6 +83,18 @@ def create_app() -> FastAPI:
 
     add_exception_handlers(app)
 
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_exceeded_handler(_request: Request, _exc: RateLimitExceeded):
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "Too many requests. Please try again in a moment.",
+                "code": "RATE_LIMITED",
+            },
+        )
+
+    app.state.limiter = limiter
+
     origins = settings.cors_origins
 
     if origins:
@@ -120,6 +138,8 @@ def create_app() -> FastAPI:
             allowed_hosts=["*.makylegacy.com", "makylegacy.com", "localhost"],
         )
 
+    app.add_middleware(DefaultAuthenticatedRateLimitMiddleware)
+    app.add_middleware(RateLimitContextMiddleware)
     app.add_middleware(RequestIDMiddleware)
 
     upload_dir = Path(settings.UPLOAD_DIR)

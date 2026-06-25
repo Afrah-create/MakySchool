@@ -5,7 +5,7 @@ from datetime import date
 from typing import Any
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -16,6 +16,7 @@ from app.lib.pdf import (
     generate_invoice_pdf,
     generate_other_income_receipt_pdf,
 )
+from app.lib.rate_limit import get_school_key, limiter
 from app.middleware.tenant import get_tenant_and_user
 from app.routers.fees_shared import (
     PAYMENT_METHODS,
@@ -447,7 +448,9 @@ async def void_other_income(
 
 
 @router.get("/other-income/{income_id}/receipt")
+@limiter.limit("20/minute", key_func=get_school_key)
 async def other_income_receipt(
+    request: Request,
     income_id: uuid.UUID,
     ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
     conn: asyncpg.Connection = Depends(get_db),
@@ -648,7 +651,9 @@ async def pay_invoice(
 
 
 @router.get("/invoices/{invoice_id}/pdf")
+@limiter.limit("20/minute", key_func=get_school_key)
 async def invoice_pdf(
+    request: Request,
     invoice_id: uuid.UUID,
     ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
     conn: asyncpg.Connection = Depends(get_db),

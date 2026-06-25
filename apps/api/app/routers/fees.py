@@ -5,12 +5,13 @@ from datetime import date
 from typing import Any
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.db.pool import get_db, get_pool
 from app.lib.pdf import ReceiptNotFoundError, generate_fee_receipt_pdf
+from app.lib.rate_limit import get_school_key, limiter
 from app.lib.receipt import format_class_name, format_ugx, generate_receipt_number
 from app.middleware.tenant import get_tenant_and_user
 from app.routers.fees_shared import (
@@ -902,7 +903,9 @@ async def outstanding_fees(
 
 
 @router.get("/receipts/{payment_id}")
+@limiter.limit("20/minute", key_func=get_school_key)
 async def fee_receipt_pdf(
+    request: Request,
     payment_id: uuid.UUID,
     ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
     conn: asyncpg.Connection = Depends(get_db),
@@ -1014,7 +1017,9 @@ async def dashboard_stats(
 
 
 @router.post("/reminders/sms")
+@limiter.limit("10/minute", key_func=get_school_key)
 async def sms_reminders(
+    request: Request,
     body: SmsReminderBody,
     ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
     conn: asyncpg.Connection = Depends(get_db),

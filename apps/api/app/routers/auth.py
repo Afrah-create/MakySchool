@@ -27,6 +27,7 @@ from app.lib.session_tokens import (
     resolve_tenant_session,
 )
 from app.lib.password import hash_password, validate_password, verify_password
+from app.lib.rate_limit import get_login_ip_key, get_tenant_auth_ip, limiter
 from app.lib.user_sql import USER_DISPLAY_NAME_SQL, normalize_user_role
 from app.middleware.auth import (
     clear_auth_cookies,
@@ -61,6 +62,8 @@ def _hash_reset_token(token: str) -> str:
 
 
 @router.post("/login")
+@limiter.limit("20/hour", key_func=get_login_ip_key)
+@limiter.limit("5/minute", key_func=get_login_ip_key)
 async def login(
     body: LoginBody,
     request: Request,
@@ -437,7 +440,13 @@ class ForgotPasswordBody(BaseModel):
 
 
 @forgot_password_router.post("")
-async def forgot_password(body: ForgotPasswordBody, conn: asyncpg.Connection = Depends(get_db)):
+@limiter.limit("20/hour", key_func=get_tenant_auth_ip)
+@limiter.limit("5/minute", key_func=get_tenant_auth_ip)
+async def forgot_password(
+    request: Request,
+    body: ForgotPasswordBody,
+    conn: asyncpg.Connection = Depends(get_db),
+):
     normalized = body.email.lower().strip()
     raw_token = secrets.token_hex(32)
     hashed = _hash_reset_token(raw_token)
