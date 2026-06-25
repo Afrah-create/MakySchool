@@ -10,7 +10,7 @@ import { useApiSWR } from "@/hooks/useApiSWR";
 import { useFeesBasePath } from "@/hooks/useFeesBasePath";
 import { formatUGX } from "@/lib/formatCurrency";
 import { paymentMethodLabel, type StudentFeeAccount } from "@/lib/fees/types";
-import { resolveClientApiUrl } from "@/lib/api/base-url";
+import { PdfDownloadButton } from "@/components/fees/PdfDownloadButton";
 
 export function StudentFeesTab({ studentId }: { studentId: string }) {
   const base = useFeesBasePath();
@@ -83,12 +83,11 @@ export function StudentFeesTab({ studentId }: { studentId: string }) {
                       {account.payments.map((payment) => (
                         <tr key={payment.id} className={payment.voided ? "opacity-60" : undefined}>
                           <td>
-                            <a
-                              href={resolveClientApiUrl(`/schools/fees/receipts/${payment.id}`)}
+                            <PdfDownloadButton
+                              path={`/schools/fees/receipts/${payment.id}`}
+                              label={payment.receipt_number}
                               className="font-mono text-theme-accent hover:underline"
-                            >
-                              {payment.receipt_number}
-                            </a>
+                            />
                           </td>
                           <td>{formatUGX(payment.amount)}</td>
                           <td>{new Date(payment.payment_date).toLocaleDateString()}</td>

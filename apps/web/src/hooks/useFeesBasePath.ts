@@ -15,6 +15,9 @@ export function useFeesBasePath() {
   if (pathname.startsWith("/dashboard/fees")) {
     return "/dashboard/fees";
   }
+  if (pathname.startsWith("/dashboard/settings")) {
+    return "/dashboard/fees";
+  }
 
   return feesBasePath(state.user?.role ?? "admin");
 }

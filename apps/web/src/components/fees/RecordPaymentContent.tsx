@@ -9,10 +9,10 @@ import { formatUGX, formatUGXInput, parseUGXInput } from "@/lib/formatCurrency";
 import {
   FeeStatusBadge,
 } from "@/components/fees/FeeStatusBadge";
-import type { PaymentMethod, StudentFeeAccount } from "@/lib/fees/types";
+import { PdfDownloadButton } from "@/components/fees/PdfDownloadButton";
+import type { InvoiceDetail, PaymentMethod, StudentFeeAccount } from "@/lib/fees/types";
 import { paymentMethodLabel } from "@/lib/fees/types";
 import { useToast } from "@/providers/ToastProvider";
-import { resolveClientApiUrl } from "@/lib/api/base-url";
 
 type StudentOption = {
   id: string;
@@ -68,6 +68,12 @@ export function RecordPaymentContent() {
   const accounts = accountsData?.accounts ?? [];
   const selectedAccount = accounts.find((item) => item.id === selectedAccountId) ?? accounts[0];
 
+  const invoiceId = searchParams.get("invoice_id");
+  const { data: invoiceData } = useApiSWR<InvoiceDetail>(
+    invoiceId ? `/schools/fees/invoices/${invoiceId}` : null,
+  );
+  const maxAmount = invoiceData?.balance ?? selectedAccount?.balance ?? 0;
+
   useEffect(() => {
     const studentId = searchParams.get("student_id");
     if (!studentId) return;
@@ -83,16 +89,38 @@ export function RecordPaymentContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!selectedAccount) return;
+    if (!invoiceData) return;
+    setSelectedStudent({
+      id: invoiceData.student_id,
+      full_name: invoiceData.student_name,
+      learner_id: invoiceData.learner_id ?? "",
+      class_name: invoiceData.class_name,
+    });
+  }, [invoiceData]);
+
+  useEffect(() => {
+    if (!invoiceData || accounts.length === 0) return;
+    const match = accounts.find(
+      (account) =>
+        account.term_name === invoiceData.term_name && account.academic_year === invoiceData.academic_year,
+    );
+    if (match) {
+      setSelectedAccountId(match.id);
+    }
+    setAmount(invoiceData.balance);
+  }, [invoiceData, accounts]);
+
+  useEffect(() => {
+    if (!selectedAccount || invoiceData) return;
     setSelectedAccountId(selectedAccount.id);
     setAmount(selectedAccount.balance);
-  }, [selectedAccount?.id, selectedAccount?.balance]);
+  }, [selectedAccount?.id, selectedAccount?.balance, invoiceData]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!selectedStudent || !selectedAccount) return;
-    if (amount <= 0 || amount > selectedAccount.balance) {
-      setError(`Enter an amount up to ${formatUGX(selectedAccount.balance)}.`);
+    if (amount <= 0 || amount > maxAmount) {
+      setError(`Enter an amount up to ${formatUGX(maxAmount)}.`);
       return;
     }
     setLoading(true);
@@ -133,12 +161,11 @@ export function RecordPaymentContent() {
           </p>
         </div>
         <div className="flex gap-2">
-          <a
-            href={resolveClientApiUrl(`/schools/fees/receipts/${success.payment.id}`)}
+          <PdfDownloadButton
+            path={`/schools/fees/receipts/${success.payment.id}`}
+            label="Download receipt PDF"
             className="ms-btn-primary flex-1 text-center"
-          >
-            Download receipt PDF
-          </a>
+          />
           <button
             type="button"
             className="ms-btn-secondary flex-1"
@@ -159,7 +186,11 @@ export function RecordPaymentContent() {
     <section className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-theme-primary">Record payment</h1>
-        <p className="mt-1 text-sm text-theme-muted">Search for a student and record their fee payment</p>
+        <p className="mt-1 text-sm text-theme-muted">
+          {invoiceData
+            ? `Paying invoice ${invoiceData.invoice_number} — max ${formatUGX(invoiceData.balance)}`
+            : "Search for a student and record their fee payment"}
+        </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

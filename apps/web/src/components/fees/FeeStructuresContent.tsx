@@ -6,7 +6,9 @@ import { Plus } from "lucide-react";
 import { CanDo } from "@/components/ui/CanDo";
 import { AddFeeStructurePanel } from "@/components/fees/AddFeeStructurePanel";
 import { AssignFeeStructureDialog } from "@/components/fees/AssignFeeStructureDialog";
+import { DataListPanel } from "@makyschool/ui/components/ui/DataListPanel";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
+import { PageHeader } from "@makyschool/ui/components/ui/PageHeader";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { useApiSWR } from "@/hooks/useApiSWR";
@@ -22,99 +24,105 @@ export function FeeStructuresContent() {
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-theme-primary">Fee Structures</h1>
-          <p className="mt-1 text-sm text-theme-muted">Set expected fees per class and term</p>
-        </div>
-        <CanDo action="manageFees">
-          <button type="button" className="ms-btn-primary inline-flex items-center gap-2" onClick={() => setAddOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Add structure
-          </button>
-        </CanDo>
-      </div>
-
-      <QueryState
-        error={error}
-        isLoading={isLoading}
-        data={data}
-        onRetry={() => void mutate()}
-        loading={<Skeleton className="h-64" />}
-        empty={
-          <EmptyState
-            title="No fee structures yet."
-            description="Create a fee structure for each class and term."
-            action={
-              <CanDo action="manageFees">
-                <button type="button" className="ms-btn-primary" onClick={() => setAddOpen(true)}>
-                  Add structure
-                </button>
-              </CanDo>
-            }
-          />
+      <PageHeader
+        title="Fee structures"
+        description="Set expected fees per class and term."
+        actions={
+          <CanDo action="manageFees">
+            <button type="button" className="ms-btn-primary inline-flex items-center gap-2" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add structure
+            </button>
+          </CanDo>
         }
-        isEmpty={(rows) => rows.length === 0}
-      >
-        {(structures) => (
-          <div className="overflow-hidden rounded-xl border border-theme">
-            <table className="ms-table w-full">
-              <thead>
-                <tr>
-                  <th>Class</th>
-                  <th>Term</th>
-                  <th>Amount</th>
-                  <th>Students</th>
-                  <th>Collected</th>
-                  <th>Outstanding</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {structures.map((row) => (
-                  <tr key={row.id}>
-                    <td className="font-medium">{row.class_name}</td>
-                    <td>{row.term_name} {row.academic_year}</td>
-                    <td>{formatUGX(Number(row.amount))}</td>
-                    <td>
-                      {row.student_count}
-                      {row.student_count === 0 ? (
-                        <CanDo action="manageFees">
-                          <button
-                            type="button"
-                            className="ml-2 text-xs text-theme-accent hover:underline"
-                            onClick={() => setAssignStructure(row)}
-                          >
-                            Assign
-                          </button>
-                        </CanDo>
-                      ) : null}
-                    </td>
-                    <td>{formatUGX(Number(row.total_collected ?? 0))}</td>
-                    <td>{formatUGX(Number(row.total_outstanding ?? 0))}</td>
-                    <td>
-                      <div className="flex flex-wrap gap-2">
-                        <CanDo action="manageFees">
-                          <button
-                            type="button"
-                            className="text-xs text-theme-accent hover:underline"
-                            onClick={() => setAssignStructure(row)}
-                          >
-                            Assign to class
-                          </button>
-                        </CanDo>
-                        <Link href={`${base}/payments`} className="text-xs text-theme-muted hover:underline">
-                          View payments
-                        </Link>
-                      </div>
-                    </td>
+      />
+
+      <DataListPanel>
+        <QueryState
+          error={error}
+          isLoading={isLoading}
+          data={data}
+          onRetry={() => void mutate()}
+          loading={<Skeleton className="m-4 h-48" />}
+          empty={
+            <div className="p-6">
+              <EmptyState
+                title="No fee structures yet."
+                description="Create a fee structure for each class and term."
+                action={
+                  <CanDo action="manageFees">
+                    <button type="button" className="ms-btn-primary" onClick={() => setAddOpen(true)}>
+                      Add structure
+                    </button>
+                  </CanDo>
+                }
+              />
+            </div>
+          }
+          isEmpty={(rows) => rows.length === 0}
+        >
+          {(structures) => (
+            <div className="overflow-x-auto">
+              <table className="ms-table w-full min-w-[44rem]">
+                <thead>
+                  <tr>
+                    <th>Class</th>
+                    <th>Term</th>
+                    <th className="text-right">Amount</th>
+                    <th className="text-right">Students</th>
+                    <th className="text-right">Collected</th>
+                    <th className="text-right">Outstanding</th>
+                    <th />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </QueryState>
+                </thead>
+                <tbody>
+                  {structures.map((row) => (
+                    <tr key={row.id}>
+                      <td className="font-medium">{row.class_name}</td>
+                      <td className="whitespace-nowrap">
+                        {row.term_name} {row.academic_year}
+                      </td>
+                      <td className="text-right tabular-nums">{formatUGX(Number(row.amount))}</td>
+                      <td className="text-right tabular-nums">
+                        {row.student_count}
+                        {row.student_count === 0 ? (
+                          <CanDo action="manageFees">
+                            <button
+                              type="button"
+                              className="ml-2 text-xs text-theme-accent hover:underline"
+                              onClick={() => setAssignStructure(row)}
+                            >
+                              Assign
+                            </button>
+                          </CanDo>
+                        ) : null}
+                      </td>
+                      <td className="text-right tabular-nums">{formatUGX(Number(row.total_collected ?? 0))}</td>
+                      <td className="text-right tabular-nums">{formatUGX(Number(row.total_outstanding ?? 0))}</td>
+                      <td>
+                        <div className="flex flex-wrap gap-2">
+                          <CanDo action="manageFees">
+                            <button
+                              type="button"
+                              className="text-xs text-theme-accent hover:underline"
+                              onClick={() => setAssignStructure(row)}
+                            >
+                              Assign
+                            </button>
+                          </CanDo>
+                          <Link href={`${base}/payments`} className="text-xs text-theme-muted hover:underline">
+                            Payments
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </QueryState>
+      </DataListPanel>
 
       <AddFeeStructurePanel
         open={addOpen}

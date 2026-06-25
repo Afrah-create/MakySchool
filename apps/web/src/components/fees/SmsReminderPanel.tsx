@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { SlideOver } from "@makyschool/ui/components/ui/SlideOver";
+import { Modal } from "@makyschool/ui/components/ui/Modal";
 import { apiClient } from "@/lib/api/client";
 import { formatUGX } from "@/lib/formatCurrency";
 import type { OutstandingStudent } from "@/lib/fees/types";
@@ -59,9 +59,10 @@ export function SmsReminderPanel({
   }
 
   return (
-    <SlideOver
+    <Modal
       open={open}
       onClose={onClose}
+      size="lg"
       title="Send SMS reminders"
       description={`Send fee reminders to ${students.length} parent${students.length === 1 ? "" : "s"}.`}
       footer={
@@ -110,6 +111,6 @@ export function SmsReminderPanel({
           </div>
         ) : null}
       </div>
-    </SlideOver>
+    </Modal>
   );
 }

@@ -11,72 +11,16 @@ from pydantic import BaseModel
 
 from app.db.pool import get_db, get_pool
 from app.lib.pdf import ReceiptNotFoundError, generate_fee_receipt_pdf
-from app.lib.permissions import can
-from app.lib.receipt import (
-    compute_fee_account_status,
-    format_class_name,
-    format_ugx,
-    generate_receipt_number,
-)
+from app.lib.receipt import format_class_name, format_ugx, generate_receipt_number
 from app.middleware.tenant import get_tenant_and_user
+from app.routers.fees_shared import (
+    PAYMENT_METHODS,
+    fees_error as _error,
+    recalculate_fee_account as _recalculate_fee_account,
+    require_fees_permission as _require_permission,
+)
 
 router = APIRouter()
-
-PAYMENT_METHODS = frozenset({"cash", "bank_transfer", "mobile_money", "cheque", "other"})
-
-
-def _error(
-    status_code: int,
-    error: str,
-    code: str,
-    fields: dict[str, str] | None = None,
-) -> HTTPException:
-    detail: dict[str, Any] = {"error": error, "code": code}
-    if fields:
-        detail["fields"] = fields
-    return HTTPException(status_code=status_code, detail=detail)
-
-
-def _require_permission(user: dict, action: str) -> None:
-    if not can(user.get("role", ""), action):
-        raise _error(
-            status.HTTP_403_FORBIDDEN,
-            "You do not have permission to perform this action.",
-            "FORBIDDEN",
-        )
-
-
-async def _recalculate_fee_account(conn: asyncpg.Connection, account_id: uuid.UUID) -> None:
-    account = await conn.fetchrow(
-        "SELECT amount_owed, waived_by FROM student_fee_accounts WHERE id = $1 LIMIT 1",
-        account_id,
-    )
-    if not account:
-        return
-
-    paid_row = await conn.fetchrow(
-        """
-        SELECT COALESCE(SUM(amount), 0)::bigint AS total
-        FROM fee_payments
-        WHERE fee_account_id = $1 AND voided = false
-        """,
-        account_id,
-    )
-    amount_paid = int(paid_row["total"]) if paid_row else 0
-    amount_owed = int(account["amount_owed"])
-    account_status = compute_fee_account_status(
-        amount_owed, amount_paid, bool(account["waived_by"])
-    )
-    await conn.execute(
-        """
-        UPDATE student_fee_accounts
-        SET amount_paid = $1, status = $2, updated_at = NOW()
-        WHERE id = $3
-        """,
-        amount_paid,
-        account_status,
-        account_id,
-    )
 
 
 class FeeStructureCreate(BaseModel):
@@ -1149,3 +1093,8 @@ async def sms_reminders(
             "recipients": recipients,
         }
     }
+
+
+from app.routers.fees_extension import router as fees_extension_router
+
+router.include_router(fees_extension_router)

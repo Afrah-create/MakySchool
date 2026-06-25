@@ -25,7 +25,7 @@ export function SchoolAdminSidebar({
   }
 
   return (
-    <aside className="hidden h-dvh w-64 shrink-0 flex-col border-r border-sidebar bg-sidebar px-4 py-6 lg:flex">
+    <aside className="hidden h-dvh w-64 shrink-0 flex-col overflow-hidden border-r border-sidebar bg-sidebar px-4 py-6 lg:flex">
       <div className="mb-6 shrink-0 px-2">
         <div className="flex items-center gap-3">
           <BrandLogo size={36} className="shadow-theme-accent" />

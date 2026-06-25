@@ -5,6 +5,8 @@ import {
   LayoutDashboard,
   ListOrdered,
   PlusCircle,
+  Receipt,
+  Wallet,
 } from "lucide-react";
 import { USER_ROLES } from "@makyschool/shared/constants";
 import type { PortalNavItem } from "./portal-nav";
@@ -39,6 +41,22 @@ export const bursarNav: PortalNavItem[] = [
     label: "Payment History",
     href: "/bursar/payments",
     icon: History,
+    exact: false,
+    roles: [USER_ROLES.BURSAR],
+  },
+  {
+    id: "bursar-invoices",
+    label: "Invoices",
+    href: "/bursar/invoices",
+    icon: Receipt,
+    exact: false,
+    roles: [USER_ROLES.BURSAR],
+  },
+  {
+    id: "bursar-other-income",
+    label: "Other Income",
+    href: "/bursar/other-income",
+    icon: Wallet,
     exact: false,
     roles: [USER_ROLES.BURSAR],
   },

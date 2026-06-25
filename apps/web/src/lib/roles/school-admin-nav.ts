@@ -20,10 +20,23 @@ import type { UserRole } from "@makyschool/shared/types";
 export type NavItem = {
   href: string;
   label: string;
-  icon: LucideIcon;
+  icon?: LucideIcon;
   exact: boolean;
   requiredAction: PermissionAction | null;
+  /** Nested sidebar links (e.g. Fees sections). */
+  children?: NavItem[];
 };
+
+const schoolAdminFeesNavChildren: NavItem[] = [
+  { href: "/dashboard/fees", label: "Overview", exact: true, requiredAction: null },
+  { href: "/dashboard/fees/structures", label: "Fee structures", exact: false, requiredAction: null },
+  { href: "/dashboard/fees/payments", label: "Payment history", exact: false, requiredAction: null },
+  { href: "/dashboard/fees/outstanding", label: "Outstanding", exact: false, requiredAction: "viewFees" },
+  { href: "/dashboard/fees/invoices", label: "Invoices", exact: false, requiredAction: "viewInvoices" },
+  { href: "/dashboard/fees/other-income", label: "Other income", exact: false, requiredAction: "viewFees" },
+  { href: "/dashboard/fees/budget", label: "Budget", exact: false, requiredAction: "viewBudget" },
+  { href: "/dashboard/fees/reports", label: "Reports", exact: false, requiredAction: "viewReports" },
+];
 
 export type NavGroup = {
   id: string;
@@ -121,6 +134,7 @@ export const schoolAdminNavGroups: NavGroup[] = [
         icon: Receipt,
         exact: false,
         requiredAction: "viewFees",
+        children: schoolAdminFeesNavChildren,
       },
       {
         href: "/dashboard/billing",
@@ -160,13 +174,24 @@ export const schoolAdminSetupNav: NavItem[] = [
   },
 ];
 
+export function isNavItemActive(pathname: string, item: NavItem): boolean {
+  if (item.children?.length) {
+    return item.children.some((child) => isNavItemActive(pathname, child));
+  }
+  if (item.exact) {
+    return pathname === item.href;
+  }
+  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+}
+
 export function filterNavByRole(items: NavItem[], role: UserRole): NavItem[] {
-  return items.filter((item) => {
-    if (!item.requiredAction) {
-      return true;
-    }
-    return can(role, item.requiredAction);
-  });
+  return items
+    .filter((item) => !item.requiredAction || can(role, item.requiredAction))
+    .map((item) => ({
+      ...item,
+      children: item.children ? filterNavByRole(item.children, role) : undefined,
+    }))
+    .filter((item) => !item.children || item.children.length > 0);
 }
 
 export function filterNavGroupsByRole(groups: NavGroup[], role: UserRole): NavGroup[] {
@@ -181,13 +206,14 @@ export function filterNavGroupsByRole(groups: NavGroup[], role: UserRole): NavGr
 export function findActiveNavGroupId(pathname: string, groups: NavGroup[]): string | null {
   for (const group of groups) {
     for (const item of group.items) {
-      const active = item.exact
-        ? pathname === item.href
-        : pathname === item.href || pathname.startsWith(`${item.href}/`);
-      if (active) {
+      if (isNavItemActive(pathname, item)) {
         return group.id;
       }
     }
   }
   return null;
+}
+
+export function flattenNavItems(items: NavItem[]): NavItem[] {
+  return items.flatMap((item) => (item.children?.length ? item.children : [item]));
 }

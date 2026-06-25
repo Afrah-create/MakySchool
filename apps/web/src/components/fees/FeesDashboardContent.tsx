@@ -12,7 +12,10 @@ import { useApiSWR } from "@/hooks/useApiSWR";
 import { useFeesBasePath, useFeesPortal } from "@/hooks/useFeesBasePath";
 import { formatUGX } from "@/lib/formatCurrency";
 import { paymentMethodLabel, type FeePayment, type FeesDashboardStats } from "@/lib/fees/types";
-import { resolveClientApiUrl } from "@/lib/api/base-url";
+import { PdfDownloadButton } from "@/components/fees/PdfDownloadButton";
+import { FeesStatStrip } from "@/components/fees/FeesStatStrip";
+import { DataListPanel } from "@makyschool/ui/components/ui/DataListPanel";
+import { PageHeader } from "@makyschool/ui/components/ui/PageHeader";
 
 type DashboardData = {
   stats: FeesDashboardStats;
@@ -33,32 +36,32 @@ export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-theme-primary">Fees</h1>
-          <p className="mt-1 text-sm text-theme-muted">
-            {isAdmin
-              ? "Configure fee structures and monitor collections. Day-to-day payments are handled by your bursar."
-              : "Bursar dashboard — record payments and follow up on balances."}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {isAdmin ? (
-            <CanDo action="manageUsers">
-              <button type="button" className="ms-btn-secondary" onClick={() => setAddBursarOpen(true)}>
-                Add bursar user
-              </button>
-            </CanDo>
-          ) : null}
-          {!isAdmin ? (
-            <CanDo action="recordPayments">
-              <Link href={`${base}/payments/new`} className="ms-btn-primary inline-flex items-center gap-2">
-                Record payment
-              </Link>
-            </CanDo>
-          ) : null}
-        </div>
-      </div>
+      <PageHeader
+        title="Fees"
+        description={
+          isAdmin
+            ? "Configure fee structures and monitor collections. Day-to-day payments are handled by your bursar."
+            : "Bursar dashboard — record payments and follow up on balances."
+        }
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {isAdmin ? (
+              <CanDo action="manageUsers">
+                <button type="button" className="ms-btn-secondary" onClick={() => setAddBursarOpen(true)}>
+                  Add bursar user
+                </button>
+              </CanDo>
+            ) : null}
+            {!isAdmin ? (
+              <CanDo action="recordPayments">
+                <Link href={`${base}/payments/new`} className="ms-btn-primary inline-flex items-center gap-2">
+                  Record payment
+                </Link>
+              </CanDo>
+            ) : null}
+          </div>
+        }
+      />
 
       <QueryState
         error={error}
@@ -96,12 +99,18 @@ export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar
       >
         {(dashboard) => (
           <>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <StatCard label="Total collected this term" value={formatUGX(dashboard.stats.total_collected)} />
-              <StatCard label="Outstanding this term" value={formatUGX(dashboard.stats.total_outstanding)} />
-              <StatCard label="Students fully paid" value={String(dashboard.stats.students_fully_paid)} />
-              <StatCard label="Students with balance" value={String(dashboard.stats.students_with_balance)} />
-            </div>
+            <FeesStatStrip
+              items={[
+                { label: "Collected this term", value: formatUGX(dashboard.stats.total_collected) },
+                {
+                  label: "Outstanding this term",
+                  value: formatUGX(dashboard.stats.total_outstanding),
+                  tone: dashboard.stats.total_outstanding > 0 ? "danger" : "default",
+                },
+                { label: "Fully paid", value: dashboard.stats.students_fully_paid },
+                { label: "With balance", value: dashboard.stats.students_with_balance },
+              ]}
+            />
 
             <div className="flex flex-wrap gap-2">
               <Link href={`${base}/structures`} className="ms-btn-secondary inline-flex items-center gap-2">
@@ -126,17 +135,18 @@ export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar
               ) : null}
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-theme">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-theme px-4 py-3">
+            <DataListPanel>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-theme px-4 py-3 sm:px-5">
                 <h2 className="text-sm font-semibold text-theme-primary">Recent payments</h2>
                 <Link href={`${base}/payments`} className="text-xs font-medium text-theme-accent hover:underline">
                   View all
                 </Link>
               </div>
               {dashboard.recent_payments.length === 0 ? (
-                <p className="px-4 py-6 text-sm text-theme-muted">No payments recorded yet.</p>
+                <p className="px-4 py-6 text-sm text-theme-muted sm:px-5">No payments recorded yet.</p>
               ) : (
-                <table className="ms-table w-full">
+                <div className="overflow-x-auto">
+                  <table className="ms-table w-full min-w-[32rem]">
                   <thead>
                     <tr>
                       <th>Receipt</th>
@@ -150,12 +160,11 @@ export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar
                     {dashboard.recent_payments.map((payment) => (
                       <tr key={payment.id}>
                         <td>
-                          <a
-                            href={resolveClientApiUrl(`/schools/fees/receipts/${payment.id}`)}
+                          <PdfDownloadButton
+                            path={`/schools/fees/receipts/${payment.id}`}
+                            label={payment.receipt_number}
                             className="font-mono text-theme-accent hover:underline"
-                          >
-                            {payment.receipt_number}
-                          </a>
+                          />
                         </td>
                         <td>{payment.student_name}</td>
                         <td>{formatUGX(payment.amount)}</td>
@@ -163,10 +172,11 @@ export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar
                         <td>{new Date(payment.payment_date).toLocaleDateString()}</td>
                       </tr>
                     ))}
-                  </tbody>
-                </table>
+                    </tbody>
+                  </table>
+                </div>
               )}
-            </div>
+            </DataListPanel>
           </>
         )}
       </QueryState>
@@ -180,14 +190,5 @@ export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar
         />
       ) : null}
     </section>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-theme bg-theme-surface p-5">
-      <p className="text-xs text-theme-muted">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-theme-primary">{value}</p>
-    </div>
   );
 }

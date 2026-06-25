@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SlideOver } from "@makyschool/ui/components/ui/SlideOver";
+import { Modal } from "@makyschool/ui/components/ui/Modal";
 import { formatClassLabel } from "@makyschool/shared/constants";
 import { useApiSWR } from "@/hooks/useApiSWR";
 import { apiClient } from "@/lib/api/client";
@@ -59,12 +59,13 @@ export function AddFeeStructurePanel({
   }
 
   return (
-    <SlideOver
+    <Modal
       open={open}
       onClose={() => {
         setCreated(null);
         onClose();
       }}
+      size="lg"
       title="Add fee structure"
       description="Set the expected fee amount for a class and term."
       footer={
@@ -142,6 +143,6 @@ export function AddFeeStructurePanel({
           {error ? <p className="text-sm text-theme-danger">{error}</p> : null}
         </form>
       )}
-    </SlideOver>
+    </Modal>
   );
 }

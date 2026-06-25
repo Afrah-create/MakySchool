@@ -109,3 +109,175 @@ export function feeStatusBadgeClass(status: FeeAccountStatus | string) {
       return "badge-info";
   }
 }
+
+export type ChartAccountType = "income" | "expense";
+
+export type ChartAccount = {
+  id: string;
+  code: string;
+  name: string;
+  account_type: ChartAccountType;
+  category?: string | null;
+  description?: string | null;
+  is_active: boolean;
+};
+
+export type IncomeSource = {
+  id: string;
+  name: string;
+  category?: string | null;
+  description?: string | null;
+  is_active: boolean;
+};
+
+export type OtherIncomeItem = {
+  id?: string;
+  description: string;
+  account_id?: string | null;
+  account_name?: string | null;
+  account_code?: string | null;
+  amount: number;
+};
+
+export type OtherIncomeRecord = {
+  id: string;
+  reference_number: string;
+  description: string;
+  income_date: string;
+  total_amount: number;
+  payment_method: PaymentMethod;
+  payment_reference?: string | null;
+  notes?: string | null;
+  voided: boolean;
+  void_reason?: string | null;
+  source_id?: string | null;
+  source_name?: string | null;
+  recorded_by_name?: string | null;
+  item_count?: number;
+  items?: OtherIncomeItem[];
+};
+
+export type OtherIncomeListResponse = {
+  items: OtherIncomeRecord[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type InvoiceStatus = "unpaid" | "partial" | "paid" | "cancelled" | "voided";
+
+export type InvoiceItem = {
+  id?: string;
+  description: string;
+  account_id?: string | null;
+  account_name?: string | null;
+  account_code?: string | null;
+  quantity: number;
+  unit_amount: number;
+  total_amount: number;
+};
+
+export type InvoiceSummary = {
+  id: string;
+  invoice_number: string;
+  invoice_date: string;
+  due_date?: string | null;
+  term_name: string;
+  academic_year: number;
+  status: InvoiceStatus;
+  total_amount: number;
+  amount_paid: number;
+  balance: number;
+  student_name: string;
+  learner_id?: string;
+  class_name?: string;
+};
+
+export type InvoiceDetail = InvoiceSummary & {
+  student_id: string;
+  fee_structure_id?: string | null;
+  notes?: string | null;
+  cancel_reason?: string | null;
+  guardian_name?: string | null;
+  guardian_phone?: string | null;
+  items: InvoiceItem[];
+  payments: Array<{
+    id: string;
+    receipt_number: string;
+    amount: number;
+    payment_method: PaymentMethod;
+    payment_date: string;
+    voided: boolean;
+  }>;
+};
+
+export type InvoiceListResponse = {
+  invoices: InvoiceSummary[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type InvoiceBulkResult = {
+  created: number;
+  failed: number;
+  errors: Array<{ student_id: string; error: string }>;
+};
+
+export type BudgetType = "income" | "expense";
+
+export type BudgetItem = {
+  id: string;
+  account_id?: string | null;
+  account_code?: string | null;
+  account_name?: string | null;
+  term_name: string;
+  academic_year: number;
+  name: string;
+  category?: string | null;
+  budget_type: BudgetType;
+  budgeted_amount: number;
+  notes?: string | null;
+};
+
+export type BudgetReportItem = {
+  id: string;
+  name: string;
+  category?: string | null;
+  budget_type: BudgetType;
+  account_id?: string | null;
+  account_code?: string | null;
+  budgeted_amount: number;
+  actual_amount: number | null;
+  variance: number | null;
+  variance_percent: number | null;
+  status: "on_track" | "under" | "over" | "coming_soon";
+};
+
+export type BudgetReport = {
+  term_name: string;
+  academic_year: number;
+  summary: {
+    total_budgeted_income: number;
+    total_actual_income: number;
+    total_budgeted_expense: number;
+    total_actual_expense: number | null;
+  };
+  items: BudgetReportItem[];
+};
+
+export function invoiceStatusBadgeClass(status: InvoiceStatus | string) {
+  switch (status) {
+    case "paid":
+      return "badge-paid";
+    case "partial":
+      return "badge-partial";
+    case "unpaid":
+      return "badge-unpaid";
+    case "cancelled":
+    case "voided":
+      return "badge-waived";
+    default:
+      return "badge-info";
+  }
+}
