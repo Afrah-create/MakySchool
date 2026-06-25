@@ -16,9 +16,13 @@ export function TeacherRowSkeleton() {
   );
 }
 
-export function TeacherTableSkeleton({ rows = 5 }: { rows?: number }) {
+export function TeacherTableSkeleton({ rows = 5, embedded = false }: { rows?: number; embedded?: boolean }) {
+  const shellClass = embedded
+    ? "overflow-hidden"
+    : "overflow-hidden rounded-xl border border-theme bg-theme-surface";
+
   return (
-    <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+    <div className={shellClass}>
       <div className="bg-table-header px-4 py-3">
         <div className="h-3 w-48 animate-pulse rounded bg-theme-surface-raised" />
       </div>

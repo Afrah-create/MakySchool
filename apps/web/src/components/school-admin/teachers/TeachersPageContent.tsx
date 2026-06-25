@@ -13,8 +13,11 @@ import { EditTeacherPanel } from "@/components/school-admin/teachers/EditTeacher
 import { ReactivateDialog } from "@/components/school-admin/teachers/ReactivateDialog";
 import { ResetPasswordDialog } from "@/components/school-admin/teachers/ResetPasswordDialog";
 import { TeacherTableSkeleton } from "@/components/school-admin/teachers/TeacherRowSkeleton";
+import { DataListPanel } from "@makyschool/ui/components/ui/DataListPanel";
 import { DataTable } from "@makyschool/ui/components/ui/DataTable";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
+import { FilterField } from "@makyschool/ui/components/ui/FilterField";
+import { FilterSegment } from "@makyschool/ui/components/ui/FilterSegment";
 import { ListToolbar } from "@makyschool/ui/components/ui/ListToolbar";
 import { PageHeader } from "@makyschool/ui/components/ui/PageHeader";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
@@ -87,6 +90,13 @@ export function TeachersPageContent() {
     setEditTeacher(response.data);
   }
 
+  function clearFilters() {
+    setSearch("");
+    setStatus("");
+    setClassId("");
+    setPage(1);
+  }
+
   return (
     <section className="space-y-6">
       <PageHeader
@@ -117,90 +127,105 @@ export function TeachersPageContent() {
         }
       />
 
-      <ListToolbar
-        searchValue={search}
-        onSearchChange={(value) => {
-          setSearch(value);
-          setPage(1);
-        }}
-        searchPlaceholder="Search teachers"
-      >
-        {(["", "true", "false"] as const).map((value) => (
-          <button
-            key={value || "all"}
-            type="button"
-            onClick={() => {
-              setStatus(value);
+      <DataListPanel
+        toolbar={
+          <ListToolbar
+            searchValue={search}
+            onSearchChange={(value) => {
+              setSearch(value);
               setPage(1);
             }}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-              status === value ? "bg-theme-accent text-on-accent" : "text-theme-muted hover:bg-nav-hover"
-            }`}
-          >
-            {value === "" ? "All teachers" : value === "true" ? "Active" : "Inactive"}
-          </button>
-        ))}
-        <select
-          value={classId}
-          onChange={(e) => {
-            setClassId(e.target.value);
-            setPage(1);
-          }}
-          className="ms-input w-auto min-w-[160px]"
-        >
-          <option value="">All classes</option>
-          {(classes ?? []).map((item) => (
-            <option key={item.id} value={item.id}>
-              {formatClassLabel(item.level, item.stream)}
-            </option>
-          ))}
-        </select>
-      </ListToolbar>
-
-      <QueryState
-        error={error}
-        isLoading={isLoading}
-        data={data}
-        onRetry={() => void mutate()}
-        loading={<TeacherTableSkeleton />}
-        isEmpty={(payload) => payload.teachers.length === 0}
-        empty={
-          hasFilters ? (
-            <EmptyState
-              title="No teachers match your search."
-              description="Try adjusting your filters."
-              action={
-                <button
-                  type="button"
-                  className="text-sm font-medium text-theme-accent hover:underline"
-                  onClick={() => {
-                    setSearch("");
-                    setStatus("");
-                    setClassId("");
-                    setPage(1);
-                  }}
-                >
-                  Clear filters
-                </button>
-              }
+            searchPlaceholder="Search by name or email"
+            filters={
+              <>
+                <FilterField label="Status">
+                  <FilterSegment
+                    value={status}
+                    onChange={(value) => {
+                      setStatus(value);
+                      setPage(1);
+                    }}
+                    aria-label="Filter by status"
+                    options={[
+                      { value: "", label: "All" },
+                      { value: "true", label: "Active" },
+                      { value: "false", label: "Inactive" },
+                    ]}
+                  />
+                </FilterField>
+                <FilterField label="Class">
+                  <select
+                    value={classId}
+                    onChange={(e) => {
+                      setClassId(e.target.value);
+                      setPage(1);
+                    }}
+                    className="ms-input ms-input-compact ms-filter-select"
+                  >
+                    <option value="">All classes</option>
+                    {(classes ?? []).map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {formatClassLabel(item.level, item.stream)}
+                      </option>
+                    ))}
+                  </select>
+                </FilterField>
+              </>
+            }
+          />
+        }
+        footer={
+          total > PAGE_SIZE ? (
+            <TablePagination
+              summary={`Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total} teachers`}
+              onPrevious={() => setPage((p) => p - 1)}
+              onNext={() => setPage((p) => p + 1)}
+              previousDisabled={page <= 1}
+              nextDisabled={page * PAGE_SIZE >= total}
             />
-          ) : (
-            <div className="rounded-xl border border-theme bg-theme-surface py-20 text-center">
-              <Users className="mx-auto h-10 w-10 text-theme-faint" />
-              <h2 className="mt-4 text-lg font-semibold text-theme-primary">No teachers yet</h2>
-              <p className="mt-1 text-sm text-theme-muted">Add your first teacher to get started.</p>
-              <CanDo action="manageStaff">
-                <button type="button" className="ms-btn-primary mt-6" onClick={() => setAddOpen(true)}>
-                  Add teacher
-                </button>
-              </CanDo>
-            </div>
-          )
+          ) : null
         }
       >
-        {(payload) => (
-          <>
-            <DataTable>
+        <QueryState
+          error={error}
+          isLoading={isLoading}
+          data={data}
+          onRetry={() => void mutate()}
+          loading={<TeacherTableSkeleton embedded />}
+          isEmpty={(payload) => payload.teachers.length === 0}
+          empty={
+            hasFilters ? (
+              <div className="px-4 py-12 sm:px-5">
+                <EmptyState
+                  title="No teachers match your search"
+                  description="Try adjusting your filters or search term."
+                  action={
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-theme-accent hover:underline"
+                      onClick={clearFilters}
+                    >
+                      Clear filters
+                    </button>
+                  }
+                />
+              </div>
+            ) : (
+              <div className="px-4 py-16 text-center sm:px-5">
+                <Users className="mx-auto h-10 w-10 text-theme-faint" />
+                <h2 className="mt-4 text-lg font-semibold text-theme-primary">No teachers yet</h2>
+                <p className="mt-1 text-sm text-theme-muted">Add your first teacher to get started.</p>
+                <CanDo action="manageStaff">
+                  <button type="button" className="ms-btn-primary mt-6" onClick={() => setAddOpen(true)}>
+                    Add teacher
+                  </button>
+                </CanDo>
+              </div>
+            )
+          }
+        >
+          {(payload) => (
+            <DataTable embedded minWidth="44rem">
               <thead>
                 <tr>
                   <th>Teacher</th>
@@ -208,7 +233,7 @@ export function TeachersPageContent() {
                   <th className="hidden lg:table-cell">Assigned classes</th>
                   <th className="hidden sm:table-cell text-right">Students</th>
                   <th>Status</th>
-                  <th className="text-right">Actions</th>
+                  <th className="w-16 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -302,19 +327,9 @@ export function TeachersPageContent() {
                 })}
               </tbody>
             </DataTable>
-
-            {total > PAGE_SIZE ? (
-              <TablePagination
-                summary={`Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total} teachers`}
-                onPrevious={() => setPage((p) => p - 1)}
-                onNext={() => setPage((p) => p + 1)}
-                previousDisabled={page <= 1}
-                nextDisabled={page * PAGE_SIZE >= total}
-              />
-            ) : null}
-          </>
-        )}
-      </QueryState>
+          )}
+        </QueryState>
+      </DataListPanel>
 
       <AddTeacherPanel open={addOpen} onClose={() => setAddOpen(false)} onSaved={() => void mutate()} />
       <EditTeacherPanel

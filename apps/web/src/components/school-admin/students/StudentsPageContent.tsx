@@ -18,8 +18,11 @@ import { ReinstateStudentDialog } from "@/components/school-admin/students/Reins
 import { StudentTableSkeleton } from "@/components/school-admin/students/StudentRowSkeleton";
 import { TransferClassDialog } from "@/components/school-admin/students/TransferClassDialog";
 import { WithdrawStudentDialog } from "@/components/school-admin/students/WithdrawStudentDialog";
+import { DataListPanel } from "@makyschool/ui/components/ui/DataListPanel";
 import { DataTable } from "@makyschool/ui/components/ui/DataTable";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
+import { FilterField } from "@makyschool/ui/components/ui/FilterField";
+import { FilterSegment } from "@makyschool/ui/components/ui/FilterSegment";
 import { ListToolbar } from "@makyschool/ui/components/ui/ListToolbar";
 import { PageHeader } from "@makyschool/ui/components/ui/PageHeader";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
@@ -159,112 +162,139 @@ export function StudentsPageContent() {
         }
       />
 
-      <ListToolbar
-        searchValue={search}
-        onSearchChange={(value) => {
-          setSearch(value);
-          setPage(1);
-        }}
-        searchPlaceholder="Search by name or learner ID"
-        actions={
-          canManage ? (
-            <button type="button" className="ms-btn-secondary" onClick={() => setPromoteOpen(true)}>
-              Promote class
-            </button>
+      <DataListPanel
+        toolbar={
+          <ListToolbar
+            searchValue={search}
+            onSearchChange={(value) => {
+              setSearch(value);
+              setPage(1);
+            }}
+            searchPlaceholder="Search by name or learner ID"
+            actions={
+              canManage ? (
+                <button type="button" className="ms-btn-secondary" onClick={() => setPromoteOpen(true)}>
+                  Promote class
+                </button>
+              ) : null
+            }
+            filters={
+              <>
+                <FilterField label="Class">
+                  <select
+                    className="ms-input ms-input-compact ms-filter-select"
+                    value={classId}
+                    onChange={(e) => {
+                      setClassId(e.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="">All classes</option>
+                    {classGroups.map((group) => (
+                      <optgroup key={group.label} label={group.label}>
+                        {group.items.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {formatClassLabel(item.level, item.stream)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </FilterField>
+                <FilterField label="Gender">
+                  <select
+                    className="ms-input ms-input-compact ms-filter-select"
+                    value={gender}
+                    onChange={(e) => {
+                      setGender(e.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="">All genders</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </select>
+                </FilterField>
+                <FilterField label="Status" className="sm:col-span-2 lg:col-span-1">
+                  <FilterSegment
+                    value={status}
+                    onChange={(value) => {
+                      setStatus(value);
+                      setPage(1);
+                    }}
+                    aria-label="Filter by enrollment status"
+                    options={[
+                      { value: "active", label: "Active" },
+                      { value: "withdrawn", label: "Withdrawn" },
+                    ]}
+                  />
+                </FilterField>
+              </>
+            }
+          />
+        }
+        footer={
+          total > PAGE_SIZE ? (
+            <TablePagination
+              summary={`Showing ${rangeStart}–${rangeEnd} of ${total} students`}
+              onPrevious={() => setPage((value) => value - 1)}
+              onNext={() => setPage((value) => value + 1)}
+              previousDisabled={page <= 1}
+              nextDisabled={rangeEnd >= total}
+            />
           ) : null
         }
       >
-        <select
-          className="ms-input"
-          value={classId}
-          onChange={(e) => {
-            setClassId(e.target.value);
-            setPage(1);
-          }}
-        >
-          <option value="">All classes</option>
-          {classGroups.map((group) => (
-            <optgroup key={group.label} label={group.label}>
-              {group.items.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {formatClassLabel(item.level, item.stream)}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-        <select
-          className="ms-input"
-          value={gender}
-          onChange={(e) => {
-            setGender(e.target.value);
-            setPage(1);
-          }}
-        >
-          <option value="">All genders</option>
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-          <option value="other">Other</option>
-        </select>
-        {(["active", "withdrawn"] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => {
-              setStatus(value);
-              setPage(1);
-            }}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium capitalize ${
-              status === value ? "bg-theme-accent text-on-accent" : "text-theme-muted hover:bg-nav-hover"
-            }`}
-          >
-            {value}
-          </button>
-        ))}
-      </ListToolbar>
-
-      <QueryState
-        error={error}
-        isLoading={isLoading}
-        data={data}
-        onRetry={() => void mutate()}
-        loading={<StudentTableSkeleton rows={8} />}
-        isEmpty={(list) => list.students.length === 0}
-        empty={
-          hasFilters ? (
-            <EmptyState
-              title="No students match your filters."
-              description="Try adjusting your search or filter criteria."
-              action={
-                <button type="button" className="text-sm text-theme-accent hover:underline" onClick={clearFilters}>
-                  Clear filters
-                </button>
-              }
-            />
-          ) : (
-            <EmptyState
-              icon={GraduationCap}
-              title="No students registered yet"
-              description="Register your first student or import from a CSV file."
-              action={
-                canManage ? (
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <button type="button" className="ms-btn-primary" onClick={() => setAddOpen(true)}>
-                      Add student
+        <QueryState
+          error={error}
+          isLoading={isLoading}
+          data={data}
+          onRetry={() => void mutate()}
+          loading={<StudentTableSkeleton rows={8} embedded />}
+          isEmpty={(list) => list.students.length === 0}
+          empty={
+            hasFilters ? (
+              <div className="px-4 py-12 sm:px-5">
+                <EmptyState
+                  title="No students match your filters"
+                  description="Try adjusting your search or filter criteria."
+                  action={
+                    <button
+                      type="button"
+                      className="text-sm text-theme-accent hover:underline"
+                      onClick={clearFilters}
+                    >
+                      Clear filters
                     </button>
-                    <button type="button" className="ms-btn-secondary" onClick={() => setImportOpen(true)}>
-                      Import CSV
-                    </button>
-                  </div>
-                ) : null
-              }
-            />
-          )
-        }
-      >
-        {() => (
-          <>
-            <DataTable minWidth="48rem">
+                  }
+                />
+              </div>
+            ) : (
+              <div className="px-4 py-12 sm:px-5">
+                <EmptyState
+                  icon={GraduationCap}
+                  title="No students registered yet"
+                  description="Register your first student or import from a CSV file."
+                  action={
+                    canManage ? (
+                      <div className="flex flex-wrap justify-center gap-2">
+                        <button type="button" className="ms-btn-primary" onClick={() => setAddOpen(true)}>
+                          Add student
+                        </button>
+                        <button type="button" className="ms-btn-secondary" onClick={() => setImportOpen(true)}>
+                          Import CSV
+                        </button>
+                      </div>
+                    ) : null
+                  }
+                />
+              </div>
+            )
+          }
+        >
+          {() => (
+            <DataTable embedded minWidth="48rem">
               <thead>
                 <tr>
                   <th>Student</th>
@@ -273,7 +303,7 @@ export function StudentsPageContent() {
                   <th className="hidden md:table-cell">Gender</th>
                   <th className="hidden lg:table-cell">Guardian</th>
                   <th>Status</th>
-                  <th className="text-right">Actions</th>
+                  <th className="w-16 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -372,19 +402,9 @@ export function StudentsPageContent() {
                 })}
               </tbody>
             </DataTable>
-
-            {total > PAGE_SIZE ? (
-              <TablePagination
-                summary={`Showing ${rangeStart}–${rangeEnd} of ${total} students`}
-                onPrevious={() => setPage((value) => value - 1)}
-                onNext={() => setPage((value) => value + 1)}
-                previousDisabled={page <= 1}
-                nextDisabled={rangeEnd >= total}
-              />
-            ) : null}
-          </>
-        )}
-      </QueryState>
+          )}
+        </QueryState>
+      </DataListPanel>
 
       <AddStudentPanel open={addOpen} onClose={() => setAddOpen(false)} onSaved={() => void mutate()} />
       <ImportStudentsPanel open={importOpen} onClose={() => setImportOpen(false)} onSaved={() => void mutate()} />

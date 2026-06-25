@@ -692,6 +692,22 @@ textarea {
     background-color: color-mix(in srgb, var(--color-input-bg) 70%, var(--color-border-muted));
   }
 
+  .ms-input-compact {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .ms-filter-select {
+    min-width: 10rem;
+    width: 100%;
+  }
+
+  @media (min-width: 640px) {
+    .ms-filter-select {
+      width: 11rem;
+    }
+  }
+
   .ms-input:-webkit-autofill,
   .ms-input:-webkit-autofill:hover,
   .ms-input:-webkit-autofill:focus {

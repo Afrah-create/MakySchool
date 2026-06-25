@@ -1,8 +1,12 @@
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 
-export function StudentTableSkeleton({ rows = 8 }: { rows?: number }) {
+export function StudentTableSkeleton({ rows = 8, embedded = false }: { rows?: number; embedded?: boolean }) {
+  const shellClass = embedded
+    ? "overflow-hidden"
+    : "overflow-hidden rounded-xl border border-theme bg-theme-surface";
+
   return (
-    <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+    <div className={shellClass}>
       <div className="border-b border-theme bg-table-header px-4 py-3">
         <Skeleton className="h-3 w-full max-w-md" />
       </div>
