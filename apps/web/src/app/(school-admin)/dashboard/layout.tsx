@@ -13,6 +13,7 @@ import { apiFetch } from "@/lib/api/server";
 import { requirePortalSession } from "@/lib/roles";
 import { getServerTenantContext } from "@/lib/tenant/server";
 import { SchoolProvider } from "@/providers/SchoolProvider";
+import { PortalRoleProvider } from "@/providers/PortalRoleProvider";
 import type { SetupStatusResponse } from "@makyschool/shared/types";
 
 export default async function SchoolAdminDashboardLayout({
@@ -43,24 +44,27 @@ export default async function SchoolAdminDashboardLayout({
 
   if (isSetupWizard) {
     return (
+      <PortalRoleProvider role={session.role}>
+        <SchoolProvider
+          schoolSlug={tenant.schoolSlug}
+          school={status?.school ?? null}
+          setupStatus={status}
+        >
+          <SessionManager />
+          {children}
+        </SchoolProvider>
+      </PortalRoleProvider>
+    );
+  }
+
+  return (
+    <PortalRoleProvider role={session.role}>
       <SchoolProvider
         schoolSlug={tenant.schoolSlug}
         school={status?.school ?? null}
         setupStatus={status}
       >
-        <SessionManager />
-        {children}
-      </SchoolProvider>
-    );
-  }
-
-  return (
-    <SchoolProvider
-      schoolSlug={tenant.schoolSlug}
-      school={status?.school ?? null}
-      setupStatus={status}
-    >
-      <DashboardShell
+        <DashboardShell
         sidebar={
           <SchoolAdminSidebar
             schoolSlug={tenant.schoolSlug}
@@ -83,6 +87,7 @@ export default async function SchoolAdminDashboardLayout({
         {children}
         {subscriptionsEnabled() ? <SubscriptionLockout /> : null}
       </DashboardShell>
-    </SchoolProvider>
+      </SchoolProvider>
+    </PortalRoleProvider>
   );
 }

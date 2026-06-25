@@ -2,11 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { GraduationCap, MoreHorizontal, Plus, Search, Upload } from "lucide-react";
+import { GraduationCap, MoreHorizontal, Plus, Upload } from "lucide-react";
 import {
   PRIMARY_CLASS_LEVELS,
   SECONDARY_CLASS_LEVELS,
-  can,
   formatClassLabel,
 } from "@makyschool/shared/constants";
 import { CanDo } from "@/components/ui/CanDo";
@@ -19,11 +18,15 @@ import { ReinstateStudentDialog } from "@/components/school-admin/students/Reins
 import { StudentTableSkeleton } from "@/components/school-admin/students/StudentRowSkeleton";
 import { TransferClassDialog } from "@/components/school-admin/students/TransferClassDialog";
 import { WithdrawStudentDialog } from "@/components/school-admin/students/WithdrawStudentDialog";
+import { DataTable } from "@makyschool/ui/components/ui/DataTable";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
+import { ListToolbar } from "@makyschool/ui/components/ui/ListToolbar";
+import { PageHeader } from "@makyschool/ui/components/ui/PageHeader";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
+import { TablePagination } from "@makyschool/ui/components/ui/TablePagination";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useApiSWR } from "@/hooks/useApiSWR";
-import { useAuth } from "@/hooks/useAuth";
+import { useCan } from "@/hooks/useCurrentRole";
 import { apiClient } from "@/lib/api/client";
 import type { ClassOption, StudentDetail, StudentListItem, StudentsListResponse } from "@/lib/students/types";
 import {
@@ -50,8 +53,7 @@ function groupClasses(classes: ClassOption[]) {
 export function StudentsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { state } = useAuth();
-  const canManage = state.user ? can(state.user.role, "manageStaff") : false;
+  const canManage = useCan("manageStaff");
 
   const [search, setSearch] = useState("");
   const [classId, setClassId] = useState("");
@@ -124,102 +126,102 @@ export function StudentsPageContent() {
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-theme-primary">Students</h1>
-          <p className="mt-1 text-sm text-theme-muted">Register and manage enrolled students</p>
-        </div>
-        <CanDo action="manageStaff">
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="ms-btn-secondary inline-flex items-center gap-2" onClick={() => setImportOpen(true)}>
+      <PageHeader
+        title="Students"
+        description={
+          <>
+            Register and manage enrolled students.{" "}
+            <span className="text-theme-muted">
+              {activeStats?.total ?? 0} active · {distinctClasses} classes · {withdrawnStats?.total ?? 0}{" "}
+              withdrawn
+            </span>
+          </>
+        }
+        actions={
+          <CanDo action="manageStaff">
+            <button
+              type="button"
+              className="ms-btn-secondary inline-flex items-center gap-2"
+              onClick={() => setImportOpen(true)}
+            >
               <Upload className="h-4 w-4" />
               Import CSV
             </button>
-            <button type="button" className="ms-btn-primary inline-flex items-center gap-2" onClick={() => setAddOpen(true)}>
+            <button
+              type="button"
+              className="ms-btn-primary inline-flex items-center gap-2"
+              onClick={() => setAddOpen(true)}
+            >
               <Plus className="h-4 w-4" />
               Add student
             </button>
-          </div>
-        </CanDo>
-      </div>
+          </CanDo>
+        }
+      />
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative max-w-md flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-theme-faint" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            placeholder="Search by name or learner ID"
-            className="ms-input w-full pl-10"
-          />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <select
-            className="ms-input"
-            value={classId}
-            onChange={(e) => {
-              setClassId(e.target.value);
-              setPage(1);
-            }}
-          >
-            <option value="">All classes</option>
-            {classGroups.map((group) => (
-              <optgroup key={group.label} label={group.label}>
-                {group.items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {formatClassLabel(item.level, item.stream)}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-          <select
-            className="ms-input"
-            value={gender}
-            onChange={(e) => {
-              setGender(e.target.value);
-              setPage(1);
-            }}
-          >
-            <option value="">All genders</option>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-            <option value="other">Other</option>
-          </select>
-          {(["active", "withdrawn"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => {
-                setStatus(value);
-                setPage(1);
-              }}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium capitalize ${
-                status === value ? "bg-theme-accent text-on-accent" : "text-theme-muted hover:bg-nav-hover"
-              }`}
-            >
-              {value}
+      <ListToolbar
+        searchValue={search}
+        onSearchChange={(value) => {
+          setSearch(value);
+          setPage(1);
+        }}
+        searchPlaceholder="Search by name or learner ID"
+        actions={
+          canManage ? (
+            <button type="button" className="ms-btn-secondary" onClick={() => setPromoteOpen(true)}>
+              Promote class
             </button>
+          ) : null
+        }
+      >
+        <select
+          className="ms-input"
+          value={classId}
+          onChange={(e) => {
+            setClassId(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All classes</option>
+          {classGroups.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.items.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {formatClassLabel(item.level, item.stream)}
+                </option>
+              ))}
+            </optgroup>
           ))}
-        </div>
-      </div>
-
-      <p className="text-sm text-theme-muted">
-        {activeStats?.total ?? 0} active students · {distinctClasses} classes ·{" "}
-        {withdrawnStats?.total ?? 0} withdrawn
-      </p>
-
-      {canManage ? (
-        <div className="flex justify-end">
-          <button type="button" className="ms-btn-secondary" onClick={() => setPromoteOpen(true)}>
-            Promote a class →
+        </select>
+        <select
+          className="ms-input"
+          value={gender}
+          onChange={(e) => {
+            setGender(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All genders</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+          <option value="other">Other</option>
+        </select>
+        {(["active", "withdrawn"] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => {
+              setStatus(value);
+              setPage(1);
+            }}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium capitalize ${
+              status === value ? "bg-theme-accent text-on-accent" : "text-theme-muted hover:bg-nav-hover"
+            }`}
+          >
+            {value}
           </button>
-        </div>
-      ) : null}
+        ))}
+      </ListToolbar>
 
       <QueryState
         error={error}
@@ -262,143 +264,123 @@ export function StudentsPageContent() {
       >
         {() => (
           <>
-            <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
-              <table className="ms-table w-full">
-                <thead className="bg-table-header text-xs font-medium uppercase tracking-wide text-theme-muted">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Student</th>
-                    <th className="px-4 py-3 text-left">Class</th>
-                    <th className="hidden px-4 py-3 text-left sm:table-cell">DOB / Age</th>
-                    <th className="hidden px-4 py-3 text-left md:table-cell">Gender</th>
-                    <th className="hidden px-4 py-3 text-left lg:table-cell">Guardian</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {students.map((student) => {
-                    const isActive = student.status === "active";
-                    return (
-                      <tr key={student.id} className="border-t border-theme transition-colors hover:bg-table-row-hover">
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-3">
-                            {student.photo_url ? (
-                              <img
-                                src={student.photo_url}
-                                alt=""
-                                className="h-9 w-9 rounded-full object-cover"
-                              />
-                            ) : (
-                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-theme-accent-muted text-sm font-semibold text-theme-accent">
-                                {studentInitials(student.full_name)}
-                              </span>
-                            )}
-                            <div>
-                              <p className="font-medium text-theme-primary">{student.full_name}</p>
-                              <p className="text-xs text-theme-muted">{student.learner_id}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          {student.class_name ? (
-                            <span className="rounded-full bg-theme-raised px-2.5 py-0.5 text-xs font-medium text-theme-primary">
-                              {student.class_name}
-                            </span>
+            <DataTable minWidth="48rem">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Class</th>
+                  <th className="hidden sm:table-cell">DOB / Age</th>
+                  <th className="hidden md:table-cell">Gender</th>
+                  <th className="hidden lg:table-cell">Guardian</th>
+                  <th>Status</th>
+                  <th className="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((student) => {
+                  const isActive = student.status === "active";
+                  return (
+                    <tr key={student.id}>
+                      <td>
+                        <div className="flex items-center gap-3">
+                          {student.photo_url ? (
+                            <img
+                              src={student.photo_url}
+                              alt=""
+                              className="h-9 w-9 rounded-full object-cover"
+                            />
                           ) : (
-                            "—"
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-theme-accent-muted text-sm font-semibold text-theme-accent">
+                              {studentInitials(student.full_name)}
+                            </span>
                           )}
-                        </td>
-                        <td className="hidden px-4 py-4 text-sm text-theme-muted sm:table-cell">
-                          {formatDobWithAge(student.date_of_birth)}
-                        </td>
-                        <td className="hidden px-4 py-4 text-sm md:table-cell">
-                          {capitalizeGender(student.gender)}
-                        </td>
-                        <td className="hidden px-4 py-4 lg:table-cell">
-                          <p className="text-sm text-theme-primary">{student.guardian_name ?? "—"}</p>
-                          {student.guardian_phone ? (
-                            <p className="text-xs text-theme-muted">{student.guardian_phone}</p>
-                          ) : null}
-                        </td>
-                        <td className="px-4 py-4">
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                              isActive ? "badge-success" : "badge-danger"
-                            }`}
-                          >
-                            {isActive ? "Active" : "Withdrawn"}
+                          <div className="min-w-0">
+                            <p className="font-medium text-theme-primary">{student.full_name}</p>
+                            <p className="truncate text-xs text-theme-muted">{student.learner_id}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        {student.class_name ? (
+                          <span className="rounded-full bg-theme-raised px-2.5 py-0.5 text-xs font-medium text-theme-primary">
+                            {student.class_name}
                           </span>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <DropdownMenu
-                            trigger={
-                              <span className="inline-flex rounded-lg p-2 hover:bg-theme-raised">
-                                <MoreHorizontal className="h-4 w-4 text-theme-muted" />
-                              </span>
-                            }
-                            items={[
-                              {
-                                label: "View profile",
-                                onClick: () => router.push(`/dashboard/students/${student.id}`),
-                              },
-                              ...(canManage
-                                ? [
-                                    {
-                                      label: "Edit details",
-                                      onClick: () => void openEdit(student),
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="hidden text-muted sm:table-cell">
+                        {formatDobWithAge(student.date_of_birth)}
+                      </td>
+                      <td className="hidden md:table-cell">{capitalizeGender(student.gender)}</td>
+                      <td className="hidden lg:table-cell">
+                        <p className="text-sm">{student.guardian_name ?? "—"}</p>
+                        {student.guardian_phone ? (
+                          <p className="text-xs text-theme-muted">{student.guardian_phone}</p>
+                        ) : null}
+                      </td>
+                      <td>
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            isActive ? "badge-success" : "badge-danger"
+                          }`}
+                        >
+                          {isActive ? "Active" : "Withdrawn"}
+                        </span>
+                      </td>
+                      <td className="text-right">
+                        <DropdownMenu
+                          trigger={
+                            <span className="inline-flex rounded-lg p-2 hover:bg-theme-raised">
+                              <MoreHorizontal className="h-4 w-4 text-theme-muted" />
+                            </span>
+                          }
+                          items={[
+                            {
+                              label: "View profile",
+                              onClick: () => router.push(`/dashboard/students/${student.id}`),
+                            },
+                            ...(canManage
+                              ? [
+                                  {
+                                    label: "Edit details",
+                                    onClick: () => void openEdit(student),
+                                  },
+                                  {
+                                    label: "Transfer class",
+                                    onClick: () => setTransferStudent(student),
+                                  },
+                                  {
+                                    label: isActive ? "Withdraw student" : "Reinstate",
+                                    variant: (isActive ? "danger" : "success") as "danger" | "success",
+                                    dividerBefore: true,
+                                    onClick: () => {
+                                      if (isActive) {
+                                        setWithdrawStudent(student);
+                                      } else {
+                                        setReinstateStudent(student);
+                                      }
                                     },
-                                    {
-                                      label: "Transfer class",
-                                      onClick: () => setTransferStudent(student),
-                                    },
-                                    {
-                                      label: isActive ? "Withdraw student" : "Reinstate",
-                                      variant: (isActive ? "danger" : "success") as "danger" | "success",
-                                      dividerBefore: true,
-                                      onClick: () => {
-                                        if (isActive) {
-                                          setWithdrawStudent(student);
-                                        } else {
-                                          setReinstateStudent(student);
-                                        }
-                                      },
-                                    },
-                                  ]
-                                : []),
-                            ]}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                                  },
+                                ]
+                              : []),
+                          ]}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </DataTable>
 
             {total > PAGE_SIZE ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-theme-muted">
-                <p>
-                  Showing {rangeStart}–{rangeEnd} of {total} students
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className="ms-btn-secondary"
-                    disabled={page <= 1}
-                    onClick={() => setPage((value) => value - 1)}
-                  >
-                    Previous
-                  </button>
-                  <button
-                    type="button"
-                    className="ms-btn-secondary"
-                    disabled={rangeEnd >= total}
-                    onClick={() => setPage((value) => value + 1)}
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
+              <TablePagination
+                summary={`Showing ${rangeStart}–${rangeEnd} of ${total} students`}
+                onPrevious={() => setPage((value) => value - 1)}
+                onNext={() => setPage((value) => value + 1)}
+                previousDisabled={page <= 1}
+                nextDisabled={rangeEnd >= total}
+              />
             ) : null}
           </>
         )}

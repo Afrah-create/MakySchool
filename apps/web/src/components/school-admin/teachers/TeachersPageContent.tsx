@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { MoreHorizontal, Plus, Search, Users } from "lucide-react";
+import { MoreHorizontal, Plus, Users } from "lucide-react";
 import { formatClassLabel } from "@makyschool/shared/constants";
 import { CanDo } from "@/components/ui/CanDo";
 import { DropdownMenu } from "@/components/ui/DropdownMenu";
@@ -13,13 +13,16 @@ import { EditTeacherPanel } from "@/components/school-admin/teachers/EditTeacher
 import { ReactivateDialog } from "@/components/school-admin/teachers/ReactivateDialog";
 import { ResetPasswordDialog } from "@/components/school-admin/teachers/ResetPasswordDialog";
 import { TeacherTableSkeleton } from "@/components/school-admin/teachers/TeacherRowSkeleton";
+import { DataTable } from "@makyschool/ui/components/ui/DataTable";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
+import { ListToolbar } from "@makyschool/ui/components/ui/ListToolbar";
+import { PageHeader } from "@makyschool/ui/components/ui/PageHeader";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
+import { TablePagination } from "@makyschool/ui/components/ui/TablePagination";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useApiSWR } from "@/hooks/useApiSWR";
-import { useAuth } from "@/hooks/useAuth";
+import { useCan } from "@/hooks/useCurrentRole";
 import { apiClient } from "@/lib/api/client";
-import { can } from "@makyschool/shared/constants";
 import type { ClassOption, TeacherDetail, TeacherListItem, TeachersListResponse } from "@/lib/teachers/types";
 import { teacherInitials } from "@/lib/validation/teachers";
 
@@ -41,8 +44,7 @@ function uniqueClassPills(assignments: TeacherListItem["assignments"]) {
 export function TeachersPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { state } = useAuth();
-  const canManage = state.user ? can(state.user.role, "manageStaff") : false;
+  const canManage = useCan("manageStaff");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"" | "true" | "false">("");
   const [classId, setClassId] = useState("");
@@ -87,77 +89,73 @@ export function TeachersPageContent() {
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-theme-primary">Teachers</h1>
-          <p className="mt-1 text-sm text-theme-muted">
+      <PageHeader
+        title="Teachers"
+        description={
+          <>
             Manage teaching staff. Assign class subjects from{" "}
             <Link href="/dashboard/teaching-load" className="text-theme-accent hover:underline">
               Teaching load
             </Link>
             .
-          </p>
-        </div>
-        <CanDo action="manageStaff">
-          <div className="flex flex-wrap gap-2">
+          </>
+        }
+        actions={
+          <CanDo action="manageStaff">
             <Link href="/dashboard/teaching-load" className="ms-btn-secondary inline-flex items-center">
               Teaching load
             </Link>
-            <button type="button" className="ms-btn-primary inline-flex items-center gap-2" onClick={() => setAddOpen(true)}>
+            <button
+              type="button"
+              className="ms-btn-primary inline-flex items-center gap-2"
+              onClick={() => setAddOpen(true)}
+            >
               <Plus className="h-4 w-4" />
               Add teacher
             </button>
-          </div>
-        </CanDo>
-      </div>
+          </CanDo>
+        }
+      />
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative max-w-md flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-theme-faint" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
+      <ListToolbar
+        searchValue={search}
+        onSearchChange={(value) => {
+          setSearch(value);
+          setPage(1);
+        }}
+        searchPlaceholder="Search teachers"
+      >
+        {(["", "true", "false"] as const).map((value) => (
+          <button
+            key={value || "all"}
+            type="button"
+            onClick={() => {
+              setStatus(value);
               setPage(1);
             }}
-            placeholder="Search teachers"
-            className="ms-input w-full pl-10"
-          />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {(["", "true", "false"] as const).map((value) => (
-            <button
-              key={value || "all"}
-              type="button"
-              onClick={() => {
-                setStatus(value);
-                setPage(1);
-              }}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                status === value ? "bg-theme-accent text-on-accent" : "text-theme-muted hover:bg-nav-hover"
-              }`}
-            >
-              {value === "" ? "All teachers" : value === "true" ? "Active" : "Inactive"}
-            </button>
-          ))}
-          <select
-            value={classId}
-            onChange={(e) => {
-              setClassId(e.target.value);
-              setPage(1);
-            }}
-            className="ms-input w-auto min-w-[160px]"
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+              status === value ? "bg-theme-accent text-on-accent" : "text-theme-muted hover:bg-nav-hover"
+            }`}
           >
-            <option value="">All classes</option>
-            {(classes ?? []).map((item) => (
-              <option key={item.id} value={item.id}>
-                {formatClassLabel(item.level, item.stream)}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+            {value === "" ? "All teachers" : value === "true" ? "Active" : "Inactive"}
+          </button>
+        ))}
+        <select
+          value={classId}
+          onChange={(e) => {
+            setClassId(e.target.value);
+            setPage(1);
+          }}
+          className="ms-input w-auto min-w-[160px]"
+        >
+          <option value="">All classes</option>
+          {(classes ?? []).map((item) => (
+            <option key={item.id} value={item.id}>
+              {formatClassLabel(item.level, item.stream)}
+            </option>
+          ))}
+        </select>
+      </ListToolbar>
 
       <QueryState
         error={error}
@@ -202,125 +200,117 @@ export function TeachersPageContent() {
       >
         {(payload) => (
           <>
-            <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
-              <table className="min-w-full">
-                <thead className="bg-table-header text-xs font-medium uppercase tracking-wide text-theme-muted">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Teacher</th>
-                    <th className="hidden px-4 py-3 text-left md:table-cell">Specialisation</th>
-                    <th className="hidden px-4 py-3 text-left lg:table-cell">Assigned classes</th>
-                    <th className="hidden px-4 py-3 text-right sm:table-cell">Students</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payload.teachers.map((teacher) => {
-                    const isActive = optimistic[teacher.id] ?? teacher.is_active;
-                    const classPills = uniqueClassPills(teacher.assignments);
-                    const visible = classPills.slice(0, 3);
-                    const overflow = classPills.length - visible.length;
+            <DataTable>
+              <thead>
+                <tr>
+                  <th>Teacher</th>
+                  <th className="hidden md:table-cell">Specialisation</th>
+                  <th className="hidden lg:table-cell">Assigned classes</th>
+                  <th className="hidden sm:table-cell text-right">Students</th>
+                  <th>Status</th>
+                  <th className="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payload.teachers.map((teacher) => {
+                  const isActive = optimistic[teacher.id] ?? teacher.is_active;
+                  const classPills = uniqueClassPills(teacher.assignments);
+                  const visible = classPills.slice(0, 3);
+                  const overflow = classPills.length - visible.length;
 
-                    return (
-                      <tr key={teacher.id} className="border-t border-theme transition-colors hover:bg-table-row-hover">
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-3">
-                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-theme-accent-muted text-sm font-semibold text-theme-accent">
-                              {teacherInitials(teacher.full_name)}
-                            </span>
-                            <div>
-                              <Link href={`/dashboard/teachers/${teacher.id}`} className="font-semibold text-theme-primary hover:text-theme-accent">
-                                {teacher.full_name}
-                              </Link>
-                              <p className="text-xs text-theme-muted">{teacher.email}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="hidden px-4 py-4 text-sm text-theme-muted md:table-cell">
-                          {teacher.subject_specialization || "—"}
-                        </td>
-                        <td className="hidden px-4 py-4 lg:table-cell">
-                          <div className="flex flex-wrap gap-1">
-                            {visible.map((pill) => (
-                              <span key={pill} className="badge-info rounded-full px-2 py-0.5 text-xs">
-                                {pill}
-                              </span>
-                            ))}
-                            {overflow > 0 ? (
-                              <span className="rounded-full bg-theme-surface-raised px-2 py-0.5 text-xs text-theme-muted">
-                                +{overflow} more
-                              </span>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="hidden px-4 py-4 text-right text-sm text-theme-muted sm:table-cell">
-                          {teacher.total_students > 0 ? teacher.total_students : "—"}
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${isActive ? "badge-success" : "badge-danger"}`}>
-                            {isActive ? "Active" : "Inactive"}
+                  return (
+                    <tr key={teacher.id}>
+                      <td>
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-theme-accent-muted text-sm font-semibold text-theme-accent">
+                            {teacherInitials(teacher.full_name)}
                           </span>
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <DropdownMenu
-                            trigger={
-                              <span className="inline-flex rounded-lg p-2 hover:bg-nav-hover">
-                                <MoreHorizontal className="h-4 w-4 text-theme-muted" />
-                              </span>
-                            }
-                            items={[
-                              {
-                                label: "View details",
-                                onClick: () => router.push(`/dashboard/teachers/${teacher.id}`),
-                              },
-                              ...(canManage
-                                ? [
-                                    {
-                                      label: "Edit",
-                                      onClick: () => void openEdit(teacher),
-                                    },
-                                    {
-                                      label: "Reset password",
-                                      onClick: () => setResetTeacher(teacher),
-                                    },
-                                    {
-                                      label: isActive ? "Deactivate" : "Reactivate",
-                                      variant: (isActive ? "danger" : "success") as "danger" | "success",
-                                      dividerBefore: true,
-                                      onClick: () =>
-                                        isActive ? setDeactivateTeacher(teacher) : setReactivateTeacher(teacher),
-                                    },
-                                  ]
-                                : []),
-                            ]}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          <div className="min-w-0">
+                            <Link
+                              href={`/dashboard/teachers/${teacher.id}`}
+                              className="font-semibold text-theme-primary hover:text-theme-accent"
+                            >
+                              {teacher.full_name}
+                            </Link>
+                            <p className="truncate text-xs text-theme-muted">{teacher.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="hidden text-muted md:table-cell">
+                        {teacher.subject_specialization || "—"}
+                      </td>
+                      <td className="hidden lg:table-cell">
+                        <div className="flex flex-wrap gap-1">
+                          {visible.map((pill) => (
+                            <span key={pill} className="badge-info rounded-full px-2 py-0.5 text-xs">
+                              {pill}
+                            </span>
+                          ))}
+                          {overflow > 0 ? (
+                            <span className="rounded-full bg-theme-surface-raised px-2 py-0.5 text-xs text-theme-muted">
+                              +{overflow} more
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="hidden text-right text-muted sm:table-cell">
+                        {teacher.total_students > 0 ? teacher.total_students : "—"}
+                      </td>
+                      <td>
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${isActive ? "badge-success" : "badge-danger"}`}
+                        >
+                          {isActive ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="text-right">
+                        <DropdownMenu
+                          trigger={
+                            <span className="inline-flex rounded-lg p-2 hover:bg-nav-hover">
+                              <MoreHorizontal className="h-4 w-4 text-theme-muted" />
+                            </span>
+                          }
+                          items={[
+                            {
+                              label: "View details",
+                              onClick: () => router.push(`/dashboard/teachers/${teacher.id}`),
+                            },
+                            ...(canManage
+                              ? [
+                                  {
+                                    label: "Edit",
+                                    onClick: () => void openEdit(teacher),
+                                  },
+                                  {
+                                    label: "Reset password",
+                                    onClick: () => setResetTeacher(teacher),
+                                  },
+                                  {
+                                    label: isActive ? "Deactivate" : "Reactivate",
+                                    variant: (isActive ? "danger" : "success") as "danger" | "success",
+                                    dividerBefore: true,
+                                    onClick: () =>
+                                      isActive ? setDeactivateTeacher(teacher) : setReactivateTeacher(teacher),
+                                  },
+                                ]
+                              : []),
+                          ]}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </DataTable>
 
             {total > PAGE_SIZE ? (
-              <div className="flex items-center justify-between text-sm text-theme-muted">
-                <p>
-                  Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total} teachers
-                </p>
-                <div className="flex gap-2">
-                  <button type="button" className="ms-btn-secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                    Previous
-                  </button>
-                  <button
-                    type="button"
-                    className="ms-btn-secondary"
-                    disabled={page * PAGE_SIZE >= total}
-                    onClick={() => setPage((p) => p + 1)}
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
+              <TablePagination
+                summary={`Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total} teachers`}
+                onPrevious={() => setPage((p) => p - 1)}
+                onNext={() => setPage((p) => p + 1)}
+                previousDisabled={page <= 1}
+                nextDisabled={page * PAGE_SIZE >= total}
+              />
             ) : null}
           </>
         )}

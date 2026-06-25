@@ -1,18 +1,12 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { subscriptionsEnabled } from "@makyschool/shared/constants";
 import type { UserRole } from "@makyschool/shared/types";
 import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { performLogout } from "@/lib/auth/logout";
-import {
-  filterNavByRole,
-  schoolAdminNav,
-  schoolAdminSetupNav,
-} from "@/lib/roles";
+import { SchoolAdminMobileNavLinks } from "@/components/layout/school-admin/SchoolAdminNav";
 
 export function SchoolAdminMobileNav({
   schoolName,
@@ -23,24 +17,10 @@ export function SchoolAdminMobileNav({
   schoolStatus?: string;
   role: UserRole;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
   const billingEnabled = subscriptionsEnabled();
-
-  const navLinks =
-    schoolStatus === "setup"
-      ? filterNavByRole(schoolAdminSetupNav, role)
-      : filterNavByRole(schoolAdminNav, role).filter(
-          (link) => link.href !== "/dashboard/billing" || billingEnabled,
-        );
 
   function handleLogout() {
     void performLogout("manual");
-  }
-
-  function isActive(href: string, exact: boolean) {
-    if (exact) return pathname === href;
-    return pathname === href || pathname.startsWith(`${href}/`);
   }
 
   return (
@@ -64,26 +44,11 @@ export function SchoolAdminMobileNav({
           </button>
         </div>
       </div>
-      <nav className="flex gap-1 overflow-x-auto px-4 pb-3">
-        {navLinks.map((link) => {
-          const Icon = link.icon;
-          const active = isActive(link.href, link.exact);
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
-                active
-                  ? "bg-theme-accent text-on-accent"
-                  : "text-theme-muted hover:bg-nav-hover hover:text-theme-primary"
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {link.label}
-            </Link>
-          );
-        })}
-      </nav>
+      <SchoolAdminMobileNavLinks
+        role={role}
+        setupMode={schoolStatus === "setup"}
+        billingEnabled={billingEnabled}
+      />
     </header>
   );
 }

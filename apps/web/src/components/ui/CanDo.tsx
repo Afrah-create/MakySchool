@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { can, type PermissionAction } from "@makyschool/shared/constants";
 import type { MakySchoolRole } from "@makyschool/shared/types";
-import { useAuth } from "@/hooks/useAuth";
+import { useCurrentRole } from "@/hooks/useCurrentRole";
 
 export function CanDo({
   action,
@@ -14,8 +14,8 @@ export function CanDo({
   role?: MakySchoolRole;
   children: ReactNode;
 }) {
-  const { state } = useAuth();
-  const role = roleProp ?? state.user?.role;
+  const currentRole = useCurrentRole();
+  const role = roleProp ?? currentRole;
 
   if (!role || !can(role, action)) {
     return null;
