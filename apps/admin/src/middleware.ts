@@ -1,3 +1,7 @@
+import {
+  SUPERADMIN_ACCESS_COOKIE,
+  SUPERADMIN_REFRESH_COOKIE,
+} from "@makyschool/shared/constants";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getSuperAdminPayloadFromRequest } from "@/lib/auth/verify-superadmin-token";
@@ -10,15 +14,32 @@ function isProtectedRoute(pathname: string) {
   );
 }
 
+function clearSuperadminCookies(response: NextResponse) {
+  response.cookies.delete(SUPERADMIN_ACCESS_COOKIE);
+  response.cookies.delete(SUPERADMIN_REFRESH_COOKIE);
+}
+
+function applyNoCacheHeaders(response: NextResponse) {
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+  response.headers.set("Pragma", "no-cache");
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const session = await getSuperAdminPayloadFromRequest(request);
+  const protectedRoute = isProtectedRoute(pathname);
 
-  if (isProtectedRoute(pathname)) {
+  if (protectedRoute) {
     if (!session) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      const response = NextResponse.redirect(new URL("/login", request.url));
+      clearSuperadminCookies(response);
+      applyNoCacheHeaders(response);
+      return response;
     }
-    return NextResponse.next();
+
+    const response = NextResponse.next();
+    applyNoCacheHeaders(response);
+    return response;
   }
 
   if (pathname === "/login" && session) {

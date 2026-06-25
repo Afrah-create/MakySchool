@@ -5,17 +5,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
-import { apiClient } from "@/lib/api/client";
+import { performLogout } from "@/lib/auth/logout";
 import { platformAdminNav } from "@/lib/platform-admin-nav";
 
 export function AdminSidebar() {
   const router = useRouter();
   const pathname = usePathname();
 
-  async function handleLogout() {
-    await apiClient("/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
+  function handleLogout() {
+    void performLogout("manual");
   }
 
   return (

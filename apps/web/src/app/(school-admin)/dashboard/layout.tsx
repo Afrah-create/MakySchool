@@ -5,6 +5,7 @@ import { SchoolAdminMobileNav } from "@/components/layout/school-admin/SchoolAdm
 import { SchoolAdminSidebar } from "@/components/layout/school-admin/SchoolAdminSidebar";
 import { DashboardTopBar } from "@/components/layout/DashboardTopBar";
 import { SubscriptionLockout } from "@/components/school-admin/SubscriptionLockout";
+import { SessionManager } from "@/components/session/SessionManager";
 import { subscriptionsEnabled } from "@makyschool/shared/constants";
 import { DashboardShell } from "@makyschool/ui/components/layout/DashboardShell";
 import { getTenantPayloadFromCookies } from "@/lib/auth/server-tenant";
@@ -47,6 +48,7 @@ export default async function SchoolAdminDashboardLayout({
         school={status?.school ?? null}
         setupStatus={status}
       >
+        <SessionManager />
         {children}
       </SchoolProvider>
     );
@@ -77,6 +79,7 @@ export default async function SchoolAdminDashboardLayout({
         topBar={<DashboardTopBar />}
         rightRail={<DashboardRightRail />}
       >
+        <SessionManager />
         {children}
         {subscriptionsEnabled() ? <SubscriptionLockout /> : null}
       </DashboardShell>

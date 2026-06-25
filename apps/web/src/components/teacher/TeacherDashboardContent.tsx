@@ -11,6 +11,7 @@ import type { TeacherDetail } from "@/lib/teachers/types";
 import { buildTeacherClassMap } from "@/lib/teacher/utils";
 import { teacherFirstName } from "@/lib/validation/teachers";
 import { TeacherClassGrid, TeacherStatsRow } from "./TeacherClassCard";
+import { TeacherTimetableCard } from "./TeacherTimetableCard";
 
 export function TeacherDashboardContent() {
   const { data, error, isLoading, mutate } = useApiSWR<TeacherDetail>("/schools/teachers/me");
@@ -59,6 +60,8 @@ export function TeacherDashboardContent() {
               </div>
 
               <TeacherStatsRow teacher={teacher} />
+
+              <TeacherTimetableCard />
 
               {hasClasses ? (
                 <section className="space-y-4">

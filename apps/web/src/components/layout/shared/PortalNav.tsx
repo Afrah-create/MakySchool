@@ -6,8 +6,7 @@ import { LogOut } from "lucide-react";
 import type { UserRole } from "@makyschool/shared/types";
 import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
-import { apiClient } from "@/lib/api/client";
-import { clearSchoolSlug } from "@/lib/auth/session";
+import { performLogout } from "@/lib/auth/logout";
 import { filterPortalNavByRole, type PortalNavItem } from "@/lib/roles/portal-nav";
 
 type PortalNavProps = {
@@ -27,11 +26,8 @@ export function PortalMobileNav({
   const pathname = usePathname();
   const links = filterPortalNavByRole(navItems, role);
 
-  async function handleLogout() {
-    await apiClient("/auth/logout", { method: "POST" });
-    clearSchoolSlug();
-    router.push("/login");
-    router.refresh();
+  function handleLogout() {
+    void performLogout("manual");
   }
 
   function isActive(href: string, exact: boolean) {
@@ -97,11 +93,8 @@ export function PortalSidebar({
   const pathname = usePathname();
   const links = filterPortalNavByRole(navItems, role);
 
-  async function handleLogout() {
-    await apiClient("/auth/logout", { method: "POST" });
-    clearSchoolSlug();
-    router.push("/login");
-    router.refresh();
+  function handleLogout() {
+    void performLogout("manual");
   }
 
   function isActive(href: string, exact: boolean) {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { SlideOver } from "@makyschool/ui/components/ui/SlideOver";
+import { Modal } from "@makyschool/ui/components/ui/Modal";
 import { apiClient } from "@/lib/api/client";
 import type { StudentDetail } from "@/lib/students/types";
 import { validateStudentForm } from "@/lib/validation/students";
@@ -100,9 +100,10 @@ export function EditStudentPanel({
   }
 
   return (
-    <SlideOver
+    <Modal
       open={Boolean(student)}
       onClose={requestClose}
+      size="lg"
       title="Edit student"
       description={`Update details for ${student.full_name}.`}
     >
@@ -258,6 +259,6 @@ export function EditStudentPanel({
           {loading ? "Saving…" : "Save changes"}
         </button>
       </form>
-    </SlideOver>
+    </Modal>
   );
 }

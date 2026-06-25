@@ -16,6 +16,7 @@ from app.lib.cors import is_origin_allowed
 from app.middleware.errors import add_exception_handlers
 from app.middleware.request_id import RequestIDMiddleware
 from app.routers import (
+    analytics,
     auth,
     billing,
     classes,
@@ -25,11 +26,14 @@ from app.routers import (
     students,
     subjects,
     superadmin_admins,
+    superadmin_analytics,
     superadmin_auth,
     superadmin_schools,
     superadmin_settings,
     superadmin_subscriptions,
     teachers,
+    teaching_load,
+    timetable,
     users,
     webhooks,
 )
@@ -140,11 +144,15 @@ def create_app() -> FastAPI:
     mount_v1_and_legacy(app, subjects.router, "/api/schools/subjects")
     mount_v1_and_legacy(app, users.router, "/api/schools/users")
     mount_v1_and_legacy(app, teachers.router, "/api/schools/teachers")
+    mount_v1_and_legacy(app, teaching_load.router, "/api/schools/teaching-load")
     mount_v1_and_legacy(app, students.router, "/api/schools/students")
     mount_v1_and_legacy(app, fees.router, "/api/schools/fees")
     mount_v1_and_legacy(app, billing.router, "/api/schools/billing")
+    mount_v1_and_legacy(app, timetable.router, "/api/schools/timetable")
+    mount_v1_and_legacy(app, analytics.router, "/api/schools/analytics")
 
     mount_v1_and_legacy(app, webhooks.router, "/api/webhooks")
+    mount_v1_and_legacy(app, superadmin_analytics.router, "/api/superadmin/analytics")
 
     return app
 

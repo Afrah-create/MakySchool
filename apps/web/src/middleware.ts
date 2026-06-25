@@ -23,6 +23,21 @@ function clearTenantCookies(response: NextResponse) {
   response.cookies.delete(TENANT_REFRESH_COOKIE);
 }
 
+function applyNoCacheHeaders(response: NextResponse) {
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+  response.headers.set("Pragma", "no-cache");
+}
+
+function isProtectedPath(pathname: string) {
+  return (
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/teacher") ||
+    pathname.startsWith("/learner") ||
+    pathname.startsWith("/bursar") ||
+    pathname.startsWith("/auth/change-password")
+  );
+}
+
 function platformAppUrl() {
   return (
     process.env.NEXT_PUBLIC_PLATFORM_APP_URL ??
@@ -65,21 +80,19 @@ export async function middleware(request: NextRequest) {
 
   const tenantPayload = hasTenantSession ? await getTenantPayloadFromRequest(request) : null;
 
-  const isProtected =
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/teacher") ||
-    pathname.startsWith("/learner") ||
-    pathname.startsWith("/bursar") ||
-    pathname.startsWith("/auth/change-password");
+  const isProtected = isProtectedPath(pathname);
 
   if (isProtected) {
     if (!hasTenantSession) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      const response = NextResponse.redirect(new URL("/login", request.url));
+      applyNoCacheHeaders(response);
+      return response;
     }
 
     if (!tenantPayload) {
       const response = NextResponse.redirect(new URL("/login", request.url));
       clearTenantCookies(response);
+      applyNoCacheHeaders(response);
       return response;
     }
   }
@@ -187,11 +200,17 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set("x-makyschool-portal", portalForRole(tenantPayload.role));
   }
 
-  return NextResponse.next({
+  const response = NextResponse.next({
     request: {
       headers: requestHeaders,
     },
   });
+
+  if (isProtected) {
+    applyNoCacheHeaders(response);
+  }
+
+  return response;
 }
 
 export const config = {

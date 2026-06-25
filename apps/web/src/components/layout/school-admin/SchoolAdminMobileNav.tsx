@@ -7,8 +7,7 @@ import { subscriptionsEnabled } from "@makyschool/shared/constants";
 import type { UserRole } from "@makyschool/shared/types";
 import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
-import { apiClient } from "@/lib/api/client";
-import { clearSchoolSlug } from "@/lib/auth/session";
+import { performLogout } from "@/lib/auth/logout";
 import {
   filterNavByRole,
   schoolAdminNav,
@@ -35,11 +34,8 @@ export function SchoolAdminMobileNav({
           (link) => link.href !== "/dashboard/billing" || billingEnabled,
         );
 
-  async function handleLogout() {
-    await apiClient("/auth/logout", { method: "POST" });
-    clearSchoolSlug();
-    router.push("/login");
-    router.refresh();
+  function handleLogout() {
+    void performLogout("manual");
   }
 
   function isActive(href: string, exact: boolean) {

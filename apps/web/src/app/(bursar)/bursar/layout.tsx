@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { PortalShell } from "@/components/layout/shared/PortalShell";
+import { SessionManager } from "@/components/session/SessionManager";
 import { getTenantPayloadFromCookies } from "@/lib/auth/server-tenant";
 import { apiFetch } from "@/lib/api/server";
 import { requirePortalSession } from "@/lib/roles";
@@ -45,6 +46,7 @@ export default async function BursarPortalLayout({
         portal="bursar"
         portalLabel="Bursar Portal"
       >
+        <SessionManager />
         {children}
       </PortalShell>
     </SchoolProvider>

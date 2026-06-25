@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.db.pool import get_db
-from app.lib.jwt_utils import cookie_options, sign_tenant_token
+from app.lib.jwt_utils import ACCESS_TOKEN_EXPIRES, REFRESH_TOKEN_EXPIRES, cookie_options, sign_tenant_token
 from app.lib.uploads import save_school_image
 from app.lib.user_sql import USER_ADMIN_ROLE_SQL, USER_DISPLAY_NAME_SQL, normalize_user_role
 from app.middleware.tenant import get_tenant_and_user
@@ -356,12 +356,12 @@ async def complete_setup(
         }
         response.set_cookie(
             settings.TENANT_ACCESS_COOKIE,
-            sign_tenant_token(payload, "15m"),
-            **cookie_options(15 * 60 * 1000),
+            sign_tenant_token(payload, ACCESS_TOKEN_EXPIRES),
+            **cookie_options(20 * 60 * 1000),
         )
         response.set_cookie(
             settings.TENANT_REFRESH_COOKIE,
-            sign_tenant_token(payload, "7d"),
+            sign_tenant_token(payload, REFRESH_TOKEN_EXPIRES),
             **cookie_options(7 * 24 * 60 * 60 * 1000),
         )
 

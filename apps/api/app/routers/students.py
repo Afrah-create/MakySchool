@@ -343,7 +343,7 @@ async def import_students(
 ):
     school_id, actor = ctx
 
-    if not can(actor["role"], "manageUsers"):
+    if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -603,7 +603,7 @@ async def promote_class(
 ):
     school_id, actor = ctx
 
-    if not can(actor["role"], "manageUsers"):
+    if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -799,7 +799,7 @@ async def create_student(
 ):
     school_id, actor = ctx
 
-    if not can(actor["role"], "manageUsers"):
+    if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -975,7 +975,7 @@ async def update_student(
 
     body = UpdateStudentBody(**raw_body)
 
-    if not can(actor["role"], "manageUsers"):
+    if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -1076,7 +1076,7 @@ async def transfer_student(
 ):
     school_id, actor = ctx
 
-    if not can(actor["role"], "manageUsers"):
+    if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -1181,7 +1181,7 @@ async def withdraw_student(
 ):
     school_id, actor = ctx
 
-    if not can(actor["role"], "manageUsers"):
+    if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -1263,7 +1263,7 @@ async def reinstate_student(
 ):
     school_id, actor = ctx
 
-    if not can(actor["role"], "manageUsers"):
+    if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={

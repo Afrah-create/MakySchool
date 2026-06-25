@@ -1,16 +1,12 @@
 "use client";
 
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AlertTriangle, Check, CheckCircle2, Copy } from "lucide-react";
-import { SlideOver } from "@makyschool/ui/components/ui/SlideOver";
+import { Modal } from "@makyschool/ui/components/ui/Modal";
 import { apiClient } from "@/lib/api/client";
-import {
-  assignmentReducer,
-  assignmentsFromRows,
-} from "@/lib/teachers/assignments";
 import type { TeacherDetail } from "@/lib/teachers/types";
 import { validateTeacherForm } from "@/lib/validation/teachers";
-import { AssignmentBuilder } from "./AssignmentBuilder";
 import { SubjectSpecializationSelect } from "./SubjectSpecializationSelect";
 
 type CreateResponse = {
@@ -31,7 +27,6 @@ export function AddTeacherPanel({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [specialization, setSpecialization] = useState("");
-  const [assignmentState, dispatchAssignments] = useReducer(assignmentReducer, { rows: [] });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -45,7 +40,6 @@ export function AddTeacherPanel({
       setEmail("");
       setPhone("");
       setSpecialization("");
-      dispatchAssignments({ type: "reset", rows: [] });
       setErrors({});
       setBannerError(null);
       setSuccess(null);
@@ -77,7 +71,7 @@ export function AddTeacherPanel({
           email: email.trim(),
           phone: phone.trim() || undefined,
           subject_specialization: specialization.trim() || undefined,
-          assignments: assignmentsFromRows(assignmentState.rows),
+          assignments: [],
         },
       });
       setSuccess(response.data);
@@ -92,18 +86,19 @@ export function AddTeacherPanel({
   }
 
   return (
-    <SlideOver
+    <Modal
       open={open}
       onClose={requestClose}
+      size="md"
       title={success ? "Teacher account created" : "Add teacher"}
       description={
         success
           ? `${success.teacher.full_name} can now log in with their temporary password.`
-          : "Create a teacher account with class assignments."
+          : "Create a teacher account. Assign teaching load on the next screen."
       }
       footer={
         success ? (
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
               className="ms-btn-secondary flex-1"
@@ -113,26 +108,20 @@ export function AddTeacherPanel({
                 setEmail("");
                 setPhone("");
                 setSpecialization("");
-                dispatchAssignments({ type: "reset", rows: [] });
                 setDirty(false);
               }}
             >
               Add another teacher
             </button>
-            <button type="button" className="ms-btn-primary flex-1" onClick={onClose}>
-              Done
-            </button>
+            <Link
+              href={`/dashboard/teaching-load?mode=by-teacher&teacherId=${success.teacher.id}`}
+              className="ms-btn-primary flex-1 text-center"
+              onClick={onClose}
+            >
+              Assign teaching load
+            </Link>
           </div>
-        ) : (
-          <button
-            type="submit"
-            form="add-teacher-form"
-            disabled={loading}
-            className="ms-btn-primary w-full"
-          >
-            {loading ? "Creating…" : "Create teacher account"}
-          </button>
-        )
+        ) : undefined
       }
     >
       {success ? (
@@ -161,89 +150,72 @@ export function AddTeacherPanel({
           </div>
         </div>
       ) : (
-        <form id="add-teacher-form" onSubmit={(event) => void handleSubmit(event)} className="space-y-6">
-          <section className="space-y-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-theme-muted">Personal details</p>
-            <label className="block">
-              <span className="mb-1 block text-xs text-theme-muted">Full name *</span>
-              <input
-                className="ms-input"
-                value={fullName}
-                placeholder="e.g. John Ssali"
-                onChange={(e) => {
-                  setFullName(e.target.value);
-                  setDirty(true);
-                  setErrors((prev) => ({ ...prev, full_name: "" }));
-                }}
-              />
-              {errors.full_name ? <p className="mt-1 text-xs text-theme-danger">{errors.full_name}</p> : null}
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs text-theme-muted">Email address *</span>
-              <input
-                type="email"
-                className="ms-input"
-                value={email}
-                placeholder="e.g. john@school.ug"
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  setDirty(true);
-                  setErrors((prev) => ({ ...prev, email: "" }));
-                }}
-              />
-              {errors.email ? <p className="mt-1 text-xs text-theme-danger">{errors.email}</p> : null}
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs text-theme-muted">Phone number</span>
-              <input
-                className="ms-input"
-                value={phone}
-                placeholder="e.g. +256 701 234 567"
-                onChange={(e) => {
-                  setPhone(e.target.value);
-                  setDirty(true);
-                  setErrors((prev) => ({ ...prev, phone: "" }));
-                }}
-              />
-              {errors.phone ? <p className="mt-1 text-xs text-theme-danger">{errors.phone}</p> : null}
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs text-theme-muted">Subject specialisation</span>
-              <SubjectSpecializationSelect
-                value={specialization}
-                onChange={(next) => {
-                  setSpecialization(next);
-                  setDirty(true);
-                }}
-              />
-              <p className="mt-1 text-xs text-theme-faint">
-                Choose from subjects registered under Subjects in your school setup.
-              </p>
-            </label>
-          </section>
-
-          <section className="space-y-3">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-theme-muted">
-                Class assignments
-              </p>
-              <p className="mt-1 text-xs text-theme-muted">
-                The teacher will only see their assigned classes when they log in.
-              </p>
-            </div>
-            <AssignmentBuilder state={assignmentState} dispatch={dispatchAssignments} />
-            {errors.assignments ? (
-              <p className="text-xs text-theme-danger">{errors.assignments}</p>
-            ) : null}
-          </section>
+        <form onSubmit={(event) => void handleSubmit(event)} className="space-y-5">
+          <label className="block">
+            <span className="mb-1 block text-xs text-theme-muted">Full name *</span>
+            <input
+              className="ms-input"
+              value={fullName}
+              placeholder="e.g. John Ssali"
+              onChange={(e) => {
+                setFullName(e.target.value);
+                setDirty(true);
+                setErrors((prev) => ({ ...prev, full_name: "" }));
+              }}
+            />
+            {errors.full_name ? <p className="mt-1 text-xs text-theme-danger">{errors.full_name}</p> : null}
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs text-theme-muted">Email address *</span>
+            <input
+              type="email"
+              className="ms-input"
+              value={email}
+              placeholder="e.g. john@school.ug"
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setDirty(true);
+                setErrors((prev) => ({ ...prev, email: "" }));
+              }}
+            />
+            {errors.email ? <p className="mt-1 text-xs text-theme-danger">{errors.email}</p> : null}
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs text-theme-muted">Phone number</span>
+            <input
+              className="ms-input"
+              value={phone}
+              placeholder="e.g. +256 701 234 567"
+              onChange={(e) => {
+                setPhone(e.target.value);
+                setDirty(true);
+                setErrors((prev) => ({ ...prev, phone: "" }));
+              }}
+            />
+            {errors.phone ? <p className="mt-1 text-xs text-theme-danger">{errors.phone}</p> : null}
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs text-theme-muted">Subject specialisation</span>
+            <SubjectSpecializationSelect
+              value={specialization}
+              onChange={(next) => {
+                setSpecialization(next);
+                setDirty(true);
+              }}
+            />
+          </label>
 
           {bannerError ? (
             <div className="rounded-lg border border-theme bg-theme-danger-bg px-3 py-2 text-sm text-theme-danger">
               {bannerError}
             </div>
           ) : null}
+
+          <button type="submit" className="ms-btn-primary w-full" disabled={loading}>
+            {loading ? "Creating…" : "Create teacher account"}
+          </button>
         </form>
       )}
-    </SlideOver>
+    </Modal>
   );
 }

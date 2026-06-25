@@ -51,3 +51,17 @@ export {
 export { subscriptionsEnabled } from "./features";
 
 export { ROLE_HOME, CAN, can, isMakySchoolRole, MAKY_SCHOOL_ROLES, type PermissionAction, type MakySchoolRole } from "./rbac";
+
+export {
+  ACCESS_TOKEN_TTL_MINUTES,
+  SESSION_IDLE_TIMEOUT_MS,
+  SESSION_WARNING_LEAD_MS,
+  SESSION_WARNING_AT_MS,
+  SESSION_IDLE_CHECK_INTERVAL_MS,
+  SESSION_AUTH_PING_INTERVAL_MS,
+  SESSION_ACTIVITY_THROTTLE_MS,
+  TENANT_SESSION_CHANNEL,
+  PLATFORM_SESSION_CHANNEL,
+  type SessionBroadcastMessage,
+  type SessionLogoutReason,
+} from "./session";

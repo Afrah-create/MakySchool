@@ -1,9 +1,13 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from jose import JWTError, jwt
 
 from app.config import settings
+
+ACCESS_TOKEN_EXPIRES = "20m"
+REFRESH_TOKEN_EXPIRES = "7d"
 
 ROLE_HOME = {
     "admin": "/dashboard",
@@ -27,13 +31,21 @@ def _parse_expires(expires_in: str) -> datetime:
     return now + timedelta(minutes=15)
 
 
-def sign_tenant_token(payload: dict[str, Any], expires_in: str = "15m") -> str:
-    data = {**payload, "exp": _parse_expires(expires_in)}
+def _token_claims(payload: dict[str, Any], expires_in: str) -> dict[str, Any]:
+    return {
+        **payload,
+        "jti": str(uuid.uuid4()),
+        "exp": _parse_expires(expires_in),
+    }
+
+
+def sign_tenant_token(payload: dict[str, Any], expires_in: str = ACCESS_TOKEN_EXPIRES) -> str:
+    data = _token_claims(payload, expires_in)
     return jwt.encode(data, settings.TENANT_JWT_SECRET, algorithm="HS256")
 
 
-def sign_superadmin_token(payload: dict[str, Any], expires_in: str = "15m") -> str:
-    data = {**payload, "exp": _parse_expires(expires_in)}
+def sign_superadmin_token(payload: dict[str, Any], expires_in: str = ACCESS_TOKEN_EXPIRES) -> str:
+    data = _token_claims(payload, expires_in)
     return jwt.encode(data, settings.SUPERADMIN_JWT_SECRET, algorithm="HS256")
 
 

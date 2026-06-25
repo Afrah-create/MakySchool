@@ -101,7 +101,6 @@ export function TeacherClassDetailContent({ classId }: { classId: string }) {
                       <p className="text-2xl font-semibold text-theme-primary">
                         {classData.student_count > 0 ? classData.student_count : "—"}
                       </p>
-                      {/* TODO: Ssekyanzi — student count */}
                     </div>
                   </div>
                 </div>
@@ -185,7 +184,6 @@ export function TeacherClassDetailContent({ classId }: { classId: string }) {
                 <div className="rounded-xl border border-dashed border-theme bg-theme-surface px-5 py-10 text-center">
                   <p className="text-sm font-medium text-theme-primary">Marks entry coming soon</p>
                   <p className="mt-2 text-sm text-theme-muted">
-                    {/* TODO: Kweko — marks entry */}
                     You will be able to enter and submit term marks from here.
                   </p>
                 </div>

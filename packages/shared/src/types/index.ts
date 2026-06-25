@@ -41,3 +41,5 @@ export * from "./school";
 export * from "./classes";
 export * from "./subscription";
 export * from "./platform";
+export * from "./timetable";
+export * from "./teaching-load";

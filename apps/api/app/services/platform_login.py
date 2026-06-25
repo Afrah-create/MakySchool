@@ -3,7 +3,13 @@ import uuid
 import asyncpg
 
 from app.config import settings
-from app.lib.jwt_utils import cookie_options, sign_superadmin_token
+from app.lib.jwt_utils import (
+    ACCESS_TOKEN_EXPIRES,
+    REFRESH_TOKEN_EXPIRES,
+    cookie_options,
+    sign_superadmin_token,
+    sign_tenant_token,
+)
 from app.lib.password import hash_password, verify_password
 
 
@@ -41,12 +47,12 @@ async def authenticate_superadmin(
     }
     response.set_cookie(
         settings.SUPERADMIN_ACCESS_COOKIE,
-        sign_superadmin_token(payload, "15m"),
-        **cookie_options(15 * 60 * 1000),
+        sign_superadmin_token(payload, ACCESS_TOKEN_EXPIRES),
+        **cookie_options(20 * 60 * 1000),
     )
     response.set_cookie(
         settings.SUPERADMIN_REFRESH_COOKIE,
-        sign_superadmin_token(payload, "7d"),
+        sign_superadmin_token(payload, REFRESH_TOKEN_EXPIRES),
         **cookie_options(7 * 24 * 60 * 60 * 1000),
     )
     return {

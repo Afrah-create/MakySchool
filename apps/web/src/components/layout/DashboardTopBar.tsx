@@ -7,6 +7,7 @@ import { can } from "@makyschool/shared/constants";
 import { DashboardNavProgress } from "@/components/layout/DashboardNavProgress";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { useAuth } from "@/hooks/useAuth";
+import { primaryActionPermission } from "@/lib/roles/dashboard-actions";
 
 function searchPlaceholderForPath(pathname: string) {
   if (pathname.startsWith("/bursar")) {
@@ -35,6 +36,9 @@ type TopBarAction = {
 } | null;
 
 function primaryActionForPath(pathname: string): TopBarAction {
+  if (pathname.startsWith("/dashboard/teaching-load")) {
+    return null;
+  }
   if (pathname.startsWith("/dashboard/teachers")) {
     return { href: "/dashboard/teachers?add=1", label: "Add teacher" };
   }
@@ -50,6 +54,9 @@ function primaryActionForPath(pathname: string): TopBarAction {
   if (pathname.startsWith("/dashboard/fees")) {
     return { href: "/dashboard/fees/structures", label: "Add fee structure" };
   }
+  if (pathname.startsWith("/dashboard/timetable")) {
+    return { href: "/dashboard/timetable", label: "Edit timetable" };
+  }
   if (pathname.startsWith("/dashboard/billing")) {
     return { href: "/dashboard/billing", label: "View billing" };
   }
@@ -63,8 +70,12 @@ export function DashboardTopBar() {
   const pathname = usePathname();
   const { state } = useAuth();
   const action = isPortalPath(pathname) ? null : primaryActionForPath(pathname);
-  const canManage =
-    state.user?.role && can(state.user.role, "manageUsers") ? true : false;
+  const actionPermission = action ? primaryActionPermission(pathname) : null;
+  const canShowAction =
+    action &&
+    actionPermission &&
+    state.user?.role &&
+    can(state.user.role, actionPermission);
 
   return (
     <div className="relative border-b border-theme bg-theme-surface px-4 py-3 sm:px-6 lg:px-8">
@@ -84,7 +95,7 @@ export function DashboardTopBar() {
           <div className="hidden lg:block">
             <ThemeToggle />
           </div>
-          {action && canManage ? (
+          {canShowAction && action ? (
             <Link
               href={action.href}
               className="ms-btn-primary inline-flex items-center gap-2 rounded-xl px-4 py-2.5 shadow-theme-accent"

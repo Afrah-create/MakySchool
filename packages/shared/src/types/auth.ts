@@ -14,6 +14,7 @@ export interface SuperAdminJwtPayload {
   role?: "super_admin";
   iat?: number;
   exp?: number;
+  jti?: string;
 }
 
 export interface TenantJwtPayload {
@@ -27,6 +28,7 @@ export interface TenantJwtPayload {
   setupCompleted?: boolean;
   iat?: number;
   exp?: number;
+  jti?: string;
 }
 
 export interface TenantUser {

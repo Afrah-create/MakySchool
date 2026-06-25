@@ -42,7 +42,7 @@ export function TeachersPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { state } = useAuth();
-  const canManage = state.user ? can(state.user.role, "manageUsers") : false;
+  const canManage = state.user ? can(state.user.role, "manageStaff") : false;
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"" | "true" | "false">("");
   const [classId, setClassId] = useState("");
@@ -90,13 +90,24 @@ export function TeachersPageContent() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-theme-primary">Teachers</h1>
-          <p className="mt-1 text-sm text-theme-muted">Manage teaching staff and class assignments</p>
+          <p className="mt-1 text-sm text-theme-muted">
+            Manage teaching staff. Assign class subjects from{" "}
+            <Link href="/dashboard/teaching-load" className="text-theme-accent hover:underline">
+              Teaching load
+            </Link>
+            .
+          </p>
         </div>
-        <CanDo action="manageUsers">
-          <button type="button" className="ms-btn-primary inline-flex items-center gap-2" onClick={() => setAddOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Add teacher
-          </button>
+        <CanDo action="manageStaff">
+          <div className="flex flex-wrap gap-2">
+            <Link href="/dashboard/teaching-load" className="ms-btn-secondary inline-flex items-center">
+              Teaching load
+            </Link>
+            <button type="button" className="ms-btn-primary inline-flex items-center gap-2" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add teacher
+            </button>
+          </div>
         </CanDo>
       </div>
 
@@ -180,7 +191,7 @@ export function TeachersPageContent() {
               <Users className="mx-auto h-10 w-10 text-theme-faint" />
               <h2 className="mt-4 text-lg font-semibold text-theme-primary">No teachers yet</h2>
               <p className="mt-1 text-sm text-theme-muted">Add your first teacher to get started.</p>
-              <CanDo action="manageUsers">
+              <CanDo action="manageStaff">
                 <button type="button" className="ms-btn-primary mt-6" onClick={() => setAddOpen(true)}>
                   Add teacher
                 </button>

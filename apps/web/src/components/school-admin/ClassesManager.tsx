@@ -77,7 +77,7 @@ export function ClassesManager({
     () => [
       { id: "classes" as const, label: "Classes", count: classesData?.length ?? 0 },
       { id: "subjects" as const, label: "Subjects", count: subjectsData?.length ?? 0 },
-      { id: "assignments" as const, label: "Assignments" },
+      { id: "assignments" as const, label: "Subject placement" },
     ],
     [classesData?.length, subjectsData?.length],
   );

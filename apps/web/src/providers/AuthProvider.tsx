@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useReducer } from "react";
 import type { MakySchoolRole, TenantUser } from "@makyschool/shared/types";
 import { apiClient } from "@/lib/api/client";
+import { performLogout } from "@/lib/auth/logout";
 
 type AuthMeResponse = {
   accountType: "school" | "platform";
@@ -91,8 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function logout() {
-    await apiClient("/auth/logout", { method: "POST" });
-    dispatch({ type: "SET_USER", user: null });
+    await performLogout("manual");
   }
 
   useEffect(() => {

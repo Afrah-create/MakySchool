@@ -1,6 +1,7 @@
 import { CLIENT_APP_HEADER } from "@makyschool/shared/constants";
 import type { ApiError, ApiResponse } from "@makyschool/shared/types";
-import { resolveClientApiUrl } from "@/lib/api/base-url";
+import { resolveClientApiUrl, normalizeApiPath } from "@/lib/api/base-url";
+import { isAuthExemptPath } from "@/lib/auth/logout";
 
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
@@ -72,6 +73,14 @@ export async function apiClient<T>(
 
   if (!response.ok) {
     const error = payload as ApiError;
+    const normalizedPath = normalizeApiPath(path);
+    if (
+      response.status === 401 &&
+      !isAuthExemptPath(normalizedPath) &&
+      typeof window !== "undefined"
+    ) {
+      void import("@/lib/auth/logout").then(({ performLogout }) => performLogout("expired"));
+    }
     const requestError = new Error(error.error ?? "Request failed") as Error & {
       code?: string;
       redirectUrl?: string;

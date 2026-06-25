@@ -9,6 +9,7 @@ from app.lib.password import hash_password
 from pydantic import BaseModel, Field
 
 from app.db.pool import get_db
+from app.lib.pg_json import parse_pg_json
 from app.lib.permissions import can
 from app.lib.teacher_assignments import (
     AssignmentInput,
@@ -69,6 +70,31 @@ def _serialize_row(row: asyncpg.Record) -> dict[str, Any]:
     return data
 
 
+def _serialize_teacher_list_row(row: asyncpg.Record) -> dict[str, Any]:
+    data = _serialize_row(row)
+    raw_assignments = parse_pg_json(data.get("assignments"), default=[])
+    assignments: list[dict[str, Any]] = []
+    if isinstance(raw_assignments, list):
+        for item in raw_assignments:
+            if not isinstance(item, dict):
+                continue
+            assignment_id = item.get("assignment_id")
+            class_id = item.get("class_id")
+            subject_id = item.get("subject_id")
+            assignments.append(
+                {
+                    "assignment_id": str(assignment_id) if assignment_id else None,
+                    "class_id": str(class_id) if class_id else None,
+                    "class_name": item.get("class_name"),
+                    "stream": item.get("stream"),
+                    "subject_id": str(subject_id) if subject_id else None,
+                    "subject_name": item.get("subject_name"),
+                }
+            )
+    data["assignments"] = assignments
+    return data
+
+
 def _learner_role_sql(alias: str) -> str:
     return USER_LEARNER_ROLE_SQL.replace("u.", f"{alias}.")
 
@@ -107,6 +133,12 @@ async def _validate_teacher_fields(
     assignments: list[AssignmentInput] | None = data.get("assignments")
     if assignments is not None:
         for index, item in enumerate(assignments):
+            if not item.subject_id:
+                fields["assignments"] = (
+                    f"Assignment {index + 1} must include a subject. "
+                    "Use Teaching load to assign teachers to class subjects."
+                )
+                break
             class_check = await conn.fetchval(
                 "SELECT 1 FROM school_classes WHERE id = $1 AND school_id = $2 LIMIT 1",
                 item.class_id,
@@ -417,7 +449,7 @@ async def list_teachers(
         *list_params,
     )
 
-    teachers = [_serialize_row(row) for row in rows]
+    teachers = [_serialize_teacher_list_row(row) for row in rows]
     return {"data": {"teachers": teachers, "total": int(total or 0), "page": page, "limit": limit}}
 
 
@@ -429,7 +461,7 @@ async def create_teacher(
 ):
     school_id, actor = ctx
 
-    if not can(actor["role"], "manageUsers"):
+    if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -630,7 +662,7 @@ async def update_teacher(
 ):
     school_id, actor = ctx
 
-    if not can(actor["role"], "manageUsers"):
+    if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -762,7 +794,7 @@ async def deactivate_teacher(
 ):
     school_id, actor = ctx
 
-    if not can(actor["role"], "manageUsers"):
+    if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -834,7 +866,7 @@ async def reactivate_teacher(
 ):
     school_id, actor = ctx
 
-    if not can(actor["role"], "manageUsers"):
+    if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -904,7 +936,7 @@ async def reset_teacher_password(
 ):
     school_id, actor = ctx
 
-    if not can(actor["role"], "manageUsers"):
+    if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={

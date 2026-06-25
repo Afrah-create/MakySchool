@@ -6,6 +6,7 @@ CAN: dict[str, list[str]] = {
     "manageSchool": ["admin"],
     "manageBilling": ["admin"],
     "manageUsers": ["admin"],
+    "manageStaff": ["admin", "head_teacher"],
     "viewAllClasses": ["admin", "head_teacher"],
     "viewAllStaff": ["admin", "head_teacher"],
     "viewAllResults": ["admin", "head_teacher"],
@@ -19,6 +20,9 @@ CAN: dict[str, list[str]] = {
     "voidPayments": ["admin"],
     "waiveFees": ["admin"],
     "viewReports": ["admin", "head_teacher", "bursar"],
+    "manageTimetable": ["admin", "head_teacher"],
+    "viewTimetable": ["admin", "head_teacher", "teacher"],
+    "viewAnalytics": ["admin", "head_teacher"],
 }
 
 

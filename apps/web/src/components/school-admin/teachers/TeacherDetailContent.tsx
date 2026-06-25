@@ -22,7 +22,6 @@ type Tab = "overview" | "classes" | "activity";
 export function TeacherDetailContent({ teacherId }: { teacherId: string }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [editTeacher, setEditTeacher] = useState<TeacherDetail | null>(null);
-  const [editAssignmentsOnly, setEditAssignmentsOnly] = useState(false);
   const [deactivateTeacher, setDeactivateTeacher] = useState<TeacherDetail | null>(null);
   const [reactivateTeacher, setReactivateTeacher] = useState<TeacherDetail | null>(null);
   const [resetTeacher, setResetTeacher] = useState<TeacherDetail | null>(null);
@@ -86,14 +85,21 @@ export function TeacherDetailContent({ teacherId }: { teacherId: string }) {
                   </div>
                 </div>
               </div>
-              <CanDo action="manageUsers">
-                <div className="flex gap-2">
-                  <button type="button" className="ms-btn-secondary" onClick={() => {
-                    setEditAssignmentsOnly(false);
-                    setEditTeacher(teacher);
-                  }}>
-                    Edit
+              <CanDo action="manageStaff">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="ms-btn-secondary"
+                    onClick={() => setEditTeacher(teacher)}
+                  >
+                    Edit profile
                   </button>
+                  <Link
+                    href={`/dashboard/teaching-load?mode=by-teacher&teacherId=${teacher.id}`}
+                    className="ms-btn-primary inline-flex"
+                  >
+                    Manage teaching load
+                  </Link>
                   <DropdownMenu
                     trigger={<span className="ms-btn-secondary inline-flex px-3 py-2">Actions</span>}
                     items={[
@@ -121,14 +127,12 @@ export function TeacherDetailContent({ teacherId }: { teacherId: string }) {
                 <p className="mt-1 text-2xl font-semibold text-theme-primary">
                   {teacher.total_students > 0 ? teacher.total_students : "—"}
                 </p>
-                {/* TODO: Ssekyanzi — student count */}
               </div>
               <div className="rounded-xl border border-theme bg-theme-surface p-5">
                 <p className="text-xs text-theme-muted">Marks this term</p>
                 <p className="mt-1 text-2xl font-semibold text-theme-primary">
                   {submittedCount} / {teacher.submission_status.length} submitted
                 </p>
-                {/* TODO: Kweko — marks entry */}
               </div>
             </div>
 
@@ -168,28 +172,41 @@ export function TeacherDetailContent({ teacherId }: { teacherId: string }) {
                     <div><dt className="text-theme-muted">Created by</dt><dd>{teacher.created_by_name || "—"}</dd></div>
                   </dl>
                 </div>
-                <div className="rounded-xl border border-dashed border-theme bg-theme-surface p-5 lg:col-span-2">
-                  <p className="text-sm text-theme-muted">TODO: Kweko — marks submission will appear here</p>
+                <div className="rounded-xl border border-theme bg-theme-surface p-5 lg:col-span-2">
+                  <h2 className="text-sm font-semibold text-theme-primary">Marks submission status</h2>
+                  {teacher.submission_status.length === 0 ? (
+                    <p className="mt-3 text-sm text-theme-muted">
+                      No marks submissions recorded for the current term.
+                    </p>
+                  ) : (
+                    <ul className="mt-3 space-y-2 text-sm">
+                      {teacher.submission_status.map((item) => (
+                        <li key={item.class_name} className="flex items-center justify-between gap-3">
+                          <span className="text-theme-primary">{item.class_name}</span>
+                          <span className="text-theme-muted">{marksStatusLabel(item.status)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             ) : null}
 
             {tab === "classes" ? (
               <div className="space-y-4">
-                <CanDo action="manageUsers">
-                  <button
-                    type="button"
-                    className="ms-btn-secondary"
-                    onClick={() => {
-                      setEditAssignmentsOnly(true);
-                      setEditTeacher(teacher);
-                    }}
+                <CanDo action="manageStaff">
+                  <Link
+                    href={`/dashboard/teaching-load?mode=by-teacher&teacherId=${teacher.id}`}
+                    className="ms-btn-secondary inline-flex"
                   >
-                    Edit assignments
-                  </button>
+                    Manage teaching load
+                  </Link>
                 </CanDo>
                 {teacher.assignments.length === 0 ? (
-                  <EmptyState title="No classes assigned." description="Edit this teacher to assign classes." />
+                  <EmptyState
+                    title="No teaching load assigned."
+                    description="Assign class subjects from the Teaching load page."
+                  />
                 ) : (
                   <div className="overflow-hidden rounded-xl border border-theme">
                     <table className="ms-table w-full">
@@ -242,7 +259,9 @@ export function TeacherDetailContent({ teacherId }: { teacherId: string }) {
                 <p className="text-sm text-theme-primary">
                   Last seen: {teacher.last_login ? new Date(teacher.last_login).toLocaleString() : "Never logged in"}
                 </p>
-                <p className="mt-4 text-sm text-theme-muted">TODO: Activity log — Week 2</p>
+                <p className="mt-4 text-sm text-theme-muted">
+                  Detailed activity history is not available yet.
+                </p>
               </div>
             ) : null}
           </>
@@ -251,11 +270,7 @@ export function TeacherDetailContent({ teacherId }: { teacherId: string }) {
 
       <EditTeacherPanel
         teacher={editTeacher}
-        assignmentsOnly={editAssignmentsOnly}
-        onClose={() => {
-          setEditTeacher(null);
-          setEditAssignmentsOnly(false);
-        }}
+        onClose={() => setEditTeacher(null)}
         onSaved={() => void mutate()}
       />
       <DeactivateDialog

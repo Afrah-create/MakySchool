@@ -41,9 +41,28 @@ export function assignmentsFromRows(rows: TeacherAssignmentRow[]): TeacherAssign
   return output;
 }
 
+export function normalizeTeacherAssignments(
+  raw: TeacherAssignment[] | string | undefined,
+): TeacherAssignment[] {
+  if (!raw) return [];
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(
+        (item): item is TeacherAssignment => typeof item === "object" && item !== null,
+      );
+    } catch {
+      return [];
+    }
+  }
+  return Array.isArray(raw) ? raw : [];
+}
+
 export function rowsFromAssignments(assignments: TeacherAssignment[]): TeacherAssignmentRow[] {
+  const normalized = normalizeTeacherAssignments(assignments);
   const map = new Map<string, TeacherAssignmentRow>();
-  for (const item of assignments) {
+  for (const item of normalized) {
     const existing = map.get(item.class_id) ?? {
       class_id: item.class_id,
       class_name: item.class_name ?? item.class_id,

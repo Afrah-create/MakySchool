@@ -51,7 +51,7 @@ export function StudentsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { state } = useAuth();
-  const canManage = state.user ? can(state.user.role, "manageUsers") : false;
+  const canManage = state.user ? can(state.user.role, "manageStaff") : false;
 
   const [search, setSearch] = useState("");
   const [classId, setClassId] = useState("");
@@ -129,7 +129,7 @@ export function StudentsPageContent() {
           <h1 className="text-xl font-semibold text-theme-primary">Students</h1>
           <p className="mt-1 text-sm text-theme-muted">Register and manage enrolled students</p>
         </div>
-        <CanDo action="manageUsers">
+        <CanDo action="manageStaff">
           <div className="flex flex-wrap gap-2">
             <button type="button" className="ms-btn-secondary inline-flex items-center gap-2" onClick={() => setImportOpen(true)}>
               <Upload className="h-4 w-4" />

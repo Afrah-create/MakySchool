@@ -5,27 +5,31 @@ import uuid
 from datetime import datetime, timezone
 
 import asyncpg
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, EmailStr
 
 from app.config import settings
 from app.db.pool import get_db
 from app.lib.email import send_password_reset_email
 from app.lib.jwt_utils import (
+    ACCESS_TOKEN_EXPIRES,
+    REFRESH_TOKEN_EXPIRES,
     cookie_options,
     is_maky_school_role,
     is_school_setup_completed,
     resolve_school_redirect_path,
     sign_tenant_token,
-    verify_superadmin_token,
-    verify_tenant_token,
+)
+from app.lib.session_tokens import (
+    refresh_superadmin_session,
+    refresh_tenant_session,
+    resolve_superadmin_session,
+    resolve_tenant_session,
 )
 from app.lib.password import hash_password, validate_password, verify_password
 from app.lib.user_sql import USER_DISPLAY_NAME_SQL, normalize_user_role
 from app.middleware.auth import (
     clear_auth_cookies,
-    extract_superadmin_token,
-    extract_tenant_token,
     get_current_user,
 )
 from app.services.platform_login import authenticate_superadmin, is_superadmin_email
@@ -209,12 +213,12 @@ async def login(
     else:
         response.set_cookie(
             settings.TENANT_ACCESS_COOKIE,
-            sign_tenant_token(payload, "15m"),
-            **cookie_options(15 * 60 * 1000),
+            sign_tenant_token(payload, ACCESS_TOKEN_EXPIRES),
+            **cookie_options(20 * 60 * 1000),
         )
         response.set_cookie(
             settings.TENANT_REFRESH_COOKIE,
-            sign_tenant_token(payload, "7d"),
+            sign_tenant_token(payload, REFRESH_TOKEN_EXPIRES),
             **cookie_options(7 * 24 * 60 * 60 * 1000),
         )
 
@@ -246,45 +250,55 @@ async def login(
 
 
 @router.get("/me")
-async def me(request: Request, conn: asyncpg.Connection = Depends(get_db)):
-    super_token = extract_superadmin_token(request)
-    if super_token:
-        try:
-            payload = verify_superadmin_token(super_token)
-            admin = await conn.fetchrow(
-                "SELECT id, email, name FROM super_admins WHERE id = $1 LIMIT 1",
-                uuid.UUID(str(payload["sub"])),
-            )
-            if not admin:
-                return Response(
-                    content='{"error":"Not authenticated"}',
-                    status_code=401,
-                    media_type="application/json",
-                )
-            return {
-                "data": {
-                    "accountType": "platform",
-                    "role": "super_admin",
-                    "user": dict(admin),
-                }
-            }
-        except Exception:
+async def me(
+    request: Request,
+    conn: asyncpg.Connection = Depends(get_db),
+    session_only: bool = Query(False, alias="sessionOnly"),
+):
+    client_app = _resolve_client_app(request)
+
+    if client_app == "platform":
+        payload, expires_at = resolve_superadmin_session(request)
+        if not payload:
             return Response(
                 content='{"error":"Not authenticated"}',
                 status_code=401,
                 media_type="application/json",
             )
+        if session_only:
+            return {"data": {"valid": True, "expiresAt": expires_at}}
 
-    tenant_token = extract_tenant_token(request)
-    if not tenant_token:
+        admin = await conn.fetchrow(
+            "SELECT id, email, name FROM super_admins WHERE id = $1 LIMIT 1",
+            uuid.UUID(str(payload["sub"])),
+        )
+        if not admin:
+            return Response(
+                content='{"error":"Not authenticated"}',
+                status_code=401,
+                media_type="application/json",
+            )
+        return {
+            "data": {
+                "accountType": "platform",
+                "role": "super_admin",
+                "user": dict(admin),
+                "session": {"valid": True, "expiresAt": expires_at},
+            }
+        }
+
+    payload, expires_at = resolve_tenant_session(request)
+    if not payload:
         return Response(
             content='{"error":"Not authenticated"}',
             status_code=401,
             media_type="application/json",
         )
 
+    if session_only:
+        return {"data": {"valid": True, "expiresAt": expires_at}}
+
     try:
-        payload = verify_tenant_token(tenant_token)
         header_slug = request.headers.get(TENANT_HEADER_SLUG)
         if header_slug and payload.get("schoolSlug") != header_slug:
             return Response(
@@ -314,6 +328,7 @@ async def me(request: Request, conn: asyncpg.Connection = Depends(get_db)):
                 "role": role,
                 "user": {**dict(user), "role": role},
                 "school": {"slug": payload.get("schoolSlug"), "id": payload.get("schoolId")},
+                "session": {"valid": True, "expiresAt": expires_at},
             }
         }
     except Exception:
@@ -324,8 +339,27 @@ async def me(request: Request, conn: asyncpg.Connection = Depends(get_db)):
         )
 
 
+@router.post("/refresh")
+async def refresh_session(request: Request, response: Response):
+    client_app = _resolve_client_app(request)
+    if client_app == "platform":
+        session = refresh_superadmin_session(request, response)
+    else:
+        session = refresh_tenant_session(request, response)
+
+    if not session:
+        return Response(
+            content='{"error":"Not authenticated","code":"UNAUTHORIZED"}',
+            status_code=401,
+            media_type="application/json",
+        )
+
+    return {"data": session}
+
+
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
+    # Future: read jti from cookies and add to a denylist for server-side revocation.
     clear_auth_cookies(response)
     return {"data": {"ok": True}}
 
@@ -387,12 +421,12 @@ async def change_password(
     }
     response.set_cookie(
         settings.TENANT_ACCESS_COOKIE,
-        sign_tenant_token(payload, "15m"),
-        **cookie_options(15 * 60 * 1000),
+        sign_tenant_token(payload, ACCESS_TOKEN_EXPIRES),
+        **cookie_options(20 * 60 * 1000),
     )
     response.set_cookie(
         settings.TENANT_REFRESH_COOKIE,
-        sign_tenant_token(payload, "7d"),
+        sign_tenant_token(payload, REFRESH_TOKEN_EXPIRES),
         **cookie_options(7 * 24 * 60 * 60 * 1000),
     )
     return {"data": {"redirect": redirect, "schoolSlug": user["school_slug"]}}

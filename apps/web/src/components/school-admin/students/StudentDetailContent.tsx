@@ -117,7 +117,7 @@ export function StudentDetailContent({ studentId }: { studentId: string }) {
                   </div>
                 </div>
 
-                <CanDo action="manageUsers">
+                <CanDo action="manageStaff">
                   <div className="flex gap-2">
                     <button type="button" className="ms-btn-secondary" onClick={() => setEditStudent(student)}>
                       Edit
@@ -223,7 +223,6 @@ export function StudentDetailContent({ studentId }: { studentId: string }) {
                         <dd>{student.class_name ?? "—"}</dd>
                       </div>
                     </dl>
-                    {/* TODO: Learner portal — Week 2 */}
                   </div>
                 </div>
               ) : null}
@@ -261,9 +260,10 @@ export function StudentDetailContent({ studentId }: { studentId: string }) {
               ) : null}
 
               {tab === "results" ? (
-                <div className="rounded-xl border border-dashed border-theme bg-theme-surface p-6">
-                  <p className="text-sm text-theme-muted">
-                    TODO: Kweko — academic results per term will appear here
+                <div className="rounded-xl border border-dashed border-theme bg-theme-surface p-6 text-center">
+                  <p className="text-sm font-medium text-theme-primary">Academic results</p>
+                  <p className="mt-2 text-sm text-theme-muted">
+                    Term results and report cards will appear here when marks are published.
                   </p>
                 </div>
               ) : null}

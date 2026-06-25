@@ -5,6 +5,7 @@ import { DashboardClassesTable } from "@/components/school-admin/DashboardClasse
 import { DashboardHero } from "@/components/school-admin/DashboardHero";
 import { DashboardQuickActions } from "@/components/school-admin/DashboardQuickActions";
 import { DashboardStatStrip } from "@/components/school-admin/DashboardStatStrip";
+import { DashboardAnalyticsStrip } from "@/components/school-admin/DashboardAnalyticsStrip";
 import { SubscriptionBanner } from "@/components/school-admin/SubscriptionBanner";
 import { useSchool } from "@/providers/SchoolProvider";
 
@@ -17,6 +18,7 @@ export function SchoolAdminDashboardHome() {
       <DashboardHero school={school} />
       <DashboardQuickActions />
       <DashboardStatStrip />
+      <DashboardAnalyticsStrip />
       <DashboardClassesTable />
     </div>
   );

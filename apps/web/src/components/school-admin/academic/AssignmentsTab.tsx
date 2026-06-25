@@ -84,7 +84,7 @@ export function AssignmentsTab({
       errorView={
         <EmptyState
           variant="error"
-          title="Assignments unavailable"
+          title="Subject placement unavailable"
           description="Unable to load classes and subjects right now."
           onRetry={onRetry}
         />

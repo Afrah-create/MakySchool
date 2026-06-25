@@ -51,7 +51,7 @@ export function AssignmentWorkspace({
     <div className="space-y-4">
       <div className="ms-card flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-theme-primary">Link subjects to classes</h2>
+          <h2 className="text-sm font-semibold text-theme-primary">Subject placement</h2>
           <p className="mt-1 text-sm text-theme-muted">
             {mode === "by-subject"
               ? "Pick a subject, select classes, then save. Best for assigning one subject across many levels."

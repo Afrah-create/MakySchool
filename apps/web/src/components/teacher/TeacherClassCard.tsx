@@ -44,14 +44,10 @@ export function TeacherClassCard({
 
       <p className="mt-4 flex items-center gap-1.5 text-sm text-theme-muted">
         <Users className="h-4 w-4 shrink-0" />
-        — students
-        {/* TODO: Ssekyanzi — student count */}
+        Open class to view students
       </p>
 
-      <p className="mt-2 text-xs text-theme-faint">
-        {/* TODO: Kweko — marks entry */}
-        Marks submission for this term
-      </p>
+      <p className="mt-2 text-xs text-theme-faint">Marks submission for this term</p>
 
       <Link
         href={`/teacher/classes/${classId}`}
@@ -115,7 +111,6 @@ export function TeacherStatsRow({ teacher }: { teacher: TeacherDetail }) {
             <p className="text-2xl font-semibold tabular-nums text-theme-primary">
               {teacher.total_students > 0 ? teacher.total_students : "—"}
             </p>
-            {/* TODO: Ssekyanzi — student count */}
           </div>
         </div>
       </div>

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 import { PRIMARY_CLASS_LEVELS, SECONDARY_CLASS_LEVELS, formatClassLabel } from "@makyschool/shared/constants";
-import { SlideOver } from "@makyschool/ui/components/ui/SlideOver";
+import { Modal } from "@makyschool/ui/components/ui/Modal";
 import { apiClient } from "@/lib/api/client";
 import { useApiSWR } from "@/hooks/useApiSWR";
 import { useSchool } from "@/providers/SchoolProvider";
@@ -163,25 +163,19 @@ export function AddStudentPanel({
   }
 
   return (
-    <SlideOver
+    <Modal
       open={open}
       onClose={requestClose}
+      size="lg"
       title={success ? "Student registered" : "Add student"}
       description={
         success
           ? `${success.student.full_name} has been registered successfully.`
           : "Register a new student and assign them to a class."
       }
-    >
-      {success ? (
-        <div className="flex flex-col items-center py-6 text-center">
-          <CheckCircle2 className="h-12 w-12 text-theme-success" />
-          <p className="mt-4 font-mono text-2xl font-semibold text-theme-primary">
-            {success.student.learner_id}
-          </p>
-          <p className="mt-2 text-sm text-theme-primary">{success.student.full_name}</p>
-          <p className="text-sm text-theme-muted">{success.student.class_name ?? "—"}</p>
-          <div className="mt-8 flex w-full flex-col gap-2 sm:flex-row">
+      footer={
+        success ? (
+          <div className="flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
               className="ms-btn-secondary flex-1"
@@ -199,7 +193,7 @@ export function AddStudentPanel({
                 setDirty(false);
               }}
             >
-              Register another
+              Add another student
             </button>
             <button
               type="button"
@@ -212,6 +206,17 @@ export function AddStudentPanel({
               View profile
             </button>
           </div>
+        ) : undefined
+      }
+    >
+      {success ? (
+        <div className="flex flex-col items-center py-6 text-center">
+          <CheckCircle2 className="h-12 w-12 text-theme-success" />
+          <p className="mt-4 font-mono text-2xl font-semibold text-theme-primary">
+            {success.student.learner_id}
+          </p>
+          <p className="mt-2 text-sm text-theme-primary">{success.student.full_name}</p>
+          <p className="text-sm text-theme-muted">{success.student.class_name ?? "—"}</p>
         </div>
       ) : (
         <form onSubmit={(event) => void handleSubmit(event)} className="space-y-6">
@@ -433,6 +438,6 @@ export function AddStudentPanel({
           </button>
         </form>
       )}
-    </SlideOver>
+    </Modal>
   );
 }
