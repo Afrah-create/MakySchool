@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+import logging
 from typing import Any
 
 import asyncpg
@@ -17,11 +18,16 @@ from app.middleware.tenant import get_tenant_and_user
 from app.routers.fees_shared import (
     PAYMENT_METHODS,
     fees_error as _error,
+    fees_actor_id,
+    parse_payment_date,
+    parse_uuid,
+    record_fee_payment as _record_fee_payment,
     recalculate_fee_account as _recalculate_fee_account,
     require_fees_permission as _require_permission,
 )
 
 router = APIRouter()
+logger = logging.getLogger("makyschool")
 
 
 class FeeStructureCreate(BaseModel):
@@ -42,6 +48,20 @@ class PaymentCreate(BaseModel):
     student_id: str | None = None
     fee_structure_id: str | None = None
     amount: int | None = None
+    payment_method: str = "cash"
+    payment_reference: str | None = None
+    payment_date: str | None = None
+    notes: str | None = None
+
+
+class BulkPaymentLine(BaseModel):
+    student_id: str
+    fee_structure_id: str
+    amount: int
+
+
+class BulkPaymentCreate(BaseModel):
+    payments: list[BulkPaymentLine]
     payment_method: str = "cash"
     payment_reference: str | None = None
     payment_date: str | None = None
@@ -495,117 +515,154 @@ async def record_payment(
             fields,
         )
 
-    student = await conn.fetchrow(
-        "SELECT full_name, learner_id FROM students WHERE id = $1 AND school_id = $2 LIMIT 1",
-        uuid.UUID(body.student_id),
-        school_id,
-    )
-    if not student:
-        raise _error(status.HTTP_404_NOT_FOUND, "Student not found in your school.", "NOT_FOUND")
-
-    structure = await conn.fetchrow(
-        """
-        SELECT fs.term_name, sc.level, sc.stream
-        FROM fee_structures fs
-        JOIN school_classes sc ON sc.id = fs.class_id
-        WHERE fs.id = $1 AND fs.school_id = $2
-        LIMIT 1
-        """,
-        uuid.UUID(body.fee_structure_id),
-        school_id,
-    )
-    if not structure:
-        raise _error(status.HTTP_404_NOT_FOUND, "Fee structure not found.", "NOT_FOUND")
-
-    account = await conn.fetchrow(
-        """
-        SELECT id, amount_owed, amount_paid, balance, status, waived_by
-        FROM student_fee_accounts
-        WHERE student_id = $1 AND fee_structure_id = $2 AND school_id = $3
-        LIMIT 1
-        """,
-        uuid.UUID(body.student_id),
-        uuid.UUID(body.fee_structure_id),
-        school_id,
-    )
-    if not account:
-        raise _error(
-            status.HTTP_404_NOT_FOUND,
-            "This student has not been assigned this fee structure. Assign the fee structure to their class first.",
-            "NOT_FOUND",
-        )
-
-    if account["waived_by"]:
-        raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, "This fee account has been waived.", "ALREADY_WAIVED")
-
-    balance = int(account["balance"])
-    if body.amount > balance:
-        raise _error(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"Payment of {format_ugx(body.amount)} exceeds the outstanding balance of {format_ugx(balance)}. "
-            f"Record {format_ugx(balance)} or less, or contact admin to waive the remainder.",
-            "OVERPAYMENT",
-        )
+    payment_date = parse_payment_date(body.payment_date).isoformat()
+    actor_id = fees_actor_id(user)
+    student_uuid = parse_uuid(body.student_id, "student_id")
+    structure_uuid = parse_uuid(body.fee_structure_id, "fee_structure_id")
 
     try:
         async with conn.transaction():
-            receipt_number = await generate_receipt_number(school_id, conn)
-            payment_date = (
-                body.payment_date[:10]
-                if body.payment_date
-                else date.today().isoformat()
+            result = await _record_fee_payment(
+                conn,
+                school_id=school_id,
+                actor_id=actor_id,
+                student_id=student_uuid,
+                fee_structure_id=structure_uuid,
+                amount=body.amount,
+                payment_method=body.payment_method,
+                payment_reference=body.payment_reference,
+                payment_date=payment_date,
+                notes=body.notes,
             )
-
-            payment_row = await conn.fetchrow(
-                """
-                INSERT INTO fee_payments (
-                  school_id, student_id, fee_account_id, receipt_number, amount,
-                  payment_method, payment_reference, payment_date, notes, recorded_by
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                RETURNING id
-                """,
-                school_id,
-                uuid.UUID(body.student_id),
-                account["id"],
-                receipt_number,
-                body.amount,
-                body.payment_method,
-                body.payment_reference.strip() if body.payment_reference else None,
-                payment_date,
-                body.notes.strip() if body.notes else None,
-                uuid.UUID(str(user["sub"])),
-            )
-
-            await _recalculate_fee_account(conn, account["id"])
-            updated_account = await conn.fetchrow(
-                "SELECT amount_owed, amount_paid, balance, status FROM student_fee_accounts WHERE id = $1",
-                account["id"],
-            )
+    except HTTPException:
+        raise
     except Exception:
+        logger.exception("Failed to record fee payment")
         raise _error(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "Something went wrong. Please try again.",
             "SERVER_ERROR",
         ) from None
 
-    class_name = format_class_name(structure["level"], structure["stream"])
+    return {"data": result}
+
+
+@router.post("/payments/bulk", status_code=status.HTTP_201_CREATED)
+async def bulk_record_payments(
+    body: BulkPaymentCreate,
+    ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, user = ctx
+    _require_permission(user, "recordPayments")
+
+    if not body.payments:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Select at least one student to record a payment.",
+            "VALIDATION_ERROR",
+        )
+    if len(body.payments) > 50:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "You can record up to 50 payments at once.",
+            "VALIDATION_ERROR",
+        )
+    if body.payment_method not in PAYMENT_METHODS:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Invalid payment method.",
+            "VALIDATION_ERROR",
+            {"payment_method": "Invalid payment method."},
+        )
+
+    payment_date = parse_payment_date(body.payment_date).isoformat()
+    actor_id = fees_actor_id(user)
+    recorded: list[dict] = []
+    failed: list[dict] = []
+
+    for index, line in enumerate(body.payments):
+        if line.amount <= 0:
+            failed.append(
+                {
+                    "index": index,
+                    "student_id": line.student_id,
+                    "error": "Amount must be a positive whole number.",
+                }
+            )
+            continue
+        if not line.fee_structure_id or not str(line.fee_structure_id).strip():
+            failed.append(
+                {
+                    "index": index,
+                    "student_id": line.student_id,
+                    "error": "Fee structure is required for this student.",
+                }
+            )
+            continue
+        try:
+            student_uuid = parse_uuid(line.student_id, "student_id")
+            structure_uuid = parse_uuid(line.fee_structure_id, "fee_structure_id")
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {"error": str(exc.detail)}
+            failed.append(
+                {
+                    "index": index,
+                    "student_id": line.student_id,
+                    "error": detail.get("error", "Invalid student or fee structure."),
+                }
+            )
+            continue
+        try:
+            async with conn.transaction():
+                result = await _record_fee_payment(
+                    conn,
+                    school_id=school_id,
+                    actor_id=actor_id,
+                    student_id=student_uuid,
+                    fee_structure_id=structure_uuid,
+                    amount=line.amount,
+                    payment_method=body.payment_method,
+                    payment_reference=body.payment_reference,
+                    payment_date=payment_date,
+                    notes=body.notes,
+                )
+            recorded.append(result)
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {"error": str(exc.detail)}
+            failed.append(
+                {
+                    "index": index,
+                    "student_id": line.student_id,
+                    "error": detail.get("error", "Payment failed."),
+                }
+            )
+        except Exception:
+            logger.exception("Bulk fee payment failed for student %s", line.student_id)
+            failed.append(
+                {
+                    "index": index,
+                    "student_id": line.student_id,
+                    "error": "Something went wrong. Please try again.",
+                }
+            )
+
+    if not recorded:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "No payments were recorded. Check amounts and try again.",
+            "BULK_PAYMENT_FAILED",
+            failed=failed,
+        )
+
     return {
         "data": {
-            "payment": {
-                "id": str(payment_row["id"]),
-                "receipt_number": receipt_number,
-                "amount": body.amount,
-                "student_name": student["full_name"],
-                "class_name": class_name,
-                "term_name": structure["term_name"],
-                "payment_method": body.payment_method,
-                "payment_date": payment_date,
-            },
-            "account": {
-                "amount_owed": int(updated_account["amount_owed"]),
-                "amount_paid": int(updated_account["amount_paid"]),
-                "balance": int(updated_account["balance"]),
-                "status": updated_account["status"],
+            "recorded": recorded,
+            "failed": failed,
+            "summary": {
+                "recorded_count": len(recorded),
+                "failed_count": len(failed),
+                "total_amount": sum(item["payment"]["amount"] for item in recorded),
             },
         }
     }
@@ -798,6 +855,7 @@ async def outstanding_fees(
     term_name: str | None = Query(None),
     academic_year: int | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
+    search: str | None = Query(None),
     ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
     conn: asyncpg.Connection = Depends(get_db),
 ):
@@ -829,6 +887,10 @@ async def outstanding_fees(
         conditions.append(f"sfa.status = ${idx}")
         params.append(status_filter)
         idx += 1
+    if search and search.strip():
+        conditions.append(f"(s.full_name ILIKE ${idx} OR s.learner_id ILIKE ${idx})")
+        params.append(f"%{search.strip()}%")
+        idx += 1
 
     where = " AND ".join(conditions)
     summary = await conn.fetchrow(
@@ -859,6 +921,7 @@ async def outstanding_fees(
           sg.full_name AS guardian_name,
           sg.phone AS guardian_phone,
           sfa.id AS account_id,
+          sfa.fee_structure_id,
           sfa.amount_owed,
           sfa.amount_paid,
           sfa.balance,
@@ -881,6 +944,7 @@ async def outstanding_fees(
     for row in rows:
         item = dict(row)
         item["class_name"] = format_class_name(item.get("level") or "", item.get("stream"))
+        item["fee_structure_id"] = str(item["fee_structure_id"])
         item["amount_owed"] = int(item["amount_owed"])
         item["amount_paid"] = int(item["amount_paid"])
         item["balance"] = int(item["balance"])

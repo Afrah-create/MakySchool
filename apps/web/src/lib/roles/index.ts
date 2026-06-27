@@ -17,6 +17,6 @@ export {
   schoolAdminSetupNav,
   type NavItem,
 } from "./school-admin-nav";
-export { teacherNav } from "./teacher-nav";
-export { learnerNav } from "./learner-nav";
-export { bursarNav } from "./bursar-nav";
+export { teacherNavGroups, teacherNav } from "./teacher-nav";
+export { learnerNavGroups, learnerNav } from "./learner-nav";
+export { bursarNavGroups, bursarNav } from "./bursar-nav";

@@ -61,12 +61,43 @@ export type OutstandingStudent = {
   guardian_name?: string | null;
   guardian_phone?: string | null;
   account_id: string;
+  fee_structure_id: string;
   amount_owed: number;
   amount_paid: number;
   balance: number;
   status: FeeAccountStatus;
   term_name: string;
   academic_year: number;
+};
+
+export type RecordPaymentResult = {
+  payment: {
+    id: string;
+    receipt_number: string;
+    amount: number;
+    student_name: string;
+    learner_id?: string;
+    class_name: string;
+    term_name: string;
+    payment_method: PaymentMethod;
+    payment_date: string;
+  };
+  account: {
+    amount_owed: number;
+    amount_paid: number;
+    balance: number;
+    status: string;
+  };
+};
+
+export type BulkRecordPaymentResult = {
+  recorded: RecordPaymentResult[];
+  failed: Array<{ index: number; student_id: string; error: string }>;
+  summary: {
+    recorded_count: number;
+    failed_count: number;
+    total_amount: number;
+  };
 };
 
 export type FeesDashboardStats = {

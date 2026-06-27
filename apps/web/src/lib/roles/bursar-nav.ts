@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  CircleDollarSign,
   FileText,
   History,
   LayoutDashboard,
@@ -9,40 +10,42 @@ import {
   Wallet,
 } from "lucide-react";
 import { USER_ROLES } from "@makyschool/shared/constants";
-import type { PortalNavItem } from "./portal-nav";
+import type { PortalNavGroup, PortalNavItem } from "./portal-nav";
 
-export const bursarNav: PortalNavItem[] = [
-  {
-    id: "bursar-dashboard",
-    label: "Dashboard",
-    href: "/bursar/dashboard",
-    icon: LayoutDashboard,
-    exact: true,
-    roles: [USER_ROLES.BURSAR],
-  },
+const bursarRole = [USER_ROLES.BURSAR] as const;
+
+const bursarFeesNavChildren: PortalNavItem[] = [
   {
     id: "bursar-structures",
-    label: "Fee Structures",
+    label: "Fee structures",
     href: "/bursar/structures",
     icon: ListOrdered,
     exact: false,
-    roles: [USER_ROLES.BURSAR],
+    roles: bursarRole,
   },
   {
     id: "bursar-payments-new",
-    label: "Record Payment",
+    label: "Record payment",
     href: "/bursar/payments/new",
     icon: PlusCircle,
     exact: false,
-    roles: [USER_ROLES.BURSAR],
+    roles: bursarRole,
   },
   {
     id: "bursar-payments",
-    label: "Payment History",
+    label: "Payment history",
     href: "/bursar/payments",
     icon: History,
     exact: false,
-    roles: [USER_ROLES.BURSAR],
+    roles: bursarRole,
+  },
+  {
+    id: "bursar-outstanding",
+    label: "Outstanding",
+    href: "/bursar/outstanding",
+    icon: AlertCircle,
+    exact: false,
+    roles: bursarRole,
   },
   {
     id: "bursar-invoices",
@@ -50,23 +53,15 @@ export const bursarNav: PortalNavItem[] = [
     href: "/bursar/invoices",
     icon: Receipt,
     exact: false,
-    roles: [USER_ROLES.BURSAR],
+    roles: bursarRole,
   },
   {
     id: "bursar-other-income",
-    label: "Other Income",
+    label: "Other income",
     href: "/bursar/other-income",
     icon: Wallet,
     exact: false,
-    roles: [USER_ROLES.BURSAR],
-  },
-  {
-    id: "bursar-outstanding",
-    label: "Outstanding Fees",
-    href: "/bursar/outstanding",
-    icon: AlertCircle,
-    exact: false,
-    roles: [USER_ROLES.BURSAR],
+    roles: bursarRole,
   },
   {
     id: "bursar-reports",
@@ -74,6 +69,43 @@ export const bursarNav: PortalNavItem[] = [
     href: "/bursar/reports",
     icon: FileText,
     exact: false,
-    roles: [USER_ROLES.BURSAR],
+    roles: bursarRole,
   },
 ];
+
+export const bursarNavGroups: PortalNavGroup[] = [
+  {
+    id: "overview",
+    label: "Overview",
+    icon: LayoutDashboard,
+    items: [
+      {
+        id: "bursar-home",
+        href: "/bursar/dashboard",
+        label: "Dashboard",
+        icon: LayoutDashboard,
+        exact: true,
+        roles: bursarRole,
+      },
+    ],
+  },
+  {
+    id: "finance",
+    label: "Finance",
+    icon: CircleDollarSign,
+    items: [
+      {
+        id: "bursar-fees",
+        label: "Fees",
+        href: "/bursar/dashboard",
+        icon: Receipt,
+        exact: false,
+        roles: bursarRole,
+        children: bursarFeesNavChildren,
+      },
+    ],
+  },
+];
+
+/** @deprecated Use bursarNavGroups */
+export const bursarNav: PortalNavItem[] = bursarNavGroups.flatMap((group) => group.items);

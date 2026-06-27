@@ -1,14 +1,11 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { DashboardRightRail } from "@/components/layout/DashboardRightRail";
 import { SchoolAdminMobileNav } from "@/components/layout/school-admin/SchoolAdminMobileNav";
 import { SchoolAdminSidebar } from "@/components/layout/school-admin/SchoolAdminSidebar";
-import { DashboardTopBar } from "@/components/layout/DashboardTopBar";
+import { TenantDashboardShell } from "@/components/layout/TenantDashboardShell";
 import { SubscriptionLockout } from "@/components/school-admin/SubscriptionLockout";
 import { SessionManager } from "@/components/session/SessionManager";
 import { subscriptionsEnabled } from "@makyschool/shared/constants";
-import { DashboardShell } from "@makyschool/ui/components/layout/DashboardShell";
-import { DashboardContent } from "@makyschool/ui/components/layout/DashboardContent";
 import { getTenantPayloadFromCookies } from "@/lib/auth/server-tenant";
 import { apiFetch } from "@/lib/api/server";
 import { requirePortalSession } from "@/lib/roles";
@@ -65,7 +62,7 @@ export default async function SchoolAdminDashboardLayout({
         school={status?.school ?? null}
         setupStatus={status}
       >
-        <DashboardShell
+        <TenantDashboardShell
         sidebar={
           <SchoolAdminSidebar
             schoolSlug={tenant.schoolSlug}
@@ -81,15 +78,11 @@ export default async function SchoolAdminDashboardLayout({
             role={session.role}
           />
         }
-        topBar={<DashboardTopBar />}
-        rightRail={<DashboardRightRail />}
       >
-        <DashboardContent>
           <SessionManager />
           {children}
           {subscriptionsEnabled() ? <SubscriptionLockout /> : null}
-        </DashboardContent>
-      </DashboardShell>
+      </TenantDashboardShell>
       </SchoolProvider>
     </PortalRoleProvider>
   );

@@ -37,7 +37,7 @@ export function TeacherClassDetailContent({ classId }: { classId: string }) {
   );
 
   return (
-    <DashboardPage maxWidth="7xl">
+    <DashboardPage maxWidth="7xl" embedded>
       <QueryState
         error={classQuery.error}
         isLoading={classQuery.isLoading}

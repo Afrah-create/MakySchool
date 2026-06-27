@@ -52,7 +52,7 @@ export function TeacherProfileContent() {
   }
 
   return (
-    <DashboardPage eyebrow="Teacher portal" title="My Profile" maxWidth="lg">
+    <DashboardPage eyebrow="Teacher portal" title="My Profile" maxWidth="lg" embedded>
       <QueryState
         error={error}
         isLoading={isLoading}

@@ -78,6 +78,21 @@ export function todayDayOfWeek() {
   return jsDay === 0 ? 7 : jsDay;
 }
 
+/** Format API time (HH:MM or HH:MM:SS) for display. */
+export function formatTimetableTime(value: string) {
+  const [hourPart, minutePart = "00"] = value.split(":");
+  const hour = Number.parseInt(hourPart, 10);
+  if (Number.isNaN(hour)) return value;
+  const minutes = minutePart.slice(0, 2);
+  const period = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${minutes} ${period}`;
+}
+
+export function dayLabelForValue(dayValue: number) {
+  return TIMETABLE_DAYS.find((day) => day.value === dayValue)?.label ?? "Day";
+}
+
 export function normalizeClassIds(raw: string[] | string | undefined): string[] {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.map(String);

@@ -1,32 +1,58 @@
 import { BookOpen, LayoutDashboard, User } from "lucide-react";
 import { USER_ROLES } from "@makyschool/shared/constants";
-import type { PortalNavItem } from "./portal-nav";
+import type { PortalNavGroup, PortalNavItem } from "./portal-nav";
 
 export type { PortalNavItem as NavItem };
 
-export const teacherNav: PortalNavItem[] = [
+const teacherRole = [USER_ROLES.TEACHER] as const;
+
+export const teacherNavGroups: PortalNavGroup[] = [
   {
-    id: "teacher-dashboard",
-    href: "/teacher/dashboard",
-    label: "Dashboard",
+    id: "overview",
+    label: "Overview",
     icon: LayoutDashboard,
-    exact: true,
-    roles: [USER_ROLES.TEACHER],
+    items: [
+      {
+        id: "teacher-dashboard",
+        href: "/teacher/dashboard",
+        label: "Dashboard",
+        icon: LayoutDashboard,
+        exact: true,
+        roles: teacherRole,
+      },
+    ],
   },
   {
-    id: "teacher-classes",
-    href: "/teacher/classes",
-    label: "My Classes",
+    id: "teaching",
+    label: "Teaching",
     icon: BookOpen,
-    exact: false,
-    roles: [USER_ROLES.TEACHER],
+    items: [
+      {
+        id: "teacher-classes",
+        href: "/teacher/classes",
+        label: "My classes",
+        icon: BookOpen,
+        exact: false,
+        roles: teacherRole,
+      },
+    ],
   },
   {
-    id: "teacher-profile",
-    href: "/teacher/profile",
-    label: "My Profile",
+    id: "account",
+    label: "Account",
     icon: User,
-    exact: false,
-    roles: [USER_ROLES.TEACHER],
+    items: [
+      {
+        id: "teacher-profile",
+        href: "/teacher/profile",
+        label: "My profile",
+        icon: User,
+        exact: false,
+        roles: teacherRole,
+      },
+    ],
   },
 ];
+
+/** @deprecated Use teacherNavGroups */
+export const teacherNav: PortalNavItem[] = teacherNavGroups.flatMap((group) => group.items);

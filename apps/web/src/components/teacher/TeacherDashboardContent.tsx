@@ -17,7 +17,7 @@ export function TeacherDashboardContent() {
   const { data, error, isLoading, mutate } = useApiSWR<TeacherDetail>("/schools/teachers/me");
 
   return (
-    <DashboardPage maxWidth="7xl">
+    <DashboardPage maxWidth="7xl" embedded>
       <QueryState
         error={error}
         isLoading={isLoading}
@@ -30,6 +30,7 @@ export function TeacherDashboardContent() {
               <Skeleton className="h-24" />
               <Skeleton className="h-24" />
             </div>
+            <Skeleton className="h-64 w-full rounded-2xl" />
           </div>
         }
         isEmpty={() => false}
@@ -61,20 +62,22 @@ export function TeacherDashboardContent() {
 
               <TeacherStatsRow teacher={teacher} />
 
-              <TeacherTimetableCard />
+              <div className="rounded-2xl border border-theme bg-theme-page p-5 sm:p-6">
+                <TeacherTimetableCard />
+              </div>
 
               {hasClasses ? (
                 <section className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h2 className="text-sm font-semibold text-theme-primary">Recent classes</h2>
+                      <h2 className="text-sm font-semibold text-theme-primary">My classes</h2>
                       <p className="text-xs text-theme-muted">Quick access to your assigned classes</p>
                     </div>
                     <Link
                       href="/teacher/classes"
                       className="inline-flex items-center gap-1 text-sm font-medium text-theme-accent hover:underline"
                     >
-                      View all classes
+                      View all
                       <ArrowRight className="h-4 w-4" />
                     </Link>
                   </div>

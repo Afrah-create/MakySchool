@@ -14,6 +14,7 @@ export function TeacherClassesContent() {
 
   return (
     <DashboardPage
+      embedded
       eyebrow="Teacher portal"
       title="My Classes"
       description="Classes and subjects assigned to you this term."

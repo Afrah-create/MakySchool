@@ -1,24 +1,43 @@
-import type { PortalNavItem } from "./portal-nav";
 import { CalendarDays, LayoutDashboard } from "lucide-react";
 import { USER_ROLES } from "@makyschool/shared/constants";
+import type { PortalNavGroup, PortalNavItem } from "./portal-nav";
 
-export type { PortalNavItem as NavItem };
+const learnerRole = [USER_ROLES.LEARNER] as const;
 
-export const learnerNav: PortalNavItem[] = [
+export const learnerNavGroups: PortalNavGroup[] = [
   {
-    id: "learner-dashboard",
-    href: "/learner/dashboard",
-    label: "Dashboard",
+    id: "overview",
+    label: "Overview",
     icon: LayoutDashboard,
-    exact: true,
-    roles: [USER_ROLES.LEARNER],
+    items: [
+      {
+        id: "learner-dashboard",
+        href: "/learner/dashboard",
+        label: "Dashboard",
+        icon: LayoutDashboard,
+        exact: true,
+        roles: learnerRole,
+      },
+    ],
   },
   {
-    id: "learner-timetable",
-    href: "/learner/timetable",
-    label: "Timetable",
+    id: "academic",
+    label: "Academic",
     icon: CalendarDays,
-    exact: false,
-    roles: [USER_ROLES.LEARNER],
+    items: [
+      {
+        id: "learner-timetable",
+        href: "/learner/timetable",
+        label: "Timetable",
+        icon: CalendarDays,
+        exact: false,
+        roles: learnerRole,
+      },
+    ],
   },
 ];
+
+/** @deprecated Use learnerNavGroups */
+export const learnerNav: PortalNavItem[] = learnerNavGroups.flatMap((group) => group.items);
+
+export type { PortalNavItem as NavItem };

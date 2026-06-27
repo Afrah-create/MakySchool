@@ -3,6 +3,7 @@ import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
 export default function LearnerTimetablePage() {
   return (
     <DashboardPage
+      embedded
       eyebrow="Learner portal"
       title="Timetable"
       description="Your weekly class schedule will appear here."

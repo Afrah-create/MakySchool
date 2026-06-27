@@ -44,7 +44,6 @@ export default async function LearnerPortalLayout({
         schoolName={status?.school?.name}
         role={session.role}
         portal="learner"
-        portalLabel="Learner portal"
       >
         <SessionManager />
         {children}

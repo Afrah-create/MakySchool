@@ -115,10 +115,12 @@ export async function apiClient<T>(
     const requestError = new Error(error.error ?? "Request failed") as Error & {
       code?: string;
       fields?: Record<string, string>;
+      failed?: Array<{ index: number; student_id: string; error: string }>;
       preview?: unknown;
     };
     requestError.code = error.code;
     requestError.fields = error.fields;
+    requestError.failed = (error as { failed?: typeof requestError.failed }).failed;
     requestError.preview = error.preview;
     if (error.redirectUrl) {
       (requestError as Error & { redirectUrl?: string }).redirectUrl = error.redirectUrl;

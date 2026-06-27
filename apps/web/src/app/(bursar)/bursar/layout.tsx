@@ -46,7 +46,6 @@ export default async function BursarPortalLayout({
           schoolName={status?.school?.name}
           role={session.role}
           portal="bursar"
-          portalLabel="Bursar Portal"
         >
           <SessionManager />
           {children}
