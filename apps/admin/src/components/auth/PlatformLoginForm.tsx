@@ -6,6 +6,7 @@ import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { apiClient } from "@/lib/api/client";
+import { broadcastActivity } from "@/lib/auth/session-broadcast";
 
 type LoginResponse = {
   accountType: "platform";
@@ -47,6 +48,8 @@ export function PlatformLoginForm() {
         body: { email: email.trim(), password },
         clientApp: "platform",
       });
+
+      broadcastActivity(Date.now());
 
       router.push("/dashboard");
       router.refresh();

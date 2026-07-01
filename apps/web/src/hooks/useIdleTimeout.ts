@@ -11,7 +11,7 @@ import {
   TENANT_SESSION_CHANNEL,
   type SessionLogoutReason,
 } from "@makyschool/shared/constants";
-import { throttle } from "@makyschool/shared/session";
+import { throttle, isActivityIdleExpired, readStoredActivity } from "@makyschool/shared/session";
 import { checkAuthOrRedirect } from "@/lib/auth/check-session";
 import { performLogout } from "@/lib/auth/logout";
 import { broadcastActivity, subscribeSessionEvents } from "@/lib/auth/session-broadcast";
@@ -40,7 +40,7 @@ async function refreshSession() {
 }
 
 export function useIdleTimeout() {
-  const lastActivityRef = useRef(Date.now());
+  const lastActivityRef = useRef(0);
   const warningVisibleRef = useRef(false);
   const [warningVisible, setWarningVisible] = useState(false);
   const [countdownTick, setCountdownTick] = useState(0);
@@ -83,13 +83,12 @@ export function useIdleTimeout() {
   }, [warningVisible, countdownTick]);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(`${TENANT_SESSION_CHANNEL}:activity`);
-      if (stored) {
-        lastActivityRef.current = Math.max(lastActivityRef.current, Number(stored));
-      }
-    } catch {
-      // ignore
+    const initialActivity = readStoredActivity(TENANT_SESSION_CHANNEL) ?? Date.now();
+    lastActivityRef.current = initialActivity;
+
+    if (isActivityIdleExpired(initialActivity)) {
+      void performLogout("idle");
+      return;
     }
 
     const onActivity = throttle(() => recordActivity(), SESSION_ACTIVITY_THROTTLE_MS);

@@ -117,3 +117,93 @@ async def verify_login_with_lockout(
         )
 
     return LoginLockoutResult(ok=True, status=200, error="")
+
+
+async def ensure_not_locked(
+    conn: asyncpg.Connection,
+    *,
+    table: LoginTable,
+    user_id: uuid.UUID,
+) -> LoginLockoutResult | None:
+    table = _validate_table(table)
+    now = _utcnow()
+
+    row = await conn.fetchrow(
+        f"""
+        SELECT locked_until
+        FROM {table}
+        WHERE id = $1
+        """,
+        user_id,
+    )
+    if not row:
+        return LoginLockoutResult(ok=False, status=401, error="Invalid credentials")
+
+    locked_until = row["locked_until"]
+    if locked_until is not None and locked_until > now:
+        return LoginLockoutResult(
+            ok=False,
+            status=403,
+            error=_locked_message(locked_until),
+            code="ACCOUNT_LOCKED",
+        )
+    return None
+
+
+async def record_login_attempt(
+    conn: asyncpg.Connection,
+    *,
+    table: LoginTable,
+    user_id: uuid.UUID,
+    success: bool,
+) -> LoginLockoutResult:
+    table = _validate_table(table)
+    now = _utcnow()
+
+    async with conn.transaction():
+        locked = await ensure_not_locked(conn, table=table, user_id=user_id)
+        if locked:
+            return locked
+
+        if success:
+            await conn.execute(
+                f"""
+                UPDATE {table}
+                SET failed_login_attempts = 0,
+                    locked_until = NULL,
+                    last_failed_login = NULL
+                WHERE id = $1
+                """,
+                user_id,
+            )
+            return LoginLockoutResult(ok=True, status=200, error="")
+
+        row = await conn.fetchrow(
+            f"""
+            SELECT failed_login_attempts
+            FROM {table}
+            WHERE id = $1
+            FOR UPDATE
+            """,
+            user_id,
+        )
+        if not row:
+            return LoginLockoutResult(ok=False, status=401, error="Invalid credentials")
+
+        attempts = int(row["failed_login_attempts"]) + 1
+        new_lock = locked_until_for_attempts(attempts, now)
+        await conn.execute(
+            f"""
+            UPDATE {table}
+            SET failed_login_attempts = $2,
+                locked_until = $3,
+                last_failed_login = $4
+            WHERE id = $1
+            """,
+            user_id,
+            attempts,
+            new_lock,
+            now,
+        )
+
+    return LoginLockoutResult(ok=False, status=401, error="Invalid credentials")

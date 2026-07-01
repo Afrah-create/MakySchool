@@ -13,6 +13,7 @@ from app.db.pool import get_db
 from app.lib.slug import slugify_school_name
 from app.lib.user_sql import USER_ADMIN_ROLE_SQL, USER_DISPLAY_NAME_SQL, USER_LEARNER_ROLE_SQL, USER_TEACHER_ROLE_SQL
 from app.middleware.auth import get_current_superadmin
+from app.services.central_auth import CentralAuthError, central_auth_enabled, sync_user_password
 
 router = APIRouter(dependencies=[Depends(get_current_superadmin)])
 
@@ -178,6 +179,18 @@ async def create_school(
     temp_password = secrets.token_hex(10)
     slug = await _generate_unique_slug(conn, body.schoolName)
     password_hash = hash_password(temp_password)
+    auth_user_id: uuid.UUID | None = None
+
+    if central_auth_enabled():
+        try:
+            linked = await sync_user_password(normalized_admin_email, temp_password)
+            if linked:
+                auth_user_id = uuid.UUID(linked)
+        except CentralAuthError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"error": str(exc), "code": exc.code or "AUTH_SERVICE_ERROR"},
+            ) from exc
 
     async with conn.transaction():
         await conn.execute(
@@ -193,13 +206,14 @@ async def create_school(
             """
             INSERT INTO users (
               id, school_id, email, password_hash, full_name, name, role, account_status,
-              is_temp_password, setup_completed
-            ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $4, 'ADMIN', 'ACTIVE', true, false)
+              is_temp_password, setup_completed, auth_user_id
+            ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $4, 'ADMIN', 'ACTIVE', true, false, $5)
             """,
             school_id,
             normalized_admin_email,
             password_hash,
             body.adminName.strip(),
+            auth_user_id,
         )
 
     return {

@@ -1,4 +1,6 @@
 export const ACCESS_TOKEN_TTL_MINUTES = 20;
+/** Max session length from login; refresh tokens cannot extend beyond this. */
+export const REFRESH_TOKEN_TTL_HOURS = 8;
 
 export const SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 export const SESSION_WARNING_LEAD_MS = 2 * 60 * 1000;

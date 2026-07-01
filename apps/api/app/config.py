@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     MAKYREACH_API_KEY: str = ""
     MAKYREACH_API_URL: str = ""
 
+    # Central Auth (Supabase-backed auth service)
+    AUTH_SERVICE_URL: str = ""
+    NEXT_PUBLIC_AUTH_API_URL: str = ""
+    NEXT_PUBLIC_AUTH_SUPABASE_URL: str = ""
+    AUTH_SUPABASE_URL: str = ""
+    AUTH_SUPABASE_SERVICE_ROLE_KEY: str = ""
+
     SUBSCRIPTIONS_ENABLED: bool = False
     NEXT_PUBLIC_SUBSCRIPTIONS_ENABLED: bool = False
     PLATFORM_APP_URL: str = "http://localhost:3001"
@@ -82,6 +89,18 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production" or self.NODE_ENV == "production"
+
+    @property
+    def auth_api_base(self) -> str:
+        if self.AUTH_SERVICE_URL.strip():
+            return f"{self.AUTH_SERVICE_URL.rstrip('/')}/api/v1"
+        if self.NEXT_PUBLIC_AUTH_API_URL.strip():
+            return self.NEXT_PUBLIC_AUTH_API_URL.rstrip("/")
+        return ""
+
+    @property
+    def central_auth_enabled(self) -> bool:
+        return bool(self.auth_api_base)
 
 
 settings = Settings()

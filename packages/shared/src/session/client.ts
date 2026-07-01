@@ -1,4 +1,42 @@
-import type { SessionBroadcastMessage, SessionLogoutReason } from "@makyschool/shared/constants";
+import {
+  SESSION_IDLE_TIMEOUT_MS,
+  type SessionBroadcastMessage,
+  type SessionLogoutReason,
+} from "@makyschool/shared/constants";
+
+export function readStoredActivity(channelName: string): number | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const stored = localStorage.getItem(`${channelName}:activity`);
+    if (!stored) {
+      return null;
+    }
+    const at = Number(stored);
+    return Number.isFinite(at) ? at : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isActivityIdleExpired(lastActivity: number | null, now = Date.now()) {
+  if (lastActivity === null) {
+    return false;
+  }
+  return now - lastActivity >= SESSION_IDLE_TIMEOUT_MS;
+}
+
+export function clearStoredActivity(channelName: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    localStorage.removeItem(`${channelName}:activity`);
+  } catch {
+    // ignore
+  }
+}
 
 export function createSessionBroadcast(channelName: string) {
   let channel: BroadcastChannel | null = null;
@@ -27,6 +65,7 @@ export function createSessionBroadcast(channelName: string) {
     const message: SessionBroadcastMessage = { type: "logout", reason };
     getChannel()?.postMessage(message);
     try {
+      clearStoredActivity(channelName);
       localStorage.setItem(`${channelName}:logout`, JSON.stringify(message));
       localStorage.removeItem(`${channelName}:logout`);
     } catch {

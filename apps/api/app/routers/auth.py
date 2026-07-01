@@ -15,6 +15,7 @@ from app.lib.email import send_password_reset_email
 from app.lib.jwt_utils import (
     ACCESS_TOKEN_EXPIRES,
     REFRESH_TOKEN_EXPIRES,
+    REFRESH_TOKEN_EXPIRES_MS,
     cookie_options,
     is_maky_school_role,
     is_school_setup_completed,
@@ -34,7 +35,15 @@ from app.middleware.auth import (
     clear_auth_cookies,
     get_current_user,
 )
-from app.services.login_lockout import verify_login_with_lockout
+from app.services.central_auth import CentralAuthError, central_auth_enabled, request_password_reset
+from app.services.central_auth import authenticate as central_authenticate
+from app.services.central_auth import update_password as central_update_password
+from app.services.login_lockout import (
+    LoginLockoutResult,
+    ensure_not_locked,
+    record_login_attempt,
+    verify_login_with_lockout,
+)
 from app.services.platform_login import authenticate_superadmin, is_superadmin_email
 from app.services.subscription import audit_school_subscription
 
@@ -61,6 +70,70 @@ def _resolve_client_app(request: Request) -> str:
 
 def _hash_reset_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def _backfill_auth_user_id(
+    conn: asyncpg.Connection,
+    user_id: uuid.UUID,
+    auth_user_id: str | None,
+) -> None:
+    if not auth_user_id:
+        return
+    try:
+        parsed = uuid.UUID(str(auth_user_id))
+    except ValueError:
+        return
+    await conn.execute(
+        """
+        UPDATE users
+        SET auth_user_id = $1, updated_at = NOW()
+        WHERE id = $2 AND auth_user_id IS NULL
+        """,
+        parsed,
+        user_id,
+    )
+
+
+async def _verify_tenant_credentials(
+    conn: asyncpg.Connection,
+    candidate: asyncpg.Record,
+    password: str,
+) -> LoginLockoutResult:
+    user_id = candidate["id"]
+
+    if central_auth_enabled():
+        locked = await ensure_not_locked(conn, table="users", user_id=user_id)
+        if locked:
+            return locked
+
+        try:
+            tokens = await central_authenticate(candidate["email"], password)
+            lockout = await record_login_attempt(
+                conn, table="users", user_id=user_id, success=True
+            )
+            if not lockout.ok:
+                return lockout
+            await _backfill_auth_user_id(conn, user_id, tokens.user_id)
+            return LoginLockoutResult(ok=True, status=200, error="")
+        except CentralAuthError:
+            if candidate["password_hash"]:
+                return await verify_login_with_lockout(
+                    conn,
+                    table="users",
+                    user_id=user_id,
+                    password=password,
+                )
+
+            return await record_login_attempt(
+                conn, table="users", user_id=user_id, success=False
+            )
+
+    return await verify_login_with_lockout(
+        conn,
+        table="users",
+        user_id=user_id,
+        password=password,
+    )
 
 
 @router.post("/login")
@@ -105,9 +178,13 @@ async def login(
             media_type="application/json",
         )
 
+    password_clause = ""
+    if not settings.central_auth_enabled:
+        password_clause = "AND u.password_hash IS NOT NULL"
+
     candidates = await conn.fetch(
         f"""
-        SELECT u.id, u.email, u.password_hash,
+        SELECT u.id, u.email, u.password_hash, u.auth_user_id,
                {USER_DISPLAY_NAME_SQL} AS name,
                u.role, u.school_id, u.account_status,
                COALESCE(u.is_active, u.account_status = 'ACTIVE' OR u.account_status IS NULL) AS is_active,
@@ -117,7 +194,7 @@ async def login(
                s.status AS school_status, s.subscription_status
         FROM users u
         INNER JOIN schools s ON s.id = u.school_id
-        WHERE LOWER(u.email) = LOWER($1) AND u.password_hash IS NOT NULL
+        WHERE LOWER(u.email) = LOWER($1) {password_clause}
         ORDER BY s.name ASC
         """,
         normalized_email,
@@ -161,12 +238,7 @@ async def login(
             media_type="application/json",
         )
 
-    lockout = await verify_login_with_lockout(
-        conn,
-        table="users",
-        user_id=candidate["id"],
-        password=body.password,
-    )
+    lockout = await _verify_tenant_credentials(conn, candidate, body.password)
     if not lockout.ok:
         payload = {"error": lockout.error}
         if lockout.code:
@@ -236,7 +308,7 @@ async def login(
         response.set_cookie(
             settings.TENANT_REFRESH_COOKIE,
             sign_tenant_token(payload, REFRESH_TOKEN_EXPIRES),
-            **cookie_options(7 * 24 * 60 * 60 * 1000),
+            **cookie_options(REFRESH_TOKEN_EXPIRES_MS),
         )
 
     redirect_to = resolve_school_redirect_path(normalized_role, is_temp, setup_completed)
@@ -409,16 +481,53 @@ async def change_password(
     if not user:
         return Response(content='{"error":"User not found"}', status_code=404, media_type="application/json")
 
-    if not verify_password(body.currentPassword, user["password_hash"]):
+    if user["password_hash"]:
+        if not verify_password(body.currentPassword, user["password_hash"]):
+            return Response(
+                content='{"error":"Current password is incorrect"}',
+                status_code=401,
+                media_type="application/json",
+            )
+        auth_tokens = None
+    elif central_auth_enabled():
+        try:
+            auth_tokens = await central_authenticate(user["email"], body.currentPassword)
+        except CentralAuthError:
+            return Response(
+                content='{"error":"Current password is incorrect"}',
+                status_code=401,
+                media_type="application/json",
+            )
+    else:
         return Response(
             content='{"error":"Current password is incorrect"}',
             status_code=401,
             media_type="application/json",
         )
 
-    password_hash = hash_password(body.newPassword)
+    if central_auth_enabled():
+        try:
+            if auth_tokens is None:
+                auth_tokens = await central_authenticate(user["email"], body.currentPassword)
+            await central_update_password(auth_tokens.access_token, body.newPassword)
+        except CentralAuthError as exc:
+            return Response(
+                content=json.dumps({"error": str(exc)}),
+                status_code=exc.status,
+                media_type="application/json",
+            )
+        password_hash = None
+    else:
+        password_hash = hash_password(body.newPassword)
+
     await conn.execute(
-        "UPDATE users SET password_hash = $1, is_temp_password = false, updated_at = NOW() WHERE id = $2",
+        """
+        UPDATE users
+        SET password_hash = COALESCE($1, password_hash),
+            is_temp_password = false,
+            updated_at = NOW()
+        WHERE id = $2
+        """,
         password_hash,
         user["id"],
     )
@@ -444,7 +553,7 @@ async def change_password(
     response.set_cookie(
         settings.TENANT_REFRESH_COOKIE,
         sign_tenant_token(payload, REFRESH_TOKEN_EXPIRES),
-        **cookie_options(7 * 24 * 60 * 60 * 1000),
+        **cookie_options(REFRESH_TOKEN_EXPIRES_MS),
     )
     return {"data": {"redirect": redirect, "schoolSlug": user["school_slug"]}}
 
@@ -462,6 +571,14 @@ async def forgot_password(
     conn: asyncpg.Connection = Depends(get_db),
 ):
     normalized = body.email.lower().strip()
+
+    if central_auth_enabled():
+        try:
+            await request_password_reset(normalized)
+        except CentralAuthError:
+            pass
+        return {"data": {"ok": True, "message": "If an account exists, a reset link has been sent."}}
+
     raw_token = secrets.token_hex(32)
     hashed = _hash_reset_token(raw_token)
 
@@ -498,6 +615,13 @@ class ResetPasswordBody(BaseModel):
 
 @reset_password_router.post("")
 async def reset_password(body: ResetPasswordBody, conn: asyncpg.Connection = Depends(get_db)):
+    if central_auth_enabled():
+        return Response(
+            content='{"error":"Use the password reset link sent to your email."}',
+            status_code=400,
+            media_type="application/json",
+        )
+
     err = validate_password(body.new_password)
     if err:
         return Response(content=f'{{"error":"{err}"}}', status_code=400, media_type="application/json")

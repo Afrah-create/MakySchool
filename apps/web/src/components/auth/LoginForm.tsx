@@ -14,6 +14,7 @@ import {
 import type { UserRole } from "@makyschool/shared/types";
 import { resolvePostLoginPath } from "@/lib/roles";
 import { apiClient } from "@/lib/api/client";
+import { broadcastActivity } from "@/lib/auth/session-broadcast";
 import { clearSchoolSlug, persistSchoolSlug, readStoredSchoolSlug } from "@/lib/auth/session";
 
 type LoginStep = "email" | "password" | "school";
@@ -108,6 +109,8 @@ export function LoginForm({
       } else {
         clearSchoolSlug();
       }
+
+      broadcastActivity(Date.now());
 
       router.push(
         resolvePostLoginPath({

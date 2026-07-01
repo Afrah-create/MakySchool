@@ -20,6 +20,7 @@ from app.lib.teacher_assignments import (
 )
 from app.lib.user_sql import USER_DISPLAY_NAME_SQL, USER_LEARNER_ROLE_SQL
 from app.middleware.subscription_guard import require_tenant_with_subscription
+from app.services.central_auth import CentralAuthError, central_auth_enabled, sync_user_password
 
 router = APIRouter()
 
@@ -516,6 +517,21 @@ async def create_teacher(
     temp_password = secrets.token_hex(10)
     password_hash = hash_password(temp_password)
     actor_id = uuid.UUID(str(actor["sub"]))
+    auth_user_id: uuid.UUID | None = None
+
+    if central_auth_enabled():
+        try:
+            linked = await sync_user_password(normalized_email, temp_password)
+            if linked:
+                auth_user_id = uuid.UUID(linked)
+        except CentralAuthError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={
+                    "error": str(exc),
+                    "code": exc.code or "AUTH_SERVICE_ERROR",
+                },
+            ) from exc
 
     try:
         async with conn.transaction():
@@ -524,11 +540,11 @@ async def create_teacher(
                 INSERT INTO users (
                   id, full_name, name, email, phone, subject_specialization,
                   password_hash, role, school_id, account_status,
-                  is_active, is_temp_password, setup_completed, created_by, created_at
+                  is_active, is_temp_password, setup_completed, created_by, auth_user_id, created_at
                 ) VALUES (
                   gen_random_uuid(), $1, $1, $2, $3, $4,
                   $5, 'teacher', $6, 'ACTIVE',
-                  true, true, true, $7, NOW()
+                  true, true, true, $7, $8, NOW()
                 )
                 RETURNING id
                 """,
@@ -539,6 +555,7 @@ async def create_teacher(
                 password_hash,
                 school_id,
                 actor_id,
+                auth_user_id,
             )
 
             if assignments:
@@ -947,6 +964,41 @@ async def reset_teacher_password(
 
     temp_password = secrets.token_hex(10)
     password_hash = hash_password(temp_password)
+
+    teacher = await conn.fetchrow(
+        """
+        SELECT id, email, auth_user_id
+        FROM users
+        WHERE id = $1 AND school_id = $2 AND LOWER(role) = 'teacher'
+        LIMIT 1
+        """,
+        teacher_id,
+        school_id,
+    )
+    if not teacher:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Teacher not found in your school.", "code": "NOT_FOUND"},
+        )
+
+    if central_auth_enabled():
+        try:
+            linked = await sync_user_password(
+                teacher["email"],
+                temp_password,
+                str(teacher["auth_user_id"]) if teacher["auth_user_id"] else None,
+            )
+        except CentralAuthError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"error": str(exc), "code": exc.code or "AUTH_SERVICE_ERROR"},
+            ) from exc
+        if linked:
+            await conn.execute(
+                "UPDATE users SET auth_user_id = $1 WHERE id = $2 AND auth_user_id IS NULL",
+                uuid.UUID(linked),
+                teacher_id,
+            )
 
     row = await conn.fetchrow(
         """

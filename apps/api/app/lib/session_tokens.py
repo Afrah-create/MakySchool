@@ -8,6 +8,7 @@ from jose import JWTError
 from app.config import settings
 from app.lib.jwt_utils import (
     ACCESS_TOKEN_EXPIRES,
+    ACCESS_TOKEN_EXPIRES_MS,
     cookie_options,
     sign_superadmin_token,
     sign_tenant_token,
@@ -43,7 +44,30 @@ def issue_superadmin_access_cookie(response, payload: dict[str, Any]) -> int:
     return access_expires_at_unix()
 
 
-ACCESS_TOKEN_EXPIRES_MS = 20 * 60 * 1000
+def resolve_tenant_access_session(request) -> tuple[dict[str, Any] | None, int | None]:
+    access_token = request.cookies.get(settings.TENANT_ACCESS_COOKIE)
+    payload = _verify_token(access_token, verify_tenant_token)
+    if not payload:
+        return None, None
+    exp = payload.get("exp")
+    if isinstance(exp, datetime):
+        return payload, int(exp.timestamp())
+    if isinstance(exp, (int, float)):
+        return payload, int(exp)
+    return payload, None
+
+
+def resolve_superadmin_access_session(request) -> tuple[dict[str, Any] | None, int | None]:
+    access_token = request.cookies.get(settings.SUPERADMIN_ACCESS_COOKIE)
+    payload = _verify_token(access_token, verify_superadmin_token)
+    if not payload:
+        return None, None
+    exp = payload.get("exp")
+    if isinstance(exp, datetime):
+        return payload, int(exp.timestamp())
+    if isinstance(exp, (int, float)):
+        return payload, int(exp)
+    return payload, None
 
 
 def _payload_without_exp(payload: dict[str, Any]) -> dict[str, Any]:
@@ -61,10 +85,7 @@ def _verify_token(token: str | None, verify: VerifyFn) -> dict[str, Any] | None:
 
 def refresh_tenant_session(request, response) -> dict[str, Any] | None:
     refresh_token = request.cookies.get(settings.TENANT_REFRESH_COOKIE)
-    access_token = request.cookies.get(settings.TENANT_ACCESS_COOKIE)
-    payload = _verify_token(refresh_token, verify_tenant_token) or _verify_token(
-        access_token, verify_tenant_token
-    )
+    payload = _verify_token(refresh_token, verify_tenant_token)
     if not payload:
         return None
     expires_at = issue_tenant_access_cookie(response, _payload_without_exp(payload))
@@ -73,10 +94,7 @@ def refresh_tenant_session(request, response) -> dict[str, Any] | None:
 
 def refresh_superadmin_session(request, response) -> dict[str, Any] | None:
     refresh_token = request.cookies.get(settings.SUPERADMIN_REFRESH_COOKIE)
-    access_token = request.cookies.get(settings.SUPERADMIN_ACCESS_COOKIE)
-    payload = _verify_token(refresh_token, verify_superadmin_token) or _verify_token(
-        access_token, verify_superadmin_token
-    )
+    payload = _verify_token(refresh_token, verify_superadmin_token)
     if not payload:
         return None
     expires_at = issue_superadmin_access_cookie(response, _payload_without_exp(payload))

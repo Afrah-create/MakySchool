@@ -1,17 +1,10 @@
+import { TENANT_SESSION_CHANNEL } from "@makyschool/shared/constants";
+import { isActivityIdleExpired, readStoredActivity } from "@makyschool/shared/session";
 import { performLogout } from "@/lib/auth/logout";
 import { resolveClientApiUrl } from "@/lib/api/base-url";
 import { readStoredSchoolSlug } from "@/lib/auth/session";
 
-type SessionCheckResponse = {
-  valid: boolean;
-  expiresAt?: number;
-};
-
-export async function checkAuthOrRedirect() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
+async function refreshSession() {
   const schoolSlug = readStoredSchoolSlug() ?? document.body.dataset.schoolSlug;
   const headers: HeadersInit = {
     "x-makyschool-client-app": "tenant",
@@ -20,23 +13,31 @@ export async function checkAuthOrRedirect() {
     headers["x-school-slug"] = schoolSlug;
   }
 
+  const response = await fetch(resolveClientApiUrl("/auth/refresh"), {
+    method: "POST",
+    credentials: "include",
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error("Session refresh failed");
+  }
+}
+
+export async function checkAuthOrRedirect() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const lastActivity = readStoredActivity(TENANT_SESSION_CHANNEL);
+  if (isActivityIdleExpired(lastActivity)) {
+    await performLogout("idle");
+    return;
+  }
+
   try {
-    const response = await fetch(`${resolveClientApiUrl("/auth/me")}?sessionOnly=true`, {
-      method: "GET",
-      credentials: "include",
-      headers,
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      await performLogout("expired");
-      return;
-    }
-
-    const payload = (await response.json()) as { data?: SessionCheckResponse };
-    if (!payload.data?.valid) {
-      await performLogout("expired");
-    }
+    await refreshSession();
   } catch {
     await performLogout("expired");
   }

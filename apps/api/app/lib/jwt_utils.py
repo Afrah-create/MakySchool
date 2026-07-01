@@ -7,7 +7,7 @@ from jose import JWTError, jwt
 from app.config import settings
 
 ACCESS_TOKEN_EXPIRES = "20m"
-REFRESH_TOKEN_EXPIRES = "7d"
+REFRESH_TOKEN_EXPIRES = "8h"
 
 ROLE_HOME = {
     "admin": "/dashboard",
@@ -55,6 +55,20 @@ def verify_tenant_token(token: str) -> dict[str, Any]:
 
 def verify_superadmin_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, settings.SUPERADMIN_JWT_SECRET, algorithms=["HS256"])
+
+
+def expires_to_ms(expires_in: str) -> int:
+    if expires_in.endswith("m"):
+        return int(expires_in[:-1]) * 60 * 1000
+    if expires_in.endswith("h"):
+        return int(expires_in[:-1]) * 60 * 60 * 1000
+    if expires_in.endswith("d"):
+        return int(expires_in[:-1]) * 24 * 60 * 60 * 1000
+    return 15 * 60 * 1000
+
+
+ACCESS_TOKEN_EXPIRES_MS = expires_to_ms(ACCESS_TOKEN_EXPIRES)
+REFRESH_TOKEN_EXPIRES_MS = expires_to_ms(REFRESH_TOKEN_EXPIRES)
 
 
 def cookie_options(max_age_ms: int) -> dict[str, Any]:

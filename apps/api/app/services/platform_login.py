@@ -6,6 +6,7 @@ from app.config import settings
 from app.lib.jwt_utils import (
     ACCESS_TOKEN_EXPIRES,
     REFRESH_TOKEN_EXPIRES,
+    REFRESH_TOKEN_EXPIRES_MS,
     cookie_options,
     sign_superadmin_token,
 )
@@ -64,7 +65,7 @@ async def authenticate_superadmin(
     response.set_cookie(
         settings.SUPERADMIN_REFRESH_COOKIE,
         sign_superadmin_token(payload, REFRESH_TOKEN_EXPIRES),
-        **cookie_options(7 * 24 * 60 * 60 * 1000),
+        **cookie_options(REFRESH_TOKEN_EXPIRES_MS),
     )
     return {
         "ok": True,

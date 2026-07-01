@@ -29,7 +29,10 @@ export async function getTenantPayloadFromRequest(
 
   const refreshToken = request.cookies.get(TENANT_REFRESH_COOKIE)?.value;
   if (refreshToken) {
-    return verifyToken(refreshToken);
+    const payload = await verifyToken(refreshToken);
+    if (payload) {
+      return payload;
+    }
   }
 
   return null;

@@ -16,6 +16,7 @@ from app.lib.teacher_assignments import (
 )
 from app.lib.user_sql import USER_DISPLAY_NAME_SQL, normalize_user_role
 from app.middleware.subscription_guard import require_tenant_with_subscription
+from app.services.central_auth import CentralAuthError, central_auth_enabled, sync_user_password
 
 router = APIRouter()
 
@@ -275,6 +276,18 @@ async def create_user(
     password_hash = hash_password(temp_password)
     user_id = uuid.uuid4()
     actor_id = uuid.UUID(str(actor["sub"]))
+    auth_user_id: uuid.UUID | None = None
+
+    if central_auth_enabled():
+        try:
+            linked = await sync_user_password(normalized_email, temp_password)
+            if linked:
+                auth_user_id = uuid.UUID(linked)
+        except CentralAuthError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"error": str(exc), "code": exc.code or "AUTH_SERVICE_ERROR"},
+            ) from exc
 
     parsed_assignments = _parse_assignments(body)
 
@@ -284,8 +297,8 @@ async def create_user(
             INSERT INTO users (
               id, school_id, email, password_hash, full_name, name, role,
               phone, subject_specialization, is_temp_password, is_active,
-              account_status, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, true, true, 'ACTIVE', $9)
+              account_status, created_by, auth_user_id
+            ) VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, true, true, 'ACTIVE', $9, $10)
             """,
             user_id,
             school_id,
@@ -296,6 +309,7 @@ async def create_user(
             body.phone.strip() if body.phone else None,
             body.subject_specialization.strip() if body.subject_specialization else None,
             actor_id,
+            auth_user_id,
         )
 
         if role in ASSIGNABLE_ROLES and parsed_assignments:
@@ -511,6 +525,38 @@ async def reset_user_password(
 
     row = await conn.fetchrow(
         """
+        SELECT id, email, auth_user_id
+        FROM users
+        WHERE id = $1 AND school_id = $2
+        LIMIT 1
+        """,
+        user_id,
+        school_id,
+    )
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "User not found"})
+
+    if central_auth_enabled():
+        try:
+            linked = await sync_user_password(
+                row["email"],
+                temp_password,
+                str(row["auth_user_id"]) if row["auth_user_id"] else None,
+            )
+        except CentralAuthError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={"error": str(exc), "code": exc.code or "AUTH_SERVICE_ERROR"},
+            ) from exc
+        if linked:
+            await conn.execute(
+                "UPDATE users SET auth_user_id = $1 WHERE id = $2 AND auth_user_id IS NULL",
+                uuid.UUID(linked),
+                user_id,
+            )
+
+    updated = await conn.fetchrow(
+        """
         UPDATE users
         SET password_hash = $1,
             is_temp_password = true,
@@ -523,7 +569,7 @@ async def reset_user_password(
         school_id,
     )
 
-    if not row:
+    if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "User not found"})
 
     return {"data": {"temp_password": temp_password}}
