@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { SchoolAdminMobileNav } from "@/components/layout/school-admin/SchoolAdminMobileNav";
+import { SchoolAdminMobileChrome } from "@/components/layout/school-admin/SchoolAdminMobileChrome";
 import { SchoolAdminSidebar } from "@/components/layout/school-admin/SchoolAdminSidebar";
 import { TenantDashboardShell } from "@/components/layout/TenantDashboardShell";
 import { SubscriptionLockout } from "@/components/school-admin/SubscriptionLockout";
@@ -71,10 +71,9 @@ export default async function SchoolAdminDashboardLayout({
             role={session.role}
           />
         }
-        header={
-          <SchoolAdminMobileNav
+        mobileChrome={
+          <SchoolAdminMobileChrome
             schoolName={status?.school?.name}
-            schoolStatus={status?.school?.status}
             role={session.role}
           />
         }

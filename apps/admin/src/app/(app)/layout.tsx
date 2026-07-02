@@ -9,7 +9,7 @@ export default function AdminAppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <DashboardShell sidebar={<AdminSidebar />} header={<AdminMobileNav />}>
+    <DashboardShell sidebar={<AdminSidebar />} mobileChrome={<AdminMobileNav />}>
       <SessionManager />
       {children}
     </DashboardShell>

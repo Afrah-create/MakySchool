@@ -2,9 +2,11 @@
 
 import type { ReactNode } from "react";
 import type { UserRole } from "@makyschool/shared/types";
-import { PortalMobileNav, PortalSidebar } from "@/components/layout/shared/PortalNav";
+import { MobileAppChrome } from "@/components/layout/mobile/MobileAppChrome";
+import { PortalSidebar } from "@/components/layout/shared/PortalNav";
 import { TenantDashboardShell } from "@/components/layout/TenantDashboardShell";
 import { bursarNavGroups, learnerNavGroups, teacherNavGroups } from "@/lib/roles";
+import { getPortalMobileTabs } from "@/lib/roles/mobile-tab-configs";
 import type { PortalNavGroup } from "@/lib/roles/portal-nav";
 
 const navByPortal = {
@@ -25,6 +27,7 @@ export function PortalShell({
   children: ReactNode;
 }) {
   const { groups, storagePrefix } = navByPortal[portal];
+  const tabs = getPortalMobileTabs(portal);
 
   return (
     <TenantDashboardShell
@@ -36,14 +39,7 @@ export function PortalShell({
           storagePrefix={storagePrefix}
         />
       }
-      header={
-        <PortalMobileNav
-          schoolName={schoolName}
-          role={role}
-          navGroups={groups}
-          storagePrefix={storagePrefix}
-        />
-      }
+      mobileChrome={<MobileAppChrome schoolName={schoolName} tabs={tabs} />}
     >
       {children}
     </TenantDashboardShell>

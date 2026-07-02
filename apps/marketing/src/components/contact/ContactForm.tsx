@@ -74,10 +74,7 @@ export function ContactForm() {
       <div className="rounded-2xl border border-theme bg-theme-surface p-6 shadow-theme-card sm:p-8">
         <div className="mb-8">
           <h2 className="text-2xl font-semibold text-theme-primary">Send us a message</h2>
-          <p className="mt-2 text-sm leading-relaxed text-theme-muted">
-            Share a few details and our team will get back to you. Prefer a live walkthrough?
-            Choose <span className="font-medium text-theme-primary">Book a demo</span> below.
-          </p>
+         
         </div>
 
         {submitted ? (
@@ -104,7 +101,7 @@ export function ContactForm() {
                   value={form.name}
                   onChange={(event) => updateField("name", event.target.value)}
                   className="ms-input w-full"
-                  placeholder="Jane Nabirye"
+                  placeholder="Enter Full Names"
                 />
               </label>
 
@@ -117,7 +114,7 @@ export function ContactForm() {
                   value={form.schoolName}
                   onChange={(event) => updateField("schoolName", event.target.value)}
                   className="ms-input w-full"
-                  placeholder="Greenfield Academy"
+                  placeholder="School Name"
                 />
               </label>
             </div>
@@ -133,7 +130,7 @@ export function ContactForm() {
                   value={form.email}
                   onChange={(event) => updateField("email", event.target.value)}
                   className="ms-input w-full"
-                  placeholder="you@school.ug"
+                  placeholder="Enter your email"
                 />
               </label>
 
@@ -147,7 +144,7 @@ export function ContactForm() {
                   value={form.phone}
                   onChange={(event) => updateField("phone", event.target.value)}
                   className="ms-input w-full"
-                  placeholder="+256 700 000 000"
+                  placeholder="Phone Number"
                 />
               </label>
             </div>
@@ -204,9 +201,7 @@ export function ContactForm() {
               <button type="submit" className="ms-btn-primary rounded-full px-7 py-3 text-sm shadow-theme-accent">
                 Send message
               </button>
-              <p className="text-xs text-theme-faint">
-                Submitting opens your email app with the details pre-filled.
-              </p>
+             
             </div>
           </form>
         )}
