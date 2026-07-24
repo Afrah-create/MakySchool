@@ -52,6 +52,13 @@ export const learnerMobileTabs: MobileTab[] = [
     icon: CalendarDays,
     matchPrefixes: ["/learner/timetable"],
   },
+  {
+    id: "profile",
+    href: "/learner/profile",
+    label: "Profile",
+    icon: User,
+    matchPrefixes: ["/learner/profile", "/learner/attendance", "/learner/fees"],
+  },
 ];
 
 export const bursarMobileTabs: MobileTab[] = [

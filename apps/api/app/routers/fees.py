@@ -975,7 +975,28 @@ async def fee_receipt_pdf(
     conn: asyncpg.Connection = Depends(get_db),
 ):
     school_id, user = ctx
-    _require_permission(user, "viewFees")
+    role = (user.get("role") or "").lower()
+
+    if role in ("learner", "student"):
+        owns = await conn.fetchval(
+            """
+            SELECT 1
+            FROM fee_payments fp
+            JOIN student_fee_accounts sfa ON sfa.id = fp.fee_account_id
+            JOIN students s ON s.id = sfa.student_id
+            WHERE fp.id = $1
+              AND fp.school_id = $2
+              AND s.user_id = $3
+            LIMIT 1
+            """,
+            payment_id,
+            school_id,
+            uuid.UUID(str(user["sub"])),
+        )
+        if not owns:
+            raise _error(status.HTTP_403_FORBIDDEN, "Forbidden", "FORBIDDEN")
+    else:
+        _require_permission(user, "viewFees")
 
     try:
         pdf_bytes, receipt_number = await generate_fee_receipt_pdf(conn, payment_id, school_id)

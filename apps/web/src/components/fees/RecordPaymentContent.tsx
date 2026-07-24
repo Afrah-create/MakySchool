@@ -16,10 +16,10 @@ import { FilterField } from "@makyschool/ui/components/ui/FilterField";
 import { FilterSegment } from "@makyschool/ui/components/ui/FilterSegment";
 import { ListToolbar } from "@makyschool/ui/components/ui/ListToolbar";
 import { LoadingButton } from "@makyschool/ui/components/ui/LoadingButton";
-import { PageHeader } from "@makyschool/ui/components/ui/PageHeader";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { TablePagination } from "@makyschool/ui/components/ui/TablePagination";
+import { FeesPageShell } from "@/components/fees/FeesPageShell";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useApiSWR } from "@/hooks/useApiSWR";
 import { apiClient } from "@/lib/api/client";
@@ -336,22 +336,20 @@ export function RecordPaymentContent() {
   }
 
   return (
-    <section className="space-y-6">
-      <PageHeader
-        title="Record payment"
-        description={
-          invoiceData
-            ? `Paying invoice ${invoiceData.invoice_number} — max ${formatUGX(invoiceData.balance)}`
-            : "Search students, record single or bulk fee payments, and generate receipts."
-        }
-      />
-
+    <FeesPageShell
+      title="Record payment"
+      description={
+        invoiceData
+          ? `Paying invoice ${invoiceData.invoice_number} — max ${formatUGX(invoiceData.balance)}`
+          : "Search students, record single or bulk fee payments, and generate receipts."
+      }
+    >
       <QueryState
         error={listError}
         isLoading={isLoading && !data}
         data={data}
         onRetry={() => void mutate()}
-        loading={<Skeleton className="h-72 rounded-xl" />}
+        loading={<Skeleton className="h-72 rounded-2xl" />}
         isEmpty={() => false}
       >
         {(payload) => (
@@ -676,6 +674,6 @@ export function RecordPaymentContent() {
           }}
         />
       ) : null}
-    </section>
+    </FeesPageShell>
   );
 }

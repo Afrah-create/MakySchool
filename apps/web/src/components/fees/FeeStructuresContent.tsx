@@ -8,10 +8,10 @@ import { AddFeeStructurePanel } from "@/components/fees/AddFeeStructurePanel";
 import { AssignFeeStructureDialog } from "@/components/fees/AssignFeeStructureDialog";
 import { DataListPanel } from "@makyschool/ui/components/ui/DataListPanel";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
-import { PageHeader } from "@makyschool/ui/components/ui/PageHeader";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { TablePagination } from "@makyschool/ui/components/ui/TablePagination";
+import { FeesPageShell } from "@/components/fees/FeesPageShell";
 import { useApiSWR } from "@/hooks/useApiSWR";
 import { useClientPagination } from "@/hooks/useClientPagination";
 import { useFeesBasePath } from "@/hooks/useFeesBasePath";
@@ -34,19 +34,18 @@ export function FeeStructuresContent() {
   } = useClientPagination({ items: structures });
 
   return (
-    <section className="space-y-6">
-      <PageHeader
-        title="Fee structures"
-        description="Set expected fees per class and term."
-        actions={
-          <CanDo action="manageFees">
-            <button type="button" className="ms-btn-primary inline-flex items-center gap-2" onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Add structure
-            </button>
-          </CanDo>
-        }
-      />
+    <FeesPageShell
+      title="Fee structures"
+      description="Set expected fees per class and term."
+      actions={
+        <CanDo action="manageFees">
+          <button type="button" className="ms-btn-primary inline-flex items-center gap-2" onClick={() => setAddOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Add structure
+          </button>
+        </CanDo>
+      }
+    >
 
       <DataListPanel>
         <QueryState
@@ -159,6 +158,6 @@ export function FeeStructuresContent() {
         onClose={() => setAssignStructure(null)}
         onAssigned={() => void mutate()}
       />
-    </section>
+    </FeesPageShell>
   );
 }

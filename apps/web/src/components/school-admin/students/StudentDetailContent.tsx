@@ -12,6 +12,7 @@ import { StudentAttendancePanel } from "@/components/attendance/StudentAttendanc
 import { StudentDisciplinePanel } from "@/components/discipline/StudentDisciplinePanel";
 import { TransferClassDialog } from "@/components/school-admin/students/TransferClassDialog";
 import { WithdrawStudentDialog } from "@/components/school-admin/students/WithdrawStudentDialog";
+import { ResetStudentPortalPasswordDialog } from "@/components/school-admin/students/ResetStudentPortalPasswordDialog";
 import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
@@ -42,6 +43,7 @@ export function StudentDetailContent({ studentId }: { studentId: string }) {
   const [transferStudent, setTransferStudent] = useState<StudentDetail | null>(null);
   const [withdrawStudent, setWithdrawStudent] = useState<StudentDetail | null>(null);
   const [reinstateStudent, setReinstateStudent] = useState<StudentDetail | null>(null);
+  const [resetPortalStudent, setResetPortalStudent] = useState<StudentDetail | null>(null);
 
   const { data, error, isLoading, mutate } = useApiSWR<StudentDetail>(`/schools/students/${studentId}`);
 
@@ -127,6 +129,10 @@ export function StudentDetailContent({ studentId }: { studentId: string }) {
                     <DropdownMenu
                       trigger={<span className="ms-btn-secondary inline-flex px-3 py-2">Actions</span>}
                       items={[
+                        {
+                          label: student.has_portal_access ? "Reset portal password" : "Enable portal access",
+                          onClick: () => setResetPortalStudent(student),
+                        },
                         { label: "Transfer class", onClick: () => setTransferStudent(student) },
                         {
                           label: isActive ? "Withdraw student" : "Reinstate",
@@ -206,6 +212,55 @@ export function StudentDetailContent({ studentId }: { studentId: string }) {
                         </div>
                       </dl>
                     </div>
+                  </div>
+                  <div className="rounded-xl border border-theme bg-theme-surface p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h2 className="text-sm font-semibold text-theme-primary">Learner portal</h2>
+                        <p className="mt-1 text-xs text-theme-muted">
+                          Parents and the learner share one login using the learner ID.
+                        </p>
+                      </div>
+                      <CanDo action="manageStaff">
+                        <button
+                          type="button"
+                          className="ms-btn-secondary text-sm"
+                          onClick={() => setResetPortalStudent(student)}
+                        >
+                          {student.has_portal_access ? "Reset password" : "Enable access"}
+                        </button>
+                      </CanDo>
+                    </div>
+                    <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                      <div>
+                        <dt className="text-theme-muted">Login ID</dt>
+                        <dd className="font-mono">{student.learner_id}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-theme-muted">Portal status</dt>
+                        <dd>
+                          {student.has_portal_access ? (
+                            <span className="badge-success rounded-full px-2 py-0.5 text-xs font-medium">
+                              Active
+                            </span>
+                          ) : (
+                            <span className="badge-danger rounded-full px-2 py-0.5 text-xs font-medium">
+                              Not provisioned
+                            </span>
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-theme-muted">Password</dt>
+                        <dd>
+                          {student.portal_must_change_password
+                            ? "Temporary — must change on login"
+                            : student.has_portal_access
+                              ? "Set by user"
+                              : "—"}
+                        </dd>
+                      </div>
+                    </dl>
                   </div>
                   <div className="rounded-xl border border-theme bg-theme-surface p-5">
                     <h2 className="text-sm font-semibold text-theme-primary">Account</h2>
@@ -303,6 +358,19 @@ export function StudentDetailContent({ studentId }: { studentId: string }) {
         student={reinstateStudent}
         onClose={() => setReinstateStudent(null)}
         onSaved={() => void mutate()}
+      />
+      <ResetStudentPortalPasswordDialog
+        student={
+          resetPortalStudent
+            ? {
+                id: resetPortalStudent.id,
+                full_name: resetPortalStudent.full_name,
+                learner_id: resetPortalStudent.learner_id,
+              }
+            : null
+        }
+        onClose={() => setResetPortalStudent(null)}
+        onDone={() => void mutate()}
       />
     </DashboardPage>
   );

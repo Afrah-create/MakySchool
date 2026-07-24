@@ -97,17 +97,26 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // API/uploads must never be portal-redirected — browser clients use same-origin /api/*
+  // with redirect:"manual", and opaque redirects surface as status 0 + empty body.
+  const isApiOrUploadPath =
+    pathname.startsWith("/api") || pathname.startsWith("/uploads");
+
   if (tenantPayload) {
     const mustChangePassword = Boolean(tenantPayload.mustChangePassword);
     const setupCompleted = Boolean(tenantPayload.setupCompleted);
     const portal = portalForRole(tenantPayload.role);
     const roleHome = homePathForPortal(portal);
 
-    if (mustChangePassword && pathname !== "/auth/change-password") {
+    if (
+      mustChangePassword &&
+      !isApiOrUploadPath &&
+      pathname !== "/auth/change-password"
+    ) {
       return NextResponse.redirect(new URL("/auth/change-password", request.url));
     }
 
-    if (!mustChangePassword) {
+    if (!mustChangePassword && !isApiOrUploadPath) {
       if (pathname.startsWith("/dashboard") && portal !== "school-admin") {
         return NextResponse.redirect(new URL(roleHome, request.url));
       }
@@ -151,7 +160,7 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(new URL(SETUP_PATH, request.url));
       }
 
-      if (!mustChangePassword && setupCompleted && pathname === SETUP_PATH) {
+      if (setupCompleted && pathname === SETUP_PATH) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }
     }

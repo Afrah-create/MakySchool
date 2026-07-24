@@ -38,6 +38,9 @@ export type StudentDetail = StudentListItem & {
   updated_at: string;
   created_by: string | null;
   created_by_name: string | null;
+  user_id?: string | null;
+  has_portal_access?: boolean;
+  portal_must_change_password?: boolean;
   guardian: StudentGuardian | null;
   class_history: StudentClassHistory[];
   fee_history: unknown[];
@@ -68,6 +71,7 @@ export type CreateStudentResponse = {
     guardian_name: string;
     guardian_phone: string | null;
   };
+  temp_password?: string | null;
 };
 
 export type {

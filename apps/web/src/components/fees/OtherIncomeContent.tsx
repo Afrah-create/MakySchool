@@ -8,11 +8,11 @@ import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
 import { FilterField } from "@makyschool/ui/components/ui/FilterField";
 import { FilterSegment } from "@makyschool/ui/components/ui/FilterSegment";
 import { ListToolbar } from "@makyschool/ui/components/ui/ListToolbar";
-import { PageHeader } from "@makyschool/ui/components/ui/PageHeader";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { TablePagination } from "@makyschool/ui/components/ui/TablePagination";
 import { AddOtherIncomePanel } from "@/components/fees/AddOtherIncomePanel";
+import { FeesPageShell } from "@/components/fees/FeesPageShell";
 import { FeesStatStrip } from "@/components/fees/FeesStatStrip";
 import { PdfDownloadButton } from "@/components/fees/PdfDownloadButton";
 import { CanDo } from "@/components/ui/CanDo";
@@ -96,20 +96,18 @@ export function OtherIncomeContent() {
   }
 
   return (
-    <section className="space-y-6">
-      <PageHeader
-        title="Other income"
-        description="Non-fee income such as donations, grants, and sales."
-        actions={
-          <CanDo action="manageOtherIncome">
-            <button type="button" className="ms-btn-primary inline-flex items-center gap-2" onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Record income
-            </button>
-          </CanDo>
-        }
-      />
-
+    <FeesPageShell
+      title="Other income"
+      description="Non-fee income such as donations, grants, and sales."
+      actions={
+        <CanDo action="manageOtherIncome">
+          <button type="button" className="ms-btn-primary inline-flex items-center gap-2" onClick={() => setAddOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Record income
+          </button>
+        </CanDo>
+      }
+    >
       <FeesStatStrip
         items={[
           { label: "Records on page", value: items.length },
@@ -312,6 +310,6 @@ export function OtherIncomeContent() {
           />
         </label>
       </ConfirmDialog>
-    </section>
+    </FeesPageShell>
   );
 }

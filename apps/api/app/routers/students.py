@@ -22,6 +22,7 @@ from app.lib.uploads import ALLOWED_STUDENT_PHOTO_TYPES, save_student_photo
 from app.lib.storage_urls import enrich_student_media
 from app.lib.user_sql import USER_DISPLAY_NAME_SQL
 from app.middleware.subscription_guard import require_tenant_with_subscription
+from app.services.students.accounts import provision_learner_account, reset_learner_password
 from app.services.students.import_service import confirm_import, preview_import
 
 router = APIRouter()
@@ -278,6 +279,20 @@ async def _fetch_student_detail(
         format_class_name(student["level"], student["stream"]) if student["level"] else None
     )
 
+    portal_user = None
+    user_id = student.get("user_id")
+    if user_id:
+        portal_user = await conn.fetchrow(
+            """
+            SELECT id, is_temp_password, is_active, account_status
+            FROM users
+            WHERE id = $1 AND school_id = $2
+            LIMIT 1
+            """,
+            user_id,
+            school_id,
+        )
+
     return {
         "id": str(student["id"]),
         "learner_id": student["learner_id"],
@@ -295,6 +310,9 @@ async def _fetch_student_detail(
         "updated_at": student["updated_at"],
         "created_by": str(student["created_by"]) if student["created_by"] else None,
         "created_by_name": student["created_by_name"],
+        "user_id": str(user_id) if user_id else None,
+        "has_portal_access": bool(portal_user),
+        "portal_must_change_password": bool(portal_user and portal_user["is_temp_password"]),
         "guardian": _serialize_row(guardian) if guardian else None,
         "class_history": [
             {
@@ -785,10 +803,15 @@ async def create_student(
     student_id = uuid.uuid4()
     actor_id = uuid.UUID(str(actor["sub"]))
     parsed_dob = _parse_optional_date(date_of_birth)
+    temp_password: str | None = None
 
     try:
         async with conn.transaction():
             learner_id = await generate_learner_id(conn, school_id)
+            school_slug = await conn.fetchval(
+                "SELECT slug FROM schools WHERE id = $1 LIMIT 1",
+                school_id,
+            )
 
             photo_url: str | None = None
             if photo_buffer and photo_mimetype:
@@ -842,6 +865,16 @@ async def create_student(
                 class_id,
                 actor_id,
             )
+
+            temp_password = await provision_learner_account(
+                conn,
+                school_id=school_id,
+                school_slug=str(school_slug),
+                student_id=student_id,
+                learner_id=learner_id,
+                full_name=full_name.strip(),
+                created_by=actor_id,
+            )
     except Exception as exc:
         logger.exception("create_student failed: %s", exc)
         raise HTTPException(
@@ -864,7 +897,8 @@ async def create_student(
                 "class_name": class_info["name"] if class_info else None,
                 "guardian_name": guardian_name.strip(),
                 "guardian_phone": guardian_phone.strip() if guardian_phone else None,
-            }
+            },
+            "temp_password": temp_password,
         }
     }
 
@@ -885,6 +919,53 @@ async def get_student(
         )
 
     return {"data": await enrich_student_media(student, school_id)}
+
+
+@router.post("/{student_id}/reset-password")
+async def reset_student_portal_password(
+    student_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+
+    if not can(actor["role"], "manageStaff"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "Forbidden", "code": "FORBIDDEN"},
+        )
+
+    exists = await conn.fetchval(
+        "SELECT 1 FROM students WHERE id = $1 AND school_id = $2 LIMIT 1",
+        student_id,
+        school_id,
+    )
+    if not exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Student not found in your school.", "code": "NOT_FOUND"},
+        )
+
+    try:
+        async with conn.transaction():
+            temp_password = await reset_learner_password(
+                conn,
+                school_id=school_id,
+                student_id=student_id,
+            )
+    except LookupError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Student not found in your school.", "code": "NOT_FOUND"},
+        ) from None
+    except Exception as exc:
+        logger.exception("reset_student_portal_password failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "Could not reset portal password.", "code": "SERVER_ERROR"},
+        ) from exc
+
+    return {"data": {"temp_password": temp_password}}
 
 
 @router.patch("/{student_id}")

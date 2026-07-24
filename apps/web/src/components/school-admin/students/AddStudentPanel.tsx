@@ -217,6 +217,41 @@ export function AddStudentPanel({
           </p>
           <p className="mt-2 text-sm text-theme-primary">{success.student.full_name}</p>
           <p className="text-sm text-theme-muted">{success.student.class_name ?? "—"}</p>
+
+          {success.temp_password ? (
+            <div className="mt-6 w-full max-w-sm rounded-xl border border-theme bg-theme-raised p-4 text-left">
+              <p className="text-xs font-medium uppercase tracking-wide text-theme-muted">
+                Portal login (learner & parent)
+              </p>
+              <dl className="mt-3 space-y-2 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-theme-muted">Learner ID</dt>
+                  <dd className="font-mono font-medium text-theme-primary">{success.student.learner_id}</dd>
+                </div>
+                <div className="flex items-start justify-between gap-2">
+                  <dt className="pt-0.5 text-theme-muted">Temp password</dt>
+                  <dd className="flex items-center gap-2">
+                    <code className="font-mono text-theme-primary">{success.temp_password}</code>
+                    <button
+                      type="button"
+                      className="ms-btn-secondary px-2 py-1 text-xs"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(
+                          `Learner ID: ${success.student.learner_id}\nPassword: ${success.temp_password}`,
+                        );
+                      }}
+                    >
+                      Copy
+                    </button>
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-3 text-xs leading-relaxed text-theme-muted">
+                Share these credentials securely. On first login they must set a strong password.
+                This temporary password cannot be shown again.
+              </p>
+            </div>
+          ) : null}
         </div>
       ) : (
         <form onSubmit={(event) => void handleSubmit(event)} className="space-y-6">

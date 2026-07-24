@@ -13,6 +13,7 @@ from app.services.students.import_csv import (
     parse_csv_bytes,
     validate_row,
 )
+from app.services.students.accounts import provision_learner_account
 from app.services.students.learner_ids import allocate_learner_ids
 
 DuplicateStrategy = Literal["skip", "import_all"]
@@ -234,6 +235,7 @@ async def confirm_import(
         raise ValueError("No rows available to import with the selected options.")
 
     learner_ids = await allocate_learner_ids(conn, school_id, len(rows))
+    school_slug = await conn.fetchval("SELECT slug FROM schools WHERE id = $1 LIMIT 1", school_id)
     imported = 0
     skipped = 0
 
@@ -247,6 +249,7 @@ async def confirm_import(
             class_id = uuid.UUID(str(payload["class_id"]))
             dob_raw = payload.get("date_of_birth")
             dob = date.fromisoformat(dob_raw) if dob_raw else None
+            learner_id = learner_ids[index]
 
             await conn.execute(
                 """
@@ -257,7 +260,7 @@ async def confirm_import(
                 """,
                 student_id,
                 school_id,
-                learner_ids[index],
+                learner_id,
                 payload["full_name"],
                 dob,
                 payload.get("gender"),
@@ -290,6 +293,16 @@ async def confirm_import(
                 student_id,
                 class_id,
                 actor_id,
+            )
+
+            await provision_learner_account(
+                conn,
+                school_id=school_id,
+                school_slug=str(school_slug),
+                student_id=student_id,
+                learner_id=learner_id,
+                full_name=payload["full_name"],
+                created_by=actor_id,
             )
             imported += 1
 

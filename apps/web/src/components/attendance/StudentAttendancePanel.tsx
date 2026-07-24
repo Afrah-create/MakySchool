@@ -35,9 +35,11 @@ const DAY_DOT: { [K in AttendanceDayStatus]: string } = {
 export function StudentAttendancePanel({
   studentId,
   compact = false,
+  showNotify = true,
 }: {
   studentId: string;
   compact?: boolean;
+  showNotify?: boolean;
 }) {
   const { data: term } = useCurrentTerm();
   const termId = term?.id ?? '';
@@ -123,18 +125,20 @@ export function StudentAttendancePanel({
               />
             </label>
           </div>
-          <button
-            type="button"
-            className="ms-btn-secondary inline-flex items-center gap-2"
-            onClick={() => {
-              setNotifyDate(dateTo);
-              setNotifyOpen(true);
-            }}
-            disabled={!guardian.canNotify}
-          >
-            <Bell className="h-4 w-4" />
-            Notify parent
-          </button>
+          {showNotify ? (
+            <button
+              type="button"
+              className="ms-btn-secondary inline-flex items-center gap-2"
+              onClick={() => {
+                setNotifyDate(dateTo);
+                setNotifyOpen(true);
+              }}
+              disabled={!guardian.canNotify}
+            >
+              <Bell className="h-4 w-4" />
+              Notify parent
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -255,7 +259,7 @@ export function StudentAttendancePanel({
             <h3 className="text-sm font-semibold text-theme-primary">Recent absences</h3>
             <p className="text-xs text-theme-muted">Latest period absences in range</p>
           </div>
-          {compact && (
+          {compact && showNotify && (
             <button
               type="button"
               className="ms-btn-secondary inline-flex items-center gap-1.5 text-xs"
@@ -280,7 +284,7 @@ export function StudentAttendancePanel({
                   <th className="px-4 py-3 text-left">Subject</th>
                   <th className="px-4 py-3 text-left">Period</th>
                   <th className="px-4 py-3 text-left">Notes</th>
-                  {!compact && <th className="px-4 py-3 text-right">Action</th>}
+                  {!compact && showNotify ? <th className="px-4 py-3 text-right">Action</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -294,7 +298,7 @@ export function StudentAttendancePanel({
                     <td className="px-4 py-3 text-sm italic text-theme-muted">
                       {row.notes || '—'}
                     </td>
-                    {!compact && (
+                    {!compact && showNotify ? (
                       <td className="px-4 py-3 text-right">
                         <button
                           type="button"
@@ -308,7 +312,7 @@ export function StudentAttendancePanel({
                           Notify
                         </button>
                       </td>
-                    )}
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -374,23 +378,25 @@ export function StudentAttendancePanel({
         </div>
       )}
 
-      {!guardian.canNotify && !compact && (
+      {showNotify && !guardian.canNotify && !compact && (
         <StatusBanner
           tone="info"
           message="Add a primary guardian phone on the student profile to enable parent SMS notices."
         />
       )}
 
-      <NotifyParentPanel
-        open={notifyOpen}
-        onClose={() => setNotifyOpen(false)}
-        studentId={studentId}
-        studentName={data.studentName}
-        className={data.className}
-        guardian={guardian}
-        defaultDate={notifyDate}
-        defaultType="day_absent"
-      />
+      {showNotify ? (
+        <NotifyParentPanel
+          open={notifyOpen}
+          onClose={() => setNotifyOpen(false)}
+          studentId={studentId}
+          studentName={data.studentName}
+          className={data.className}
+          guardian={guardian}
+          defaultDate={notifyDate}
+          defaultType="day_absent"
+        />
+      ) : null}
     </div>
   );
 }

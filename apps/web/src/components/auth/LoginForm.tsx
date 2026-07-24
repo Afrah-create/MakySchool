@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Building2, Lock, Mail } from "lucide-react";
+import { Building2, IdCard, Lock } from "lucide-react";
 import {
   AuthAlert,
   AuthInput,
@@ -17,7 +17,7 @@ import { apiClient } from "@/lib/api/client";
 import { broadcastActivity } from "@/lib/auth/session-broadcast";
 import { clearSchoolSlug, persistSchoolSlug, readStoredSchoolSlug } from "@/lib/auth/session";
 
-type LoginStep = "email" | "password" | "school";
+type LoginStep = "identifier" | "password" | "school";
 
 type LoginResponse = {
   accountType: "school";
@@ -26,8 +26,18 @@ type LoginResponse = {
   school?: { slug: string; name: string; status: string } | null;
 };
 
-function isValidEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+function looksLikeEmail(value: string) {
+  return value.includes("@");
+}
+
+function isValidIdentifier(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (looksLikeEmail(trimmed)) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+  }
+  // Learner IDs are alphanumeric with optional separators (e.g. SCH2024000123)
+  return /^[A-Za-z0-9][A-Za-z0-9\-_]{2,31}$/.test(trimmed);
 }
 
 export function LoginForm({
@@ -38,55 +48,66 @@ export function LoginForm({
   lockedSchoolSlug?: string;
 }) {
   const router = useRouter();
-  const [step, setStep] = useState<LoginStep>("email");
-  const [email, setEmail] = useState("");
+  const [step, setStep] = useState<LoginStep>("identifier");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [schoolSlug, setSchoolSlug] = useState(
     () => lockedSchoolSlug ?? initialSchoolSlug ?? readStoredSchoolSlug() ?? "",
   );
   const effectiveSchoolSlug = lockedSchoolSlug ?? schoolSlug;
-  const [emailError, setEmailError] = useState<string | null>(null);
+  const [identifierError, setIdentifierError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [needsSchoolSlug, setNeedsSchoolSlug] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const isLearnerLogin = identifier.trim().length > 0 && !looksLikeEmail(identifier);
+  // Learners: ID → password (2 steps). School slug only if the API requires it (rare).
   const totalSteps = needsSchoolSlug || step === "school" ? 3 : 2;
-  const currentStep = step === "email" ? 1 : step === "password" ? 2 : 3;
+  const currentStep = step === "identifier" ? 1 : step === "password" ? 2 : 3;
 
-  function goToEmailStep() {
-    setStep("email");
+  function goToIdentifierStep() {
+    setStep("identifier");
     setError(null);
-    setEmailError(null);
+    setIdentifierError(null);
   }
 
-  function handleContinueEmail(event: React.FormEvent) {
+  function handleContinueIdentifier(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
 
-    if (!isValidEmail(email)) {
-      setEmailError("Enter a valid email address");
+    if (!isValidIdentifier(identifier)) {
+      setIdentifierError(
+        looksLikeEmail(identifier)
+          ? "Enter a valid email address"
+          : "Enter a valid learner ID (from your school)",
+      );
       return;
     }
 
-    setEmailError(null);
+    setIdentifierError(null);
     setStep("password");
   }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
 
-    if (step === "email") {
-      handleContinueEmail(event);
+    if (step === "identifier") {
+      handleContinueIdentifier(event);
+      return;
+    }
+
+    if (step === "school") {
+      if (!effectiveSchoolSlug.trim()) {
+        setError("Enter your school slug");
+        return;
+      }
+      setError(null);
+      setStep("password");
       return;
     }
 
     if (step === "password" && !password) {
       setError("Enter your password");
-      return;
-    }
-
-    if (step === "school" && !effectiveSchoolSlug.trim()) {
-      setError("Enter your school slug");
       return;
     }
 
@@ -97,8 +118,9 @@ export function LoginForm({
       const response = await apiClient<LoginResponse>("/auth/login", {
         method: "POST",
         body: {
-          email: email.trim(),
+          email: identifier.trim(),
           password,
+          // Staff multi-school / rare learner ID collisions only
           schoolSlug: lockedSchoolSlug ?? (effectiveSchoolSlug.trim() || undefined),
         },
         schoolSlug: lockedSchoolSlug,
@@ -127,7 +149,11 @@ export function LoginForm({
       if (err.code === "SCHOOL_SLUG_REQUIRED" || message.toLowerCase().includes("school slug")) {
         setNeedsSchoolSlug(true);
         setStep("school");
-        setError("Your email is linked to multiple schools. Enter your school slug to continue.");
+        setError(
+          isLearnerLogin
+            ? "This learner ID matches more than one school. Enter your school slug to continue."
+            : "Your email is linked to multiple schools. Enter your school slug to continue.",
+        );
       } else {
         setError(message);
       }
@@ -140,21 +166,22 @@ export function LoginForm({
     <form onSubmit={(event) => void handleSubmit(event)} className="flex flex-col gap-5">
       <AuthStepIndicator current={currentStep} total={totalSteps} />
 
-      {step === "email" ? (
-        <div key="email-step" className="auth-step-enter space-y-5">
+      {step === "identifier" ? (
+        <div key="identifier-step" className="auth-step-enter space-y-5">
           <AuthInput
-            id="email"
-            label="Email address"
-            type="email"
-            value={email}
+            id="identifier"
+            label="Email or learner ID"
+            type="text"
+            value={identifier}
             onChange={(value) => {
-              setEmail(value);
-              if (emailError) setEmailError(null);
+              setIdentifier(value);
+              if (identifierError) setIdentifierError(null);
             }}
-            autoComplete="email"
-            placeholder="you@school.ug"
-            icon={Mail}
-            error={emailError}
+            autoComplete="username"
+            placeholder="you@school.ug or SCH2024000123"
+            icon={IdCard}
+            error={identifierError}
+            hint="Staff use email. Parents and learners use the learner ID only."
           />
           <AuthSubmitButton loading={false}>Continue</AuthSubmitButton>
         </div>
@@ -165,10 +192,10 @@ export function LoginForm({
           <div className="auth-context-chip px-4 py-3">
             <p className="text-xs font-medium uppercase tracking-wide text-theme-muted">Signing in as</p>
             <div className="mt-1 flex items-center justify-between gap-3">
-              <p className="truncate text-sm font-medium text-theme-primary">{email}</p>
+              <p className="truncate text-sm font-medium text-theme-primary">{identifier}</p>
               <button
                 type="button"
-                onClick={goToEmailStep}
+                onClick={goToIdentifierStep}
                 className="shrink-0 text-xs font-medium text-theme-accent hover:underline"
               >
                 Edit
@@ -190,16 +217,22 @@ export function LoginForm({
           {error ? <AuthAlert message={error} /> : null}
 
           <div className="flex items-center justify-between gap-2">
-            <Link
-              href="/auth/forgot-password"
-              className="text-xs font-medium text-theme-accent hover:underline"
-            >
-              Forgot password?
-            </Link>
+            {isLearnerLogin ? (
+              <p className="text-xs text-theme-muted">
+                Forgot password? Ask your school administrator to reset it.
+              </p>
+            ) : (
+              <Link
+                href="/auth/forgot-password"
+                className="text-xs font-medium text-theme-accent hover:underline"
+              >
+                Forgot password?
+              </Link>
+            )}
           </div>
 
           <AuthSubmitButton loading={loading}>Sign in</AuthSubmitButton>
-          <AuthSecondaryButton onClick={goToEmailStep}>Back</AuthSecondaryButton>
+          <AuthSecondaryButton onClick={goToIdentifierStep}>Back</AuthSecondaryButton>
         </div>
       ) : null}
 
@@ -207,7 +240,7 @@ export function LoginForm({
         <div key="school-step" className="auth-step-enter space-y-5">
           <div className="auth-context-chip px-4 py-3">
             <p className="text-xs font-medium uppercase tracking-wide text-theme-muted">Account</p>
-            <p className="mt-1 truncate text-sm font-medium text-theme-primary">{email}</p>
+            <p className="mt-1 truncate text-sm font-medium text-theme-primary">{identifier}</p>
           </div>
 
           <AuthInput
@@ -227,7 +260,7 @@ export function LoginForm({
 
           {error ? <AuthAlert message={error} /> : null}
 
-          <AuthSubmitButton loading={loading}>Continue to sign in</AuthSubmitButton>
+          <AuthSubmitButton loading={loading}>Continue</AuthSubmitButton>
           <AuthSecondaryButton onClick={() => setStep("password")}>Back</AuthSecondaryButton>
         </div>
       ) : null}

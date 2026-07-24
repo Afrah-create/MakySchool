@@ -23,6 +23,7 @@ TenantCtx = Annotated[
 
 ALLOWED_ROLES = {"teacher", "admin", "head_teacher"}
 ADMIN_ROLES = {"admin", "head_teacher"}
+DOSSIER_ROLES = ALLOWED_ROLES | {"learner", "student"}
 NOTIFY_TYPES = frozenset({"period_absent", "day_absent", "manual"})
 
 
@@ -89,8 +90,9 @@ class NotifyParentPayload(BaseModel):
 
 # ── Internal Security Verification Helpers ─────────────────────────────────────
 
-def _require_allowed_role(actor: dict[str, Any]) -> None:
-    if actor["role"] not in ALLOWED_ROLES:
+def _require_allowed_role(actor: dict[str, Any], *, allow_learner: bool = False) -> None:
+    allowed = DOSSIER_ROLES if allow_learner else ALLOWED_ROLES
+    if actor["role"] not in allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -195,6 +197,28 @@ async def _assert_can_view_student(
         return dict(student)
 
     actor_id = _actor_user_id(actor)
+
+    if actor["role"] in ("learner", "student"):
+        linked = await conn.fetchval(
+            """
+            SELECT 1 FROM students
+            WHERE id = $1 AND school_id = $2 AND user_id = $3
+            LIMIT 1
+            """,
+            student_id,
+            school_id,
+            actor_id,
+        )
+        if not linked:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": "You do not have access to this student's attendance.",
+                    "code": "FORBIDDEN",
+                },
+            )
+        return dict(student)
+
     class_id = student["current_class_id"]
     if not class_id:
         raise HTTPException(
@@ -397,7 +421,7 @@ async def get_student_attendance_dossier(
     date_to: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
 ):
     school_id, actor = ctx
-    _require_allowed_role(actor)
+    _require_allowed_role(actor, allow_learner=True)
     student = await _assert_can_view_student(conn, actor, student_id, school_id)
 
     # Default range: term bounds or last 90 days

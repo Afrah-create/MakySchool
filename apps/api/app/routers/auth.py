@@ -44,6 +44,7 @@ from app.services.central_auth import (
 )
 from app.services.central_auth import authenticate as central_authenticate
 from app.services.central_auth import update_password as central_update_password
+from app.services.students.accounts import is_learner_portal_email
 from app.services.login_lockout import (
     LoginLockoutResult,
     ensure_not_locked,
@@ -106,8 +107,10 @@ async def _verify_tenant_credentials(
     password: str,
 ) -> LoginLockoutResult:
     user_id = candidate["id"]
+    role = normalize_user_role(candidate["role"])
+    use_local_only = role == "learner" or is_learner_portal_email(candidate["email"])
 
-    if central_auth_enabled():
+    if central_auth_enabled() and not use_local_only:
         locked = await ensure_not_locked(conn, table="users", user_id=user_id)
         if locked:
             return locked
@@ -151,100 +154,27 @@ async def _verify_tenant_credentials(
     )
 
 
-@router.post("/login")
-@limiter.limit("20/hour", key_func=get_login_ip_key)
-@limiter.limit("5/minute", key_func=get_login_ip_key)
-async def login(
-    body: LoginBody,
+CANDIDATE_SELECT = f"""
+    SELECT u.id, u.email, u.password_hash, u.auth_user_id,
+           {USER_DISPLAY_NAME_SQL} AS name,
+           u.role, u.school_id, u.account_status,
+           COALESCE(u.is_active, u.account_status = 'ACTIVE' OR u.account_status IS NULL) AS is_active,
+           COALESCE(u.is_temp_password, false) AS is_temp_password,
+           s.setup_completed_at,
+           s.slug AS school_slug, s.name AS school_name,
+           s.status AS school_status, s.subscription_status
+    FROM users u
+    INNER JOIN schools s ON s.id = u.school_id
+"""
+
+
+async def _complete_tenant_login(
+    conn: asyncpg.Connection,
     request: Request,
     response: Response,
-    conn: asyncpg.Connection = Depends(get_db),
+    candidate: asyncpg.Record,
+    password: str,
 ):
-    if not body.email.strip() or not body.password:
-        return Response(
-            content='{"error":"Email and password are required"}',
-            status_code=400,
-            media_type="application/json",
-        )
-
-    normalized_email = body.email.lower().strip()
-    header_slug = (request.headers.get(TENANT_HEADER_SLUG) or "").strip().lower()
-    requested_slug = (body.schoolSlug or header_slug or "").strip().lower() or None
-
-    clear_auth_cookies(response)
-
-    if _resolve_client_app(request) == "platform":
-        result = await authenticate_superadmin(conn, normalized_email, body.password, response)
-        if not result["ok"]:
-            payload: dict[str, str] = {"error": result["error"]}
-            if result.get("code"):
-                payload["code"] = result["code"]
-            return Response(
-                content=json.dumps(payload),
-                status_code=result["status"],
-                media_type="application/json",
-            )
-        return {"data": result["data"]}
-
-    if await is_superadmin_email(conn, normalized_email):
-        return Response(
-            content='{"error":"Invalid credentials"}',
-            status_code=401,
-            media_type="application/json",
-        )
-
-    password_clause = ""
-    if not settings.central_auth_enabled:
-        password_clause = "AND u.password_hash IS NOT NULL"
-
-    candidates = await conn.fetch(
-        f"""
-        SELECT u.id, u.email, u.password_hash, u.auth_user_id,
-               {USER_DISPLAY_NAME_SQL} AS name,
-               u.role, u.school_id, u.account_status,
-               COALESCE(u.is_active, u.account_status = 'ACTIVE' OR u.account_status IS NULL) AS is_active,
-               COALESCE(u.is_temp_password, false) AS is_temp_password,
-               s.setup_completed_at,
-               s.slug AS school_slug, s.name AS school_name,
-               s.status AS school_status, s.subscription_status
-        FROM users u
-        INNER JOIN schools s ON s.id = u.school_id
-        WHERE LOWER(u.email) = LOWER($1) {password_clause}
-        ORDER BY s.name ASC
-        """,
-        normalized_email,
-    )
-
-    if not candidates:
-        return Response(
-            content='{"error":"Invalid credentials"}',
-            status_code=401,
-            media_type="application/json",
-        )
-
-    candidate = candidates[0]
-    if len(candidates) > 1:
-        if not requested_slug:
-            return Response(
-                content='{"error":"Multiple schools found for this email. Enter your school slug to continue.","code":"SCHOOL_SLUG_REQUIRED"}',
-                status_code=400,
-                media_type="application/json",
-            )
-        matched = next((r for r in candidates if r["school_slug"] == requested_slug), None)
-        if not matched:
-            return Response(
-                content='{"error":"Invalid credentials"}',
-                status_code=401,
-                media_type="application/json",
-            )
-        candidate = matched
-    elif requested_slug and candidate["school_slug"] != requested_slug:
-        return Response(
-            content='{"error":"Invalid credentials"}',
-            status_code=401,
-            media_type="application/json",
-        )
-
     if not candidate["is_active"]:
         await asyncio.sleep(0.2)
         return Response(
@@ -253,7 +183,7 @@ async def login(
             media_type="application/json",
         )
 
-    lockout = await _verify_tenant_credentials(conn, candidate, body.password)
+    lockout = await _verify_tenant_credentials(conn, candidate, password)
     if not lockout.ok:
         payload = {"error": lockout.error}
         if lockout.code:
@@ -349,8 +279,158 @@ async def login(
                 "school_id": str(candidate["school_id"]),
             },
             "school": school,
+            "mustChangePassword": is_temp,
+            "setupCompleted": setup_completed,
         }
     }
+
+
+@router.post("/login")
+@limiter.limit("20/hour", key_func=get_login_ip_key)
+@limiter.limit("5/minute", key_func=get_login_ip_key)
+async def login(
+    body: LoginBody,
+    request: Request,
+    response: Response,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    identifier = body.email.strip()
+    if not identifier or not body.password:
+        return Response(
+            content='{"error":"Email or learner ID and password are required"}',
+            status_code=400,
+            media_type="application/json",
+        )
+
+    header_slug = (request.headers.get(TENANT_HEADER_SLUG) or "").strip().lower()
+    requested_slug = (body.schoolSlug or header_slug or "").strip().lower() or None
+    is_email_login = "@" in identifier
+
+    clear_auth_cookies(response)
+
+    if is_email_login:
+        normalized_email = identifier.lower()
+
+        if _resolve_client_app(request) == "platform":
+            result = await authenticate_superadmin(conn, normalized_email, body.password, response)
+            if not result["ok"]:
+                payload: dict[str, str] = {"error": result["error"]}
+                if result.get("code"):
+                    payload["code"] = result["code"]
+                return Response(
+                    content=json.dumps(payload),
+                    status_code=result["status"],
+                    media_type="application/json",
+                )
+            return {"data": result["data"]}
+
+        if await is_superadmin_email(conn, normalized_email):
+            return Response(
+                content='{"error":"Invalid credentials"}',
+                status_code=401,
+                media_type="application/json",
+            )
+
+        password_clause = ""
+        if not settings.central_auth_enabled:
+            password_clause = "AND u.password_hash IS NOT NULL"
+
+        candidates = await conn.fetch(
+            CANDIDATE_SELECT
+            + f" WHERE LOWER(u.email) = LOWER($1) {password_clause} ORDER BY s.name ASC",
+            normalized_email,
+        )
+
+        if not candidates:
+            return Response(
+                content='{"error":"Invalid credentials"}',
+                status_code=401,
+                media_type="application/json",
+            )
+
+        candidate = candidates[0]
+        if len(candidates) > 1:
+            if not requested_slug:
+                return Response(
+                    content='{"error":"Multiple schools found for this email. Enter your school slug to continue.","code":"SCHOOL_SLUG_REQUIRED"}',
+                    status_code=400,
+                    media_type="application/json",
+                )
+            matched = next((r for r in candidates if r["school_slug"] == requested_slug), None)
+            if not matched:
+                return Response(
+                    content='{"error":"Invalid credentials"}',
+                    status_code=401,
+                    media_type="application/json",
+                )
+            candidate = matched
+        elif requested_slug and candidate["school_slug"] != requested_slug:
+            return Response(
+                content='{"error":"Invalid credentials"}',
+                status_code=401,
+                media_type="application/json",
+            )
+
+        return await _complete_tenant_login(conn, request, response, candidate, body.password)
+
+    # Learner ID login (parents & learners share this account)
+    if _resolve_client_app(request) == "platform":
+        return Response(
+            content='{"error":"Invalid credentials"}',
+            status_code=401,
+            media_type="application/json",
+        )
+
+    learner_id = identifier.upper()
+    password_clause = ""
+    if not settings.central_auth_enabled:
+        password_clause = "AND u.password_hash IS NOT NULL"
+
+    candidates = await conn.fetch(
+        CANDIDATE_SELECT
+        + f"""
+        INNER JOIN students st ON st.user_id = u.id AND st.school_id = u.school_id
+        WHERE UPPER(st.learner_id) = UPPER($1)
+          AND LOWER(u.role) = 'learner'
+          {password_clause}
+        ORDER BY s.name ASC
+        """,
+        learner_id,
+    )
+
+    if not candidates:
+        await asyncio.sleep(0.2)
+        return Response(
+            content='{"error":"Invalid credentials"}',
+            status_code=401,
+            media_type="application/json",
+        )
+
+    candidate = candidates[0]
+    if len(candidates) > 1:
+        # Rare: same learner ID string exists at more than one school
+        if not requested_slug:
+            return Response(
+                content='{"error":"Multiple schools found for this learner ID. Enter your school slug to continue.","code":"SCHOOL_SLUG_REQUIRED"}',
+                status_code=400,
+                media_type="application/json",
+            )
+        matched = next((r for r in candidates if r["school_slug"] == requested_slug), None)
+        if not matched:
+            return Response(
+                content='{"error":"Invalid credentials"}',
+                status_code=401,
+                media_type="application/json",
+            )
+        candidate = matched
+    elif requested_slug and candidate["school_slug"] != requested_slug:
+        return Response(
+            content='{"error":"Invalid credentials"}',
+            status_code=401,
+            media_type="application/json",
+        )
+
+    return await _complete_tenant_login(conn, request, response, candidate, body.password)
 
 
 @router.get("/me")
@@ -520,7 +600,10 @@ async def change_password(
             media_type="application/json",
         )
 
-    if central_auth_enabled():
+    role = normalize_user_role(user["role"])
+    local_only = role == "learner" or is_learner_portal_email(user["email"])
+
+    if central_auth_enabled() and not local_only:
         try:
             if auth_tokens is None:
                 auth_tokens = await central_authenticate(user["email"], body.currentPassword)
@@ -547,9 +630,8 @@ async def change_password(
         user["id"],
     )
 
-    role = normalize_user_role(user["role"])
     setup_completed = is_school_setup_completed(user["setup_completed_at"])
-    redirect = "/dashboard" if setup_completed else "/dashboard/setup"
+    redirect = resolve_school_redirect_path(role, False, setup_completed)
     payload = {
         "sub": str(user["id"]),
         "email": user["email"],

@@ -9,10 +9,10 @@ import { SmsReminderPanel } from "@/components/fees/SmsReminderPanel";
 import { WaiveFeeDialog } from "@/components/fees/WaiveFeeDialog";
 import { DataListPanel } from "@makyschool/ui/components/ui/DataListPanel";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
-import { PageHeader } from "@makyschool/ui/components/ui/PageHeader";
 import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { TablePagination } from "@makyschool/ui/components/ui/TablePagination";
+import { FeesPageShell } from "@/components/fees/FeesPageShell";
 import { useApiSWR } from "@/hooks/useApiSWR";
 import { useFeesBasePath } from "@/hooks/useFeesBasePath";
 import { formatUGX } from "@/lib/formatCurrency";
@@ -85,28 +85,26 @@ export function OutstandingFeesContent() {
   }
 
   return (
-    <section className="space-y-6">
-      <PageHeader
-        title="Outstanding fees"
-        description="Students with unpaid or partial balances."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="ms-btn-secondary" onClick={() => window.print()}>
-              Print
-            </button>
-            <button type="button" className="ms-btn-secondary" onClick={exportCsv}>
-              Export CSV
-            </button>
-          </div>
-        }
-      />
-
+    <FeesPageShell
+      title="Outstanding fees"
+      description="Students with unpaid or partial balances."
+      actions={
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="ms-btn-secondary" onClick={() => window.print()}>
+            Print
+          </button>
+          <button type="button" className="ms-btn-secondary" onClick={exportCsv}>
+            Export CSV
+          </button>
+        </div>
+      }
+    >
       <QueryState
         error={error}
         isLoading={isLoading}
         data={data}
         onRetry={() => void mutate()}
-        loading={<Skeleton className="h-64" />}
+        loading={<Skeleton className="h-64 rounded-2xl" />}
         empty={
           <EmptyState title="No outstanding fees." description="All students are up to date for the selected filters." />
         }
@@ -122,7 +120,10 @@ export function OutstandingFeesContent() {
                   value: formatUGX(payload.summary.total_outstanding),
                   tone: payload.summary.total_outstanding > 0 ? "danger" : "default",
                 },
-                { label: "Unpaid / partial", value: `${payload.summary.unpaid_count} / ${payload.summary.partial_count}` },
+                {
+                  label: "Unpaid / partial",
+                  value: `${payload.summary.unpaid_count} / ${payload.summary.partial_count}`,
+                },
               ]}
             />
 
@@ -137,7 +138,71 @@ export function OutstandingFeesContent() {
                 ) : undefined
               }
             >
-              <div className="overflow-x-auto">
+              {/* Mobile cards */}
+              <ul className="divide-y divide-theme lg:hidden">
+                {payload.students.map((student) => (
+                  <li key={student.account_id} className="px-4 py-4">
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={selected.has(student.account_id)}
+                        onChange={() => toggle(student.account_id)}
+                        aria-label={`Select ${student.full_name}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-medium text-theme-primary">{student.full_name}</p>
+                            <p className="text-xs text-theme-muted">
+                              {student.learner_id} · {student.class_name}
+                            </p>
+                          </div>
+                          <FeeStatusBadge status={student.status} />
+                        </div>
+                        <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                          <div>
+                            <dt className="text-theme-muted">Owed</dt>
+                            <dd className="tabular-nums">{formatUGX(student.amount_owed)}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-theme-muted">Paid</dt>
+                            <dd className="tabular-nums">{formatUGX(student.amount_paid)}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-theme-muted">Balance</dt>
+                            <dd className="font-semibold tabular-nums text-theme-danger">
+                              {formatUGX(student.balance)}
+                            </dd>
+                          </div>
+                        </dl>
+                        <div className="mt-3 flex flex-wrap gap-3">
+                          <CanDo action="recordPayments">
+                            <Link
+                              href={`${base}/payments/new?student_id=${student.student_id}`}
+                              className="text-xs font-medium text-theme-accent hover:underline"
+                            >
+                              Record payment
+                            </Link>
+                          </CanDo>
+                          <CanDo action="waiveFees">
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-theme-danger hover:underline"
+                              onClick={() => setWaiveStudent(student)}
+                            >
+                              Waive
+                            </button>
+                          </CanDo>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              {/* Desktop table */}
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="ms-table w-full min-w-[52rem]">
                   <thead>
                     <tr>
@@ -226,6 +291,6 @@ export function OutstandingFeesContent() {
 
       <SmsReminderPanel open={smsOpen} onClose={() => setSmsOpen(false)} students={selectedStudents} />
       <WaiveFeeDialog student={waiveStudent} onClose={() => setWaiveStudent(null)} onWaived={() => void mutate()} />
-    </section>
+    </FeesPageShell>
   );
 }
