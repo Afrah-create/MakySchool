@@ -195,6 +195,68 @@ def _calc_total(items: list[dict[str, Any]]) -> int:
     return total
 
 
+class DuplicateInvoiceError(Exception):
+    """Raised when a student already has a live invoice for the same fees."""
+
+    def __init__(self, invoice_number: str) -> None:
+        self.invoice_number = invoice_number
+        super().__init__(
+            f"This student already has invoice {invoice_number} for these fees."
+        )
+
+
+async def _find_duplicate_invoice(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    student_id: uuid.UUID,
+    fee_structure_id: uuid.UUID | None,
+    term_name: str,
+    academic_year: int,
+    total: int,
+) -> str | None:
+    """A fee structure identifies the fees exactly. Ad-hoc invoices have no
+    structure, so they only count as duplicates when term, year and amount match.
+    """
+    if fee_structure_id is not None:
+        return await conn.fetchval(
+            """
+            SELECT invoice_number
+            FROM invoices
+            WHERE school_id = $1
+              AND student_id = $2
+              AND fee_structure_id = $3
+              AND status NOT IN ('cancelled', 'voided')
+            ORDER BY invoice_date DESC
+            LIMIT 1
+            """,
+            school_id,
+            student_id,
+            fee_structure_id,
+        )
+
+    return await conn.fetchval(
+        """
+        SELECT invoice_number
+        FROM invoices
+        WHERE school_id = $1
+          AND student_id = $2
+          AND fee_structure_id IS NULL
+          AND lower(term_name) = lower($3)
+          AND academic_year = $4
+          AND total_amount = $5
+          AND status NOT IN ('cancelled', 'voided')
+        ORDER BY invoice_date DESC
+        LIMIT 1
+        """,
+        school_id,
+        student_id,
+        term_name,
+        academic_year,
+        total,
+    )
+
+
 async def _insert_invoice(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
@@ -211,6 +273,18 @@ async def _insert_invoice(
     total = _calc_total(items)
     if total <= 0:
         raise ValueError("Invoice total must be positive.")
+
+    existing_number = await _find_duplicate_invoice(
+        conn,
+        school_id,
+        student_id=student_id,
+        fee_structure_id=fee_structure_id,
+        term_name=term_name,
+        academic_year=academic_year,
+        total=total,
+    )
+    if existing_number:
+        raise DuplicateInvoiceError(existing_number)
 
     invoice_number = await generate_invoice_number(conn, school_id)
     invoice_id = uuid.uuid4()
@@ -280,11 +354,12 @@ async def bulk_create_invoices(
     created = 0
     failed = 0
     errors: list[dict[str, str]] = []
+    skipped: list[dict[str, str]] = []
     student_ids = [uuid.UUID(sid) for sid in body["student_ids"]]
 
-    async with conn.transaction():
-        for student_id in student_ids:
-            try:
+    for student_id in student_ids:
+        try:
+            async with conn.transaction():
                 await _insert_invoice(
                     conn,
                     school_id,
@@ -297,12 +372,20 @@ async def bulk_create_invoices(
                     notes=body.get("notes"),
                     items=body["items"],
                 )
-                created += 1
-            except Exception as exc:
-                failed += 1
-                errors.append({"student_id": str(student_id), "error": str(exc)})
+            created += 1
+        except DuplicateInvoiceError as exc:
+            skipped.append({"student_id": str(student_id), "invoice_number": exc.invoice_number})
+        except Exception as exc:
+            failed += 1
+            errors.append({"student_id": str(student_id), "error": str(exc)})
 
-    return {"created": created, "failed": failed, "errors": errors}
+    return {
+        "created": created,
+        "skipped": len(skipped),
+        "failed": failed,
+        "errors": errors,
+        "skipped_students": skipped,
+    }
 
 
 async def update_invoice(
@@ -531,13 +614,83 @@ async def pay_invoice(
     }
 
 
+async def create_invoices_for_fee_structure(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    structure_id: uuid.UUID,
+    class_id: uuid.UUID,
+    amount: int,
+    term_name: str,
+    academic_year: int,
+    description: str | None = None,
+    due_date: date | None = None,
+) -> int:
+    """Create one school-fees invoice per active student who has an account
+    for this structure but no non-cancelled invoice yet.
+    """
+    if amount <= 0:
+        return 0
+
+    needing = await conn.fetch(
+        """
+        SELECT s.id AS student_id
+        FROM students s
+        JOIN student_fee_accounts sfa
+          ON sfa.student_id = s.id AND sfa.fee_structure_id = $2
+        WHERE s.school_id = $1
+          AND s.current_class_id = $3
+          AND s.status = 'active'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM invoices inv
+            WHERE inv.student_id = s.id
+              AND inv.fee_structure_id = $2
+              AND inv.status NOT IN ('cancelled', 'voided')
+          )
+        ORDER BY s.full_name
+        """,
+        school_id,
+        structure_id,
+        class_id,
+    )
+
+    line_description = (description or "").strip() or f"School fees — {term_name} {academic_year}"
+    created = 0
+    for row in needing:
+        try:
+            await _insert_invoice(
+                conn,
+                school_id,
+                user_id,
+                student_id=row["student_id"],
+                fee_structure_id=structure_id,
+                due_date=due_date,
+                term_name=term_name,
+                academic_year=academic_year,
+                notes=None,
+                items=[
+                    {
+                        "description": line_description,
+                        "quantity": 1,
+                        "unit_amount": amount,
+                    }
+                ],
+            )
+        except DuplicateInvoiceError:
+            continue
+        created += 1
+    return created
+
+
 async def list_student_invoices(
     conn: asyncpg.Connection, school_id: uuid.UUID, student_id: uuid.UUID
 ) -> list[dict[str, Any]]:
     rows = await conn.fetch(
         """
         SELECT id, invoice_number, invoice_date, due_date, term_name, academic_year,
-               status, total_amount, amount_paid, balance
+               status, total_amount, amount_paid, balance, fee_structure_id
         FROM invoices
         WHERE school_id = $1 AND student_id = $2
         ORDER BY invoice_date DESC
@@ -548,6 +701,9 @@ async def list_student_invoices(
     result = []
     for row in rows:
         item = dict(row)
+        item["id"] = str(item["id"])
+        if item.get("fee_structure_id") is not None:
+            item["fee_structure_id"] = str(item["fee_structure_id"])
         item["total_amount"] = int(item["total_amount"])
         item["amount_paid"] = int(item["amount_paid"])
         item["balance"] = int(item["balance"])

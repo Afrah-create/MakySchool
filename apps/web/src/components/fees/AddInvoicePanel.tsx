@@ -174,7 +174,16 @@ export function AddInvoicePanel({
           method: "POST",
           body: { ...payload, student_ids: studentIds },
         });
-        toast.success(`${response.data.created} invoice(s) created. ${response.data.failed} failed.`);
+        const { created, skipped = 0, failed } = response.data;
+        const parts = [`${created} invoice(s) created`];
+        if (skipped > 0) parts.push(`${skipped} skipped (already invoiced)`);
+        if (failed > 0) parts.push(`${failed} failed`);
+        const message = `${parts.join(", ")}.`;
+        if (created === 0 && skipped > 0 && failed === 0) {
+          toast.info(message);
+        } else {
+          toast.success(message);
+        }
       }
       reset();
       onSaved();

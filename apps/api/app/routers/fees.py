@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 import logging
 from typing import Any
 
@@ -280,7 +280,12 @@ async def assign_structure(
     _require_permission(user, "manageFees")
 
     structure = await conn.fetchrow(
-        "SELECT class_id, amount FROM fee_structures WHERE id = $1 AND school_id = $2 LIMIT 1",
+        """
+        SELECT class_id, amount, term_name, academic_year, description
+        FROM fee_structures
+        WHERE id = $1 AND school_id = $2
+        LIMIT 1
+        """,
         structure_id,
         school_id,
     )
@@ -309,31 +314,50 @@ async def assign_structure(
         class_id,
     )
 
-    inserted = await conn.fetch(
-        """
-        INSERT INTO student_fee_accounts (school_id, student_id, fee_structure_id, amount_owed, status)
-        SELECT $1, s.id, $2, $3, 'unpaid'
-        FROM students s
-        WHERE s.current_class_id = $4
-          AND s.school_id = $1
-          AND s.status = 'active'
-          AND NOT EXISTS (
-            SELECT 1 FROM student_fee_accounts sfa
-            WHERE sfa.student_id = s.id AND sfa.fee_structure_id = $2
-          )
-        RETURNING id
-        """,
-        school_id,
-        structure_id,
-        amount,
-        class_id,
-    )
+    from app.services.fees import invoices as invoice_service
+
+    due_date = date.today() + timedelta(days=30)
+
+    async with conn.transaction():
+        inserted = await conn.fetch(
+            """
+            INSERT INTO student_fee_accounts (school_id, student_id, fee_structure_id, amount_owed, status)
+            SELECT $1, s.id, $2, $3, 'unpaid'
+            FROM students s
+            WHERE s.current_class_id = $4
+              AND s.school_id = $1
+              AND s.status = 'active'
+              AND NOT EXISTS (
+                SELECT 1 FROM student_fee_accounts sfa
+                WHERE sfa.student_id = s.id AND sfa.fee_structure_id = $2
+              )
+            RETURNING id
+            """,
+            school_id,
+            structure_id,
+            amount,
+            class_id,
+        )
+
+        invoices_created = await invoice_service.create_invoices_for_fee_structure(
+            conn,
+            school_id,
+            fees_actor_id(user),
+            structure_id=structure_id,
+            class_id=class_id,
+            amount=amount,
+            term_name=structure["term_name"],
+            academic_year=int(structure["academic_year"]),
+            description=structure["description"],
+            due_date=due_date,
+        )
 
     return {
         "data": {
             "assigned": len(inserted),
             "already_had_account": int(existing_row["count"]) if existing_row else 0,
             "total_students": int(total_row["count"]) if total_row else 0,
+            "invoices_created": invoices_created,
         }
     }
 

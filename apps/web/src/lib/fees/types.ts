@@ -251,8 +251,10 @@ export type InvoiceListResponse = {
 
 export type InvoiceBulkResult = {
   created: number;
+  skipped: number;
   failed: number;
   errors: Array<{ student_id: string; error: string }>;
+  skipped_students: Array<{ student_id: string; invoice_number: string }>;
 };
 
 export type BudgetType = "income" | "expense";

@@ -212,6 +212,21 @@ async def learner_fees(
     }
 
 
+@router.get("/invoices")
+async def learner_invoices(
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    user_id = _require_learner(actor)
+    student = await _linked_student(conn, school_id, user_id)
+
+    from app.services.fees import invoices as invoice_service
+
+    invoices = await invoice_service.list_student_invoices(conn, school_id, student["id"])
+    return {"data": {"invoices": jsonable_encoder(invoices)}}
+
+
 @router.get("/attendance")
 async def learner_attendance_redirect_info(
     ctx: TenantCtx,

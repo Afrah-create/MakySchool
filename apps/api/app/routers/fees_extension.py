@@ -527,6 +527,8 @@ async def create_invoice(
         result = await invoice_service.create_invoice(
             conn, school_id, fees_actor_id(user), body.model_dump()
         )
+    except invoice_service.DuplicateInvoiceError as exc:
+        raise _error(status.HTTP_409_CONFLICT, str(exc), "DUPLICATE_INVOICE") from None
     except ValueError as exc:
         raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc), "VALIDATION_ERROR") from None
     return {"data": result}
@@ -659,7 +661,28 @@ async def invoice_pdf(
     conn: asyncpg.Connection = Depends(get_db),
 ):
     school_id, user = ctx
-    _require_permission(user, "viewInvoices")
+    role = (user.get("role") or "").lower()
+
+    if role in ("learner", "student"):
+        owns = await conn.fetchval(
+            """
+            SELECT 1
+            FROM invoices inv
+            JOIN students s ON s.id = inv.student_id
+            WHERE inv.id = $1
+              AND inv.school_id = $2
+              AND s.user_id = $3
+            LIMIT 1
+            """,
+            invoice_id,
+            school_id,
+            uuid.UUID(str(user["sub"])),
+        )
+        if not owns:
+            raise _error(status.HTTP_403_FORBIDDEN, "Forbidden", "FORBIDDEN")
+    else:
+        _require_permission(user, "viewInvoices")
+
     try:
         pdf_bytes, number = await generate_invoice_pdf(conn, invoice_id, school_id)
     except InvoiceNotFoundError:
