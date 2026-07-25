@@ -7,6 +7,7 @@ import {
   CircleDollarSign,
   ClipboardList,
   ClipboardCheck,
+  FileText,
   GraduationCap,
   Hash,
   Landmark,
@@ -49,6 +50,7 @@ const schoolAdminFeesNavChildren: NavItem[] = [
 const schoolAdminALevelNavChildren: NavItem[] = [
   { href: "/dashboard/alevel/grades", label: "Enter grades", icon: BookOpenCheck, exact: false, requiredAction: "enterALevelGrades" },
   { href: "/dashboard/alevel/results", label: "Results", icon: Award, exact: false, requiredAction: "viewALevel" },
+  { href: "/dashboard/alevel/report-cards", label: "Report cards", icon: FileText, exact: false, requiredAction: "viewALevel" },
   { href: "/dashboard/alevel/setup/subjects", label: "Subjects", icon: Layers, exact: false, requiredAction: "manageALevel" },
   { href: "/dashboard/alevel/setup/combinations", label: "Combinations", icon: Sigma, exact: false, requiredAction: "manageALevel" },
   { href: "/dashboard/alevel/setup/enrollments", label: "Enrollments", icon: UsersRound, exact: false, requiredAction: "manageALevel" },

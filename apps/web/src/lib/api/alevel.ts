@@ -8,14 +8,18 @@ import type {
   ALevelTermOption,
   BulkALevelEnrollmentPayload,
   BulkALevelEnrollmentResult,
+  BulkUpdateALevelEnrollmentsPayload,
   ALevelGradingScale,
   ALevelGradesGrid,
+  ALevelReportCard,
   ALevelResultsResponse,
   CreateALevelSubjectPayload,
   UpdateALevelSubjectPayload,
   CreateALevelCombinationPayload,
   CreateALevelEnrollmentPayload,
+  UpdateALevelEnrollmentPayload,
   SaveALevelGradesPayload,
+  SaveALevelGradesResult,
 } from '@makyschool/shared';
 
 const BASE = '/api/schools/alevel';
@@ -37,7 +41,11 @@ export const alevelApi = {
   },
 
   saveGradingScale(payload: ALevelGradingScale) {
-    return apiClient<{ ok: boolean }>(`${BASE}/grading-scale`, {
+    return apiClient<{
+      ok: boolean;
+      existingGradeCount: number;
+      message?: string;
+    }>(`${BASE}/grading-scale`, {
       method: 'PUT',
       body: payload,
     }).then((r) => r.data);
@@ -120,6 +128,20 @@ export const alevelApi = {
     }).then((r) => r.data);
   },
 
+  updateEnrollment(id: string, payload: UpdateALevelEnrollmentPayload) {
+    return apiClient<ALevelEnrollment>(`${BASE}/enrollments/${id}`, {
+      method: 'PATCH',
+      body: payload,
+    }).then((r) => r.data);
+  },
+
+  bulkUpdateEnrollments(payload: BulkUpdateALevelEnrollmentsPayload) {
+    return apiClient<{ updated: number }>(`${BASE}/enrollments/bulk-update`, {
+      method: 'POST',
+      body: payload,
+    }).then((r) => r.data);
+  },
+
   deleteEnrollment(id: string) {
     return apiClient<{ ok: boolean }>(`${BASE}/enrollments/${id}`, {
       method: 'DELETE',
@@ -138,10 +160,32 @@ export const alevelApi = {
   },
 
   saveGrades(payload: SaveALevelGradesPayload) {
-    return apiClient<{ saved: number }>(`${BASE}/grades/bulk`, {
+    return apiClient<SaveALevelGradesResult>(`${BASE}/grades/bulk`, {
       method: 'POST',
       body: payload,
     }).then((r) => r.data);
+  },
+
+  lockTerm(termId: string, classId: string, academicYearId: string) {
+    return apiClient<{
+      ok: boolean;
+      isLocked?: boolean;
+      lockedAt?: string;
+      lockedByName?: string;
+    }>(`${BASE}/terms/${termId}/lock`, {
+      method: 'POST',
+      body: { classId, academicYearId },
+    }).then((r) => r.data);
+  },
+
+  unlockTerm(termId: string, classId: string, academicYearId: string) {
+    return apiClient<{ ok: boolean; wasLocked: boolean; isOpen: boolean }>(
+      `${BASE}/terms/${termId}/lock`,
+      {
+        method: 'DELETE',
+        body: { classId, academicYearId },
+      },
+    ).then((r) => r.data);
   },
 
   getResults(classId: string, termId: string, academicYearId: string) {
@@ -153,5 +197,59 @@ export const alevelApi = {
     return apiClient<ALevelResultsResponse>(
       `${BASE}/results?${q.toString()}`,
     ).then((r) => r.data);
+  },
+
+  getReportCard(studentId: string, termId: string, academicYearId: string) {
+    const q = new URLSearchParams({
+      term_id: termId,
+      academic_year_id: academicYearId,
+    });
+    return apiClient<ALevelReportCard>(
+      `${BASE}/report-card/${studentId}?${q.toString()}`,
+    ).then((r) => r.data);
+  },
+
+  saveReportComment(
+    studentId: string,
+    termId: string,
+    academicYearId: string,
+    payload: {
+      classTeacherComment?: string | null;
+      headTeacherComment?: string | null;
+      approve?: boolean;
+    },
+    classId?: string | null,
+  ) {
+    const q = new URLSearchParams({
+      term_id: termId,
+      academic_year_id: academicYearId,
+    });
+    if (classId) q.set('class_id', classId);
+    return apiClient<{ ok: boolean; approved: boolean }>(
+      `${BASE}/report-card/${studentId}/comment?${q.toString()}`,
+      { method: 'POST', body: payload },
+    ).then((r) => r.data);
+  },
+
+  generateReportCards(params: {
+    classId: string;
+    termId: string;
+    academicYearId: string;
+    studentId?: string;
+  }) {
+    const q = new URLSearchParams({
+      class_id: params.classId,
+      term_id: params.termId,
+      academic_year_id: params.academicYearId,
+    });
+    if (params.studentId) q.set('student_id', params.studentId);
+    return apiClient<{
+      filename: string;
+      pdfBase64?: string;
+      zipBase64?: string;
+      count?: number;
+    }>(`${BASE}/report-cards/generate?${q.toString()}`, {
+      method: 'POST',
+    }).then((r) => r.data);
   },
 };

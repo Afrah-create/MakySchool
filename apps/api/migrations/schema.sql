@@ -1552,3 +1552,38 @@ CREATE TABLE public.alevel_config (
   CONSTRAINT alevel_config_pkey PRIMARY KEY (school_id),
   CONSTRAINT alevel_config_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id)
 );
+CREATE TABLE public.alevel_term_locks (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL,
+  class_id uuid NOT NULL,
+  term_id uuid NOT NULL,
+  academic_year_id uuid NOT NULL,
+  locked_at timestamp with time zone NOT NULL DEFAULT now(),
+  locked_by uuid,
+  CONSTRAINT alevel_term_locks_pkey PRIMARY KEY (id),
+  CONSTRAINT alevel_term_locks_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id),
+  CONSTRAINT alevel_term_locks_locked_by_fkey FOREIGN KEY (locked_by) REFERENCES public.users(id),
+  CONSTRAINT alevel_term_locks_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
+  CONSTRAINT alevel_term_locks_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
+  CONSTRAINT alevel_term_locks_term_id_fkey FOREIGN KEY (term_id) REFERENCES public.terms(id)
+);
+CREATE TABLE public.alevel_report_metadata (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL,
+  student_id uuid NOT NULL,
+  term_id uuid NOT NULL,
+  academic_year_id uuid NOT NULL,
+  class_id uuid,
+  class_teacher_comment text,
+  head_teacher_comment text,
+  approved_by uuid,
+  approved_at timestamp with time zone,
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT alevel_report_metadata_pkey PRIMARY KEY (id),
+  CONSTRAINT alevel_report_metadata_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
+  CONSTRAINT alevel_report_metadata_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id),
+  CONSTRAINT alevel_report_metadata_term_id_fkey FOREIGN KEY (term_id) REFERENCES public.terms(id),
+  CONSTRAINT alevel_report_metadata_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id),
+  CONSTRAINT alevel_report_metadata_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
+  CONSTRAINT alevel_report_metadata_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.users(id)
+);

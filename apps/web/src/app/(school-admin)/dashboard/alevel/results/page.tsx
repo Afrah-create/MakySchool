@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Award, Download } from 'lucide-react';
+import { Award, Download, FileText } from 'lucide-react';
+import Link from 'next/link';
 import { PageHeader } from '@makyschool/ui/components/ui/PageHeader';
 import { EmptyState } from '@makyschool/ui/components/ui/EmptyState';
 import { Skeleton } from '@makyschool/ui/components/ui/Skeleton';
@@ -73,6 +74,7 @@ export default function ALevelResultsPage() {
   const ready = !!classId && !!termId;
   const results = data?.results ?? [];
   const subjects = data?.subjects ?? [];
+  const summary = data?.summary;
 
   function exportCsv() {
     try {
@@ -110,10 +112,18 @@ export default function ALevelResultsPage() {
     ]);
     const cls = classLabel(classes?.find((c) => c.id === classId));
     downloadCsv(
-      `alevel-results-${cls || 'class'}-${selectedTerm?.name ?? ''}.csv`.replace(/\s+/g, '-'),
+      `alevel-results-${cls || 'class'}-${selectedTerm?.name ?? ''}.csv`.replace(
+        /\s+/g,
+        '-',
+      ),
       [header, ...rows],
     );
   }
+
+  const reportHref =
+    classId && termId
+      ? `/dashboard/alevel/report-cards?classId=${classId}&termId=${termId}`
+      : '/dashboard/alevel/report-cards';
 
   return (
     <div className="mx-auto max-w-full space-y-6 p-4 sm:p-6">
@@ -122,10 +132,16 @@ export default function ALevelResultsPage() {
         description="Ranked termly results with computed points and result codes."
         actions={
           results.length > 0 ? (
-            <button type="button" onClick={exportCsv} className="ms-btn-secondary">
-              <Download className="h-4 w-4" />
-              Export CSV
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <Link href={reportHref} className="ms-btn-secondary">
+                <FileText className="h-4 w-4" />
+                Report cards
+              </Link>
+              <button type="button" onClick={exportCsv} className="ms-btn-secondary">
+                <Download className="h-4 w-4" />
+                Export CSV
+              </button>
+            </div>
           ) : undefined
         }
       />
@@ -167,63 +183,163 @@ export default function ALevelResultsPage() {
           description="Enroll students and enter grades to see results here."
         />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead className="bg-table-header text-xs font-medium uppercase tracking-wide text-theme-muted">
-                <tr>
-                  <th className="px-3 py-3 text-left">#</th>
-                  <th className="sticky left-0 z-10 bg-table-header px-4 py-3 text-left">
-                    Student
-                  </th>
-                  {subjects.map((s) => (
-                    <th key={s.id} className="px-2 py-3 text-center" title={s.name}>
-                      {s.code}
-                    </th>
-                  ))}
-                  <th className="px-3 py-3 text-center">Prin.</th>
-                  <th className="px-3 py-3 text-center">GP</th>
-                  <th className="px-3 py-3 text-center">Sub.</th>
-                  <th className="px-3 py-3 text-center">Total</th>
-                  <th className="px-3 py-3 text-center">Result</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((r) => (
-                  <tr key={r.studentId} className="border-t border-theme hover:bg-theme-raised/40">
-                    <td className="px-3 py-2 text-theme-muted">{r.position}</td>
-                    <td className="sticky left-0 z-10 bg-theme-surface px-4 py-2">
-                      <p className="font-medium text-theme-primary">{r.studentName}</p>
-                      <p className="font-mono text-[11px] text-theme-muted">
-                        {r.learnerId} · {r.combinationName}
-                      </p>
-                    </td>
-                    {subjects.map((s) => (
-                      <td key={s.id} className="px-2 py-2 text-center text-theme-primary">
-                        {gradeFor(r, s.id) || '—'}
-                      </td>
+        <>
+          {summary ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-theme bg-theme-surface px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-theme-muted">
+                  Students
+                </p>
+                <p className="mt-1 text-2xl font-semibold text-theme-primary">
+                  {summary.studentCount}
+                </p>
+              </div>
+              <div className="rounded-xl border border-theme bg-theme-surface px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-theme-muted">
+                  Avg points
+                </p>
+                <p className="mt-1 text-2xl font-semibold text-theme-primary">
+                  {summary.averagePoints}
+                </p>
+              </div>
+              <div className="rounded-xl border border-theme bg-theme-surface px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-theme-muted">
+                  Certificate eligible
+                </p>
+                <p className="mt-1 text-2xl font-semibold text-theme-primary">
+                  {summary.certificateEligible}
+                  <span className="ml-2 text-sm font-normal text-theme-muted">
+                    ({summary.certificateEligiblePercent}%)
+                  </span>
+                </p>
+              </div>
+              <div className="rounded-xl border border-theme bg-theme-surface px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-theme-muted">
+                  2+ / 3 principal passes
+                </p>
+                <p className="mt-1 text-2xl font-semibold text-theme-primary">
+                  {summary.twoPrincipalPasses}
+                  <span className="ml-2 text-sm font-normal text-theme-muted">
+                    / {summary.threePrincipalPasses}
+                  </span>
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          {summary?.subjectStats && summary.subjectStats.length > 0 ? (
+            <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+              <div className="border-b border-theme px-4 py-3">
+                <h2 className="text-sm font-semibold text-theme-primary">
+                  Subject pass rates
+                </h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-sm">
+                  <thead className="bg-table-header text-xs font-medium uppercase tracking-wide text-theme-muted">
+                    <tr>
+                      <th className="px-4 py-2 text-left">Subject</th>
+                      <th className="px-3 py-2 text-center">Sat</th>
+                      <th className="px-3 py-2 text-center">Pass rate</th>
+                      <th className="px-3 py-2 text-center">Avg pts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.subjectStats.map((s) => (
+                      <tr key={s.subjectId} className="border-t border-theme">
+                        <td className="px-4 py-2 text-theme-primary">
+                          {s.code}{' '}
+                          <span className="text-theme-muted">{s.subjectName}</span>
+                        </td>
+                        <td className="px-3 py-2 text-center text-theme-muted">
+                          {s.sat}
+                        </td>
+                        <td className="px-3 py-2 text-center font-medium text-theme-primary">
+                          {s.passRate}%
+                        </td>
+                        <td className="px-3 py-2 text-center text-theme-muted">
+                          {s.averagePoints}
+                        </td>
+                      </tr>
                     ))}
-                    <td className="px-3 py-2 text-center text-theme-primary">
-                      {r.best_principal_points}
-                    </td>
-                    <td className="px-3 py-2 text-center text-theme-muted">{r.gp_points}</td>
-                    <td className="px-3 py-2 text-center text-theme-muted">
-                      {r.subsidiary_points}
-                    </td>
-                    <td className="px-3 py-2 text-center font-semibold text-theme-primary">
-                      {r.total_points}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <span className="rounded-full bg-theme-accent-muted px-2 py-0.5 text-[11px] font-medium text-theme-accent">
-                        {RESULT_LABEL[r.result_code] ?? r.result_code}
-                      </span>
-                    </td>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead className="bg-table-header text-xs font-medium uppercase tracking-wide text-theme-muted">
+                  <tr>
+                    <th className="px-3 py-3 text-left">#</th>
+                    <th className="sticky left-0 z-10 bg-table-header px-4 py-3 text-left">
+                      Student
+                    </th>
+                    {subjects.map((s) => (
+                      <th
+                        key={s.id}
+                        className="px-2 py-3 text-center"
+                        title={s.name}
+                      >
+                        {s.code}
+                      </th>
+                    ))}
+                    <th className="px-3 py-3 text-center">Prin.</th>
+                    <th className="px-3 py-3 text-center">GP</th>
+                    <th className="px-3 py-3 text-center">Sub.</th>
+                    <th className="px-3 py-3 text-center">Total</th>
+                    <th className="px-3 py-3 text-center">Result</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {results.map((r) => (
+                    <tr
+                      key={r.studentId}
+                      className="border-t border-theme hover:bg-theme-raised/40"
+                    >
+                      <td className="px-3 py-2 text-theme-muted">{r.position}</td>
+                      <td className="sticky left-0 z-10 bg-theme-surface px-4 py-2">
+                        <p className="font-medium text-theme-primary">
+                          {r.studentName}
+                        </p>
+                        <p className="font-mono text-[11px] text-theme-muted">
+                          {r.learnerId} · {r.combinationName}
+                        </p>
+                      </td>
+                      {subjects.map((s) => (
+                        <td
+                          key={s.id}
+                          className="px-2 py-2 text-center text-theme-primary"
+                        >
+                          {gradeFor(r, s.id) || '—'}
+                        </td>
+                      ))}
+                      <td className="px-3 py-2 text-center text-theme-primary">
+                        {r.best_principal_points}
+                      </td>
+                      <td className="px-3 py-2 text-center text-theme-muted">
+                        {r.gp_points}
+                      </td>
+                      <td className="px-3 py-2 text-center text-theme-muted">
+                        {r.subsidiary_points}
+                      </td>
+                      <td className="px-3 py-2 text-center font-semibold text-theme-primary">
+                        {r.total_points}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <span className="rounded-full bg-theme-accent-muted px-2 py-0.5 text-[11px] font-medium text-theme-accent">
+                          {RESULT_LABEL[r.result_code] ?? r.result_code}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

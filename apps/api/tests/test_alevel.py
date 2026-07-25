@@ -74,6 +74,18 @@ class TestStudentTotals:
         assert totals["best_principal_points"] == 17
         assert totals["principal_pass_count"] == 3
 
+    def test_camel_case_keys(self):
+        grades = [
+            {"subjectType": "principal", "grade": "A", "points": 6, "isGp": False},
+            {"subjectType": "principal", "grade": "B", "points": 5, "isGp": False},
+            {"subjectType": "principal", "grade": "C", "points": 4, "isGp": False},
+            {"subjectType": "subsidiary", "grade": "P", "points": 1, "isGp": True},
+            {"subjectType": "subsidiary", "grade": "P", "points": 1, "isGp": False},
+        ]
+        totals = compute_student_totals(grades)
+        assert totals["total_points"] == 17
+        assert totals["result_code"] == "1"
+
     def test_one_principal_pass_is_partial(self):
         grades = [
             {"subject_type": "principal", "grade": "E", "points": 2, "is_gp": False},

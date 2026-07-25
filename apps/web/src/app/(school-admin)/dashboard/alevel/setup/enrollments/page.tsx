@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Search, Trash2, UsersRound, X } from 'lucide-react';
+import { Plus, Search, Trash2, UsersRound, X, Pencil } from 'lucide-react';
 import { PageHeader } from '@makyschool/ui/components/ui/PageHeader';
 import { Modal } from '@makyschool/ui/components/ui/Modal';
 import { ConfirmDialog } from '@makyschool/ui/components/ui/ConfirmDialog';
@@ -22,6 +22,7 @@ import {
   useALevelEnrollments,
   useALevelSubjects,
   useALevelTerms,
+  useBulkUpdateALevelEnrollments,
   useCreateALevelEnrollment,
   useDeleteALevelEnrollment,
 } from '@/hooks/useALevel';
@@ -98,11 +99,19 @@ export default function ALevelEnrollmentsPage() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [toDelete, setToDelete] = useState<ALevelEnrollment | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const [studentId, setStudentId] = useState('');
   const [combinationId, setCombinationId] = useState('');
   const [subsidiaryId, setSubsidiaryId] = useState('');
+
+  const [bulkComboId, setBulkComboId] = useState('');
+  const [bulkSubId, setBulkSubId] = useState('');
+  const [bulkActive, setBulkActive] = useState<'keep' | 'true' | 'false'>(
+    'keep',
+  );
 
   const { data: studentsResp } = useApiSWR<StudentsListResponse>(
     formOpen && classId
@@ -119,6 +128,7 @@ export default function ALevelEnrollmentsPage() {
 
   const createEnrollment = useCreateALevelEnrollment();
   const deleteEnrollment = useDeleteALevelEnrollment();
+  const bulkUpdate = useBulkUpdateALevelEnrollments();
 
   const selectedClass = (classes ?? []).find((c) => c.id === classId);
   const selectedClassName = selectedClass
@@ -171,12 +181,82 @@ export default function ALevelEnrollmentsPage() {
     try {
       await deleteEnrollment.mutateAsync(toDelete.id);
       toast.success(`Removed ${name} from A-Level.`);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(toDelete.id);
+        return next;
+      });
       setToDelete(null);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Could not remove enrollment.',
       );
       setToDelete(null);
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    const rows = enrollments ?? [];
+    if (selectedIds.size === rows.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(rows.map((e) => e.id)));
+    }
+  }
+
+  function openBulkEdit() {
+    setBulkComboId('');
+    setBulkSubId('');
+    setBulkActive('keep');
+    setBulkEditOpen(true);
+  }
+
+  async function submitBulkEdit() {
+    if (selectedIds.size === 0) {
+      toast.error('Select at least one enrollment.');
+      return;
+    }
+    const payload: {
+      enrollmentIds: string[];
+      combinationId?: string;
+      subsidiarySubjectId?: string | null;
+      isActive?: boolean;
+    } = { enrollmentIds: [...selectedIds] };
+    if (bulkComboId) payload.combinationId = bulkComboId;
+    if (bulkSubId === '__none__') payload.subsidiarySubjectId = null;
+    else if (bulkSubId) payload.subsidiarySubjectId = bulkSubId;
+    if (bulkActive === 'true') payload.isActive = true;
+    if (bulkActive === 'false') payload.isActive = false;
+
+    if (
+      !payload.combinationId &&
+      !('subsidiarySubjectId' in payload) &&
+      payload.isActive === undefined
+    ) {
+      toast.error('Choose at least one field to update.');
+      return;
+    }
+
+    try {
+      const result = await bulkUpdate.mutateAsync(payload);
+      toast.success(
+        `Updated ${result.updated} enrollment${result.updated === 1 ? '' : 's'}.`,
+      );
+      setBulkEditOpen(false);
+      setSelectedIds(new Set());
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Could not update enrollments.',
+      );
     }
   }
 
@@ -346,15 +426,41 @@ export default function ALevelEnrollmentsPage() {
             />
           ) : (
             <div className="space-y-3">
-              <p className="text-xs text-theme-muted">
-                {enrollments!.length} student
-                {enrollments!.length === 1 ? '' : 's'} enrolled
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-theme-muted">
+                  {enrollments!.length} student
+                  {enrollments!.length === 1 ? '' : 's'} enrolled
+                  {selectedIds.size > 0
+                    ? ` · ${selectedIds.size} selected`
+                    : ''}
+                </p>
+                {selectedIds.size > 0 ? (
+                  <button
+                    type="button"
+                    className="ms-btn-secondary"
+                    onClick={openBulkEdit}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Bulk update
+                  </button>
+                ) : null}
+              </div>
               <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
                 <div className="overflow-x-auto">
                   <table className="ms-table w-full min-w-[46rem]">
                     <thead className="bg-table-header text-xs font-medium uppercase tracking-wide text-theme-muted">
                       <tr>
+                        <th className="w-10 px-3 py-3">
+                          <input
+                            type="checkbox"
+                            checked={
+                              (enrollments ?? []).length > 0 &&
+                              selectedIds.size === (enrollments ?? []).length
+                            }
+                            onChange={toggleSelectAll}
+                            aria-label="Select all"
+                          />
+                        </th>
                         <th className="px-4 py-3 text-left">Student</th>
                         <th className="px-4 py-3 text-left">Class</th>
                         <th className="px-4 py-3 text-left">Combination</th>
@@ -368,12 +474,21 @@ export default function ALevelEnrollmentsPage() {
                           key={e.id}
                           className="border-t border-theme hover:bg-theme-raised/40"
                         >
+                          <td className="px-3 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(e.id)}
+                              onChange={() => toggleSelect(e.id)}
+                              aria-label={`Select ${e.studentName}`}
+                            />
+                          </td>
                           <td className="px-4 py-3">
                             <p className="text-sm font-medium text-theme-primary">
                               {e.studentName}
                             </p>
                             <p className="font-mono text-[11px] text-theme-muted">
                               {e.learnerId}
+                              {!e.isActive ? ' · inactive' : ''}
                             </p>
                           </td>
                           <td className="px-4 py-3 text-sm text-theme-muted">
@@ -494,6 +609,86 @@ export default function ALevelEnrollmentsPage() {
                   {s.name}
                 </option>
               ))}
+            </select>
+          </label>
+        </div>
+      </Modal>
+
+      <Modal
+        open={bulkEditOpen}
+        onClose={() => setBulkEditOpen(false)}
+        title="Bulk update enrollments"
+        description={`Apply changes to ${selectedIds.size} selected student${selectedIds.size === 1 ? '' : 's'}. Leave a field blank to keep the current value.`}
+        size="md"
+        footer={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              className="ms-btn-ghost"
+              onClick={() => setBulkEditOpen(false)}
+            >
+              Cancel
+            </button>
+            <LoadingButton
+              variant="primary"
+              loading={bulkUpdate.isPending}
+              onClick={() => void submitBulkEdit()}
+            >
+              Update selected
+            </LoadingButton>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-theme-primary">
+              Combination
+            </span>
+            <select
+              className="ms-input w-full"
+              value={bulkComboId}
+              onChange={(e) => setBulkComboId(e.target.value)}
+            >
+              <option value="">Keep current</option>
+              {(combinations ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.category})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-theme-primary">
+              Subsidiary subject
+            </span>
+            <select
+              className="ms-input w-full"
+              value={bulkSubId}
+              onChange={(e) => setBulkSubId(e.target.value)}
+            >
+              <option value="">Keep current</option>
+              <option value="__none__">Clear subsidiary</option>
+              {subsidiaries.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-theme-primary">
+              Status
+            </span>
+            <select
+              className="ms-input w-full"
+              value={bulkActive}
+              onChange={(e) =>
+                setBulkActive(e.target.value as 'keep' | 'true' | 'false')
+              }
+            >
+              <option value="keep">Keep current</option>
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
             </select>
           </label>
         </div>

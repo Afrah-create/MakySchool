@@ -2,9 +2,9 @@
 
 import { Suspense } from 'react';
 import { Skeleton } from '@makyschool/ui/components/ui/Skeleton';
-import ALevelGradesClient from './GradesClient';
+import ALevelGradesClient from '@/app/(school-admin)/dashboard/alevel/grades/GradesClient';
 
-function Fallback() {
+function TeacherGradesFallback() {
   return (
     <div className="mx-auto max-w-full space-y-6 p-4 sm:p-6">
       <Skeleton className="h-10 w-64" />
@@ -13,10 +13,10 @@ function Fallback() {
   );
 }
 
-export default function Page() {
+export default function TeacherALevelGradesPage() {
   return (
-    <Suspense fallback={<Fallback />}>
-      <ALevelGradesClient portal="admin" />
+    <Suspense fallback={<TeacherGradesFallback />}>
+      <ALevelGradesClient portal="teacher" />
     </Suspense>
   );
 }

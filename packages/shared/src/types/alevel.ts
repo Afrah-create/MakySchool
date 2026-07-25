@@ -66,6 +66,8 @@ export interface ALevelGradeBand {
 export interface ALevelGradingScale {
   bands: ALevelGradeBand[];
   subsidiaryPassThreshold: number;
+  /** How many stored grades already exist (frozen if the scale changes). */
+  existingGradeCount?: number;
 }
 
 export interface ALevelGradeCell {
@@ -79,6 +81,12 @@ export interface ALevelGradesGrid {
   subjects: ALevelSubject[];
   /** Keyed by `${studentId}:${subjectId}` */
   grades: Record<string, ALevelGradeCell>;
+  isLocked: boolean;
+  isOpen: boolean;
+  lockedAt: string | null;
+  lockedByName: string | null;
+  /** When set (teachers), only these subject IDs may be edited. */
+  editableSubjectIds: string[] | null;
 }
 
 export interface ALevelResultSubject {
@@ -107,9 +115,29 @@ export interface ALevelStudentResult {
   position: number;
 }
 
+export interface ALevelSubjectStat {
+  subjectId: string;
+  subjectName: string;
+  code: string;
+  sat: number;
+  passRate: number;
+  averagePoints: number;
+}
+
+export interface ALevelResultsSummary {
+  studentCount: number;
+  averagePoints: number;
+  certificateEligible: number;
+  certificateEligiblePercent: number;
+  threePrincipalPasses: number;
+  twoPrincipalPasses: number;
+  subjectStats: ALevelSubjectStat[];
+}
+
 export interface ALevelResultsResponse {
   results: ALevelStudentResult[];
   subjects: ALevelSubject[];
+  summary: ALevelResultsSummary;
 }
 
 export interface CreateALevelSubjectPayload {
@@ -178,4 +206,52 @@ export interface SaveALevelGradesPayload {
     subjectId: string;
     rawScore: number | null;
   }>;
+}
+
+export interface SaveALevelGradesResult {
+  saved: number;
+  cleared: number;
+  skipped: number;
+}
+
+export interface UpdateALevelEnrollmentPayload {
+  combinationId?: string | null;
+  subsidiarySubjectId?: string | null;
+  isActive?: boolean;
+}
+
+export interface BulkUpdateALevelEnrollmentsPayload {
+  enrollmentIds: string[];
+  combinationId?: string | null;
+  subsidiarySubjectId?: string | null;
+  isActive?: boolean;
+}
+
+export interface ALevelReportCard {
+  schoolName: string | null;
+  logoUrl: string | null;
+  stampUrl: string | null;
+  studentId: string;
+  studentName: string;
+  learnerId: string;
+  className: string | null;
+  combinationName: string;
+  termId: string;
+  termName: string;
+  academicYearId: string;
+  subjects: Array<
+    ALevelResultSubject & { code: string; descriptor: string }
+  >;
+  best_principal_points: number;
+  gp_points: number;
+  subsidiary_points: number;
+  total_points: number;
+  principal_pass_count: number;
+  result_code: string;
+  position: number | null;
+  classSize: number | null;
+  classTeacherComment: string | null;
+  headTeacherComment: string | null;
+  approvedAt: string | null;
+  approvedByName: string | null;
 }

@@ -83,12 +83,17 @@ export default function ALevelGradingPage() {
       return;
     }
     try {
-      await save.mutateAsync({
+      const result = await save.mutateAsync({
         bands: cleaned,
         subsidiaryPassThreshold: threshold,
       });
       setSaved(true);
-      toast.success('Grading scale saved.');
+      const frozen = result.existingGradeCount ?? data?.existingGradeCount ?? 0;
+      toast.success(
+        frozen > 0
+          ? `Scale saved. ${frozen} existing grade${frozen === 1 ? '' : 's'} remain unchanged.`
+          : 'Grading scale saved.',
+      );
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Could not save grading scale.';
@@ -128,7 +133,21 @@ export default function ALevelGradingPage() {
           ) : null}
           {saved ? (
             <div className="rounded-xl border border-theme bg-theme-success-bg/50 px-4 py-3 text-sm text-theme-success">
-              Grading scale saved.
+              Grading scale saved. Existing stored grades were not changed.
+            </div>
+          ) : null}
+
+          {(data?.existingGradeCount ?? 0) > 0 ? (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-theme-primary">
+              <p className="font-medium">
+                {data!.existingGradeCount} stored grade
+                {data!.existingGradeCount === 1 ? '' : 's'} will stay frozen
+              </p>
+              <p className="mt-1 text-theme-muted">
+                Changing this scale only affects new mark entry. Letter grades and
+                points already saved for past exams are never recomputed, so report
+                cards remain stable.
+              </p>
             </div>
           ) : null}
 

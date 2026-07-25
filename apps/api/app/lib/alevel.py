@@ -71,6 +71,24 @@ def compute_grade(
     return "F", 0
 
 
+def grade_descriptor(grade: str | None, subject_type: str) -> str:
+    """Human-readable label for report cards."""
+    if not grade:
+        return ""
+    g = grade.upper()
+    if subject_type == "subsidiary":
+        return "Subsidiary Pass" if g == "P" else "Fail"
+    return {
+        "A": "Distinction",
+        "B": "Very Good",
+        "C": "Credit",
+        "D": "Pass",
+        "E": "Minimum Pass",
+        "O": "Subsidiary Pass",
+        "F": "Fail",
+    }.get(g, "")
+
+
 def compute_result_code(principal_pass_count: int) -> str:
     """1 if >=2 principal passes, 2 if exactly 1, 6 if none."""
     if principal_pass_count >= 2:
@@ -80,14 +98,23 @@ def compute_result_code(principal_pass_count: int) -> str:
     return RESULT_CODE_INCOMPLETE
 
 
+def _grade_subject_type(g: dict[str, Any]) -> str:
+    return str(g.get("subject_type") or g.get("subjectType") or "")
+
+
+def _grade_is_gp(g: dict[str, Any]) -> bool:
+    return bool(g.get("is_gp") if "is_gp" in g else g.get("isGp"))
+
+
 def compute_student_totals(grades: list[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate a student's subject grades into UACE totals.
 
-    Each grade dict contains: subject_type, grade, points, is_gp.
+    Each grade dict contains subject type + grade + points + GP flag
+    (snake_case or camelCase keys are both accepted).
     Uses the best 3 principal subjects and the two subsidiaries (GP + one other).
     """
-    principals = [g for g in grades if g.get("subject_type") == "principal"]
-    subsidiaries = [g for g in grades if g.get("subject_type") == "subsidiary"]
+    principals = [g for g in grades if _grade_subject_type(g) == "principal"]
+    subsidiaries = [g for g in grades if _grade_subject_type(g) == "subsidiary"]
 
     top_principals = sorted(
         principals, key=lambda g: int(g.get("points") or 0), reverse=True
@@ -98,11 +125,11 @@ def compute_student_totals(grades: list[dict[str, Any]]) -> dict[str, Any]:
     )
 
     gp_points = sum(
-        int(g.get("points") or 0) for g in subsidiaries if g.get("is_gp")
+        int(g.get("points") or 0) for g in subsidiaries if _grade_is_gp(g)
     )
     gp_points = min(gp_points, 1)
 
-    non_gp_subsidiaries = [g for g in subsidiaries if not g.get("is_gp")]
+    non_gp_subsidiaries = [g for g in subsidiaries if not _grade_is_gp(g)]
     subsidiary_points = min(
         sum(int(g.get("points") or 0) for g in non_gp_subsidiaries[:1]), 1
     )

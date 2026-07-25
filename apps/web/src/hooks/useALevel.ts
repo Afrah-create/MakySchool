@@ -6,9 +6,11 @@ import type {
   ALevelEnrollmentFilters,
   ALevelGradingScale,
   BulkALevelEnrollmentPayload,
+  BulkUpdateALevelEnrollmentsPayload,
   CreateALevelCombinationPayload,
   CreateALevelEnrollmentPayload,
   CreateALevelSubjectPayload,
+  UpdateALevelEnrollmentPayload,
   UpdateALevelSubjectPayload,
   SaveALevelGradesPayload,
 } from '@makyschool/shared';
@@ -24,6 +26,8 @@ export const alevelKeys = {
     ['alevel', 'grades', classId, termId, yearId] as const,
   results: (classId: string, termId: string, yearId: string) =>
     ['alevel', 'results', classId, termId, yearId] as const,
+  reportCard: (studentId: string, termId: string, yearId: string) =>
+    ['alevel', 'report-card', studentId, termId, yearId] as const,
 };
 
 /** S5/S6 classes only — combinations are an Advanced-level concept. */
@@ -173,6 +177,26 @@ export function useBulkCreateALevelEnrollments() {
   });
 }
 
+export function useUpdateALevelEnrollment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; payload: UpdateALevelEnrollmentPayload }) =>
+      alevelApi.updateEnrollment(args.id, args.payload),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['alevel', 'enrollments'] }),
+  });
+}
+
+export function useBulkUpdateALevelEnrollments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: BulkUpdateALevelEnrollmentsPayload) =>
+      alevelApi.bulkUpdateEnrollments(payload),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['alevel', 'enrollments'] }),
+  });
+}
+
 export function useDeleteALevelEnrollment() {
   const qc = useQueryClient();
   return useMutation({
@@ -214,6 +238,46 @@ export function useSaveALevelGrades() {
   });
 }
 
+export function useLockALevelTerm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      termId: string;
+      classId: string;
+      academicYearId: string;
+    }) => alevelApi.lockTerm(args.termId, args.classId, args.academicYearId),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({
+        queryKey: alevelKeys.grades(
+          vars.classId,
+          vars.termId,
+          vars.academicYearId,
+        ),
+      });
+    },
+  });
+}
+
+export function useUnlockALevelTerm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      termId: string;
+      classId: string;
+      academicYearId: string;
+    }) => alevelApi.unlockTerm(args.termId, args.classId, args.academicYearId),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({
+        queryKey: alevelKeys.grades(
+          vars.classId,
+          vars.termId,
+          vars.academicYearId,
+        ),
+      });
+    },
+  });
+}
+
 export function useALevelResults(
   classId: string,
   termId: string,
@@ -225,5 +289,65 @@ export function useALevelResults(
     queryFn: () => alevelApi.getResults(classId, termId, academicYearId),
     enabled: enabled && !!classId && !!termId && !!academicYearId,
     staleTime: 15_000,
+  });
+}
+
+export function useALevelReportCard(
+  studentId: string,
+  termId: string,
+  academicYearId: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: alevelKeys.reportCard(studentId, termId, academicYearId),
+    queryFn: () => alevelApi.getReportCard(studentId, termId, academicYearId),
+    enabled: enabled && !!studentId && !!termId && !!academicYearId,
+    staleTime: 15_000,
+  });
+}
+
+export function useSaveALevelReportComment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      studentId: string;
+      termId: string;
+      academicYearId: string;
+      classId?: string | null;
+      classTeacherComment?: string | null;
+      headTeacherComment?: string | null;
+      approve?: boolean;
+    }) =>
+      alevelApi.saveReportComment(
+        args.studentId,
+        args.termId,
+        args.academicYearId,
+        {
+          classTeacherComment: args.classTeacherComment,
+          headTeacherComment: args.headTeacherComment,
+          approve: args.approve,
+        },
+        args.classId,
+      ),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({
+        queryKey: alevelKeys.reportCard(
+          vars.studentId,
+          vars.termId,
+          vars.academicYearId,
+        ),
+      });
+    },
+  });
+}
+
+export function useGenerateALevelReportCards() {
+  return useMutation({
+    mutationFn: (params: {
+      classId: string;
+      termId: string;
+      academicYearId: string;
+      studentId?: string;
+    }) => alevelApi.generateReportCards(params),
   });
 }

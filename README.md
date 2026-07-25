@@ -19,11 +19,14 @@ MakySchool/
 │   └── ui/             Shared design system, BrandLogo, dashboard shell
 ├── infrastructure/
 │   └── caddy/          Reverse proxy for local subdomain routing
+├── docs/               Feature developer guides (attendance, A-Level, MakyReach, …)
 ├── .env.example        Copy to .env at the repo root
 └── package.json        Workspace scripts (dev, migrate, seed, build)
 ```
 
 Legacy database tables from the original single-school product live in `apps/api/migrations/schema.sql`. That file is reference-only and is not executed by the migration runner. Executable migrations are numbered SQL files in `apps/api/migrations/`.
+
+Feature-specific developer docs live under [`docs/`](./docs/README.md) (attendance, A-Level, MakyReach SMS).
 
 ## Architecture
 
@@ -344,6 +347,17 @@ Marketing Vercel domain: `school.makylegacy.com`. Tenant Vercel domains: `*.scho
 File uploads persist on the API filesystem. Mount a volume at `apps/api/uploads` or plan object storage if you scale beyond a single node.
 
 Run `npm run migrate` on deploy after releases that include new migration files.
+
+## Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [docs/README.md](./docs/README.md) | Index of feature guides |
+| [docs/attendance.md](./docs/attendance.md) | Period-based attendance, lock-after-submit, parent SMS |
+| [docs/alevel.md](./docs/alevel.md) | Traditional UACE A-Level module |
+| [docs/makyreach.md](./docs/makyreach.md) | Central MakyReach SMS client |
+
+API-local docs: `apps/api/README.md`, `apps/api/SETUP.md`, `apps/api/STORAGE.md`.
 
 ## What is not built yet
 

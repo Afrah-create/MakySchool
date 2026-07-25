@@ -16,9 +16,17 @@ from pydantic import BaseModel, field_validator
 from app.db.pool import get_db
 from app.lib.alevel import (
     PRINCIPAL_BANDS,
+    PRINCIPAL_PASS_GRADES,
     SUBSIDIARY_PASS_THRESHOLD,
     compute_grade,
     compute_student_totals,
+    grade_descriptor,
+)
+from app.lib.alevel_access import (
+    assert_exam_open,
+    assert_teacher_can_grade_class,
+    fetch_term_lock,
+    teacher_assigned_alevel_class_ids,
 )
 from app.lib.classes import A_LEVEL_CLASS_LEVELS
 from app.lib.teacher_assignments import format_class_name
@@ -107,19 +115,40 @@ def _class_name(row: asyncpg.Record) -> str | None:
 # ══════════════════════════════════════════════════════════════════════════════
 @router.get("/classes")
 async def list_alevel_classes(ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)):
-    """Only S5/S6 classes — combinations are an Advanced-level concept."""
+    """Only S5/S6 classes — combinations are an Advanced-level concept.
+
+    Teachers only see classes where they have a subject teaching assignment.
+    """
     school_id, actor = ctx
     _require(actor, GRADE_ROLES | VIEW_ROLES, "You cannot access A-Level.")
-    rows = await conn.fetch(
-        """
-        SELECT id, level, stream
-        FROM school_classes
-        WHERE school_id = $1 AND level = ANY($2::text[])
-        ORDER BY level, COALESCE(sort_order, 9999), COALESCE(stream, '')
-        """,
-        school_id,
-        list(A_LEVEL_CLASS_LEVELS),
-    )
+
+    if actor["role"] == "teacher":
+        class_ids = await teacher_assigned_alevel_class_ids(
+            conn, school_id, _actor_id(actor)
+        )
+        if not class_ids:
+            return {"data": []}
+        rows = await conn.fetch(
+            """
+            SELECT id, level, stream
+            FROM school_classes
+            WHERE school_id = $1 AND id = ANY($2::uuid[])
+            ORDER BY level, COALESCE(sort_order, 9999), COALESCE(stream, '')
+            """,
+            school_id,
+            class_ids,
+        )
+    else:
+        rows = await conn.fetch(
+            """
+            SELECT id, level, stream
+            FROM school_classes
+            WHERE school_id = $1 AND level = ANY($2::text[])
+            ORDER BY level, COALESCE(sort_order, 9999), COALESCE(stream, '')
+            """,
+            school_id,
+            list(A_LEVEL_CLASS_LEVELS),
+        )
     return {
         "data": [
             {"id": str(r["id"]), "level": r["level"], "stream": r["stream"]}
@@ -219,8 +248,12 @@ class GradingScaleBody(BaseModel):
 @router.get("/grading-scale")
 async def get_grading_scale(ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)):
     school_id, actor = ctx
-    _require(actor, VIEW_ROLES, "You cannot view the grading scale.")
+    _require(actor, VIEW_ROLES | GRADE_ROLES, "You cannot view the grading scale.")
     bands, threshold = await _load_grading_config(conn, school_id)
+    existing_grades = await conn.fetchval(
+        "SELECT COUNT(*)::int FROM alevel_grades WHERE school_id = $1",
+        school_id,
+    )
     return {
         "data": {
             "bands": [
@@ -228,6 +261,7 @@ async def get_grading_scale(ctx: TenantCtx, conn: asyncpg.Connection = Depends(g
                 for b in sorted(bands, key=lambda x: x[0], reverse=True)
             ],
             "subsidiaryPassThreshold": threshold,
+            "existingGradeCount": int(existing_grades or 0),
         }
     }
 
@@ -236,8 +270,18 @@ async def get_grading_scale(ctx: TenantCtx, conn: asyncpg.Connection = Depends(g
 async def put_grading_scale(
     body: GradingScaleBody, ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)
 ):
+    """Update the school scale used for *new* grade entries.
+
+    Already-stored grade letters and points are never recomputed — historical
+    results stay frozen so report cards remain stable after a scale change.
+    """
     school_id, actor = ctx
     _require(actor, MANAGE_ROLES, "Only admins can configure the grading scale.")
+
+    existing_grades = await conn.fetchval(
+        "SELECT COUNT(*)::int FROM alevel_grades WHERE school_id = $1",
+        school_id,
+    )
 
     async with conn.transaction():
         await conn.execute(
@@ -266,7 +310,19 @@ async def put_grading_scale(
             body.subsidiaryPassThreshold,
         )
 
-    return {"data": {"ok": True}}
+    return {
+        "data": {
+            "ok": True,
+            "existingGradeCount": int(existing_grades or 0),
+            "message": (
+                f"Scale saved. {existing_grades} existing grade"
+                f"{'' if existing_grades == 1 else 's'} keep their stored "
+                "letter/points and will not be recomputed."
+                if existing_grades
+                else "Scale saved. New entries will use these bands."
+            ),
+        }
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1167,6 +1223,13 @@ async def get_grades(
     school_id, actor = ctx
     _require(actor, GRADE_ROLES, "You cannot access A-Level grades.")
 
+    editable_subject_ids: list[str] | None = None
+    if actor["role"] == "teacher":
+        allowed = await assert_teacher_can_grade_class(
+            conn, school_id, _actor_id(actor), class_id
+        )
+        editable_subject_ids = sorted(allowed)
+
     students, subjects = await _class_student_subjects(
         conn, school_id, class_id, academic_year_id
     )
@@ -1190,11 +1253,18 @@ async def get_grades(
         for r in grade_rows
     }
 
+    lock = await fetch_term_lock(conn, school_id, class_id, term_id)
+
     return {
         "data": {
             "students": students,
             "subjects": subjects,
             "grades": grades,
+            "isLocked": bool(lock),
+            "isOpen": not bool(lock),
+            "lockedAt": lock["lockedAt"] if lock else None,
+            "lockedByName": lock["lockedByName"] if lock else None,
+            "editableSubjectIds": editable_subject_ids,
         }
     }
 
@@ -1203,12 +1273,25 @@ async def get_grades(
 async def save_grades(
     body: GradesBulkBody, ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)
 ):
+    """Upsert or clear grade cells. Requires an open exam (no term lock).
+
+    Teachers may only submit subjects they are assigned to teach in the class.
+    Letter grade and points are computed from the *current* school scale and
+    stored — later scale changes do not rewrite these rows.
+    """
     school_id, actor = ctx
     _require(actor, GRADE_ROLES, "You cannot enter A-Level grades.")
     actor_id = _actor_id(actor)
 
-    bands, threshold = await _load_grading_config(conn, school_id)
+    await assert_exam_open(conn, school_id, body.classId, body.termId)
 
+    allowed_subjects: set[str] | None = None
+    if actor["role"] == "teacher":
+        allowed_subjects = await assert_teacher_can_grade_class(
+            conn, school_id, actor_id, body.classId
+        )
+
+    bands, threshold = await _load_grading_config(conn, school_id)
     subject_types = {
         str(r["id"]): r["subject_type"]
         for r in await conn.fetch(
@@ -1217,33 +1300,55 @@ async def save_grades(
         )
     }
 
-    saved = 0
+    to_upsert: list[tuple[uuid.UUID, uuid.UUID, float, str, int]] = []
+    to_delete: list[tuple[uuid.UUID, uuid.UUID]] = []
+    skipped = 0
+
+    for entry in body.entries:
+        subject_key = str(entry.subjectId)
+        subject_type = subject_types.get(subject_key)
+        if subject_type is None:
+            skipped += 1
+            continue
+        if allowed_subjects is not None and subject_key not in allowed_subjects:
+            skipped += 1
+            continue
+        if entry.rawScore is None:
+            to_delete.append((entry.studentId, entry.subjectId))
+            continue
+        grade, points = compute_grade(entry.rawScore, subject_type, bands, threshold)
+        to_upsert.append(
+            (entry.studentId, entry.subjectId, entry.rawScore, grade, points)
+        )
+
     async with conn.transaction():
-        for entry in body.entries:
-            subject_type = subject_types.get(str(entry.subjectId))
-            if subject_type is None:
-                continue
-            if entry.rawScore is None:
-                await conn.execute(
-                    """
-                    DELETE FROM alevel_grades
-                    WHERE school_id = $1 AND student_id = $2 AND subject_id = $3 AND term_id = $4
-                    """,
-                    school_id,
-                    entry.studentId,
-                    entry.subjectId,
-                    body.termId,
-                )
-                continue
-            grade, points = compute_grade(
-                entry.rawScore, subject_type, bands, threshold
+        if to_delete:
+            await conn.execute(
+                """
+                DELETE FROM alevel_grades g
+                USING unnest($1::uuid[], $2::uuid[]) AS u(student_id, subject_id)
+                WHERE g.school_id = $3
+                  AND g.term_id = $4
+                  AND g.student_id = u.student_id
+                  AND g.subject_id = u.subject_id
+                """,
+                [t[0] for t in to_delete],
+                [t[1] for t in to_delete],
+                school_id,
+                body.termId,
             )
+        if to_upsert:
             await conn.execute(
                 """
                 INSERT INTO alevel_grades
                   (school_id, student_id, subject_id, term_id, academic_year_id,
                    class_id, raw_score, grade, points, entered_by, entered_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+                SELECT
+                  $1, u.student_id, u.subject_id, $2, $3, $4,
+                  u.raw_score, u.grade, u.points, $5, NOW(), NOW()
+                FROM unnest(
+                  $6::uuid[], $7::uuid[], $8::numeric[], $9::text[], $10::smallint[]
+                ) AS u(student_id, subject_id, raw_score, grade, points)
                 ON CONFLICT (school_id, student_id, subject_id, term_id)
                 DO UPDATE SET raw_score = EXCLUDED.raw_score,
                               grade = EXCLUDED.grade,
@@ -1254,19 +1359,24 @@ async def save_grades(
                               updated_at = NOW()
                 """,
                 school_id,
-                entry.studentId,
-                entry.subjectId,
                 body.termId,
                 body.academicYearId,
                 body.classId,
-                entry.rawScore,
-                grade,
-                points,
                 actor_id,
+                [t[0] for t in to_upsert],
+                [t[1] for t in to_upsert],
+                [t[2] for t in to_upsert],
+                [t[3] for t in to_upsert],
+                [t[4] for t in to_upsert],
             )
-            saved += 1
 
-    return {"data": {"saved": saved}}
+    return {
+        "data": {
+            "saved": len(to_upsert),
+            "cleared": len(to_delete),
+            "skipped": skipped,
+        }
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1331,13 +1441,685 @@ async def get_results(
             }
         )
 
-    results.sort(key=lambda r: r["total_points"], reverse=True)
+    results.sort(
+        key=lambda r: (-r["total_points"], (r["studentName"] or "").lower())
+    )
     for rank, result in enumerate(results, start=1):
         result["position"] = rank
+
+    n = len(results)
+    avg_points = (
+        round(sum(r["total_points"] for r in results) / n, 2) if n else 0.0
+    )
+    cert = sum(1 for r in results if r["result_code"] == "1")
+    three_pass = sum(1 for r in results if r["principal_pass_count"] >= 3)
+    two_pass = sum(1 for r in results if r["principal_pass_count"] >= 2)
+
+    subject_stats = []
+    for subj in subjects:
+        sat = 0
+        passed = 0
+        points_sum = 0
+        for r in results:
+            cell = next(
+                (s for s in r["subjects"] if s["subjectId"] == subj["id"]), None
+            )
+            if not cell or cell.get("grade") is None:
+                continue
+            sat += 1
+            points_sum += int(cell.get("points") or 0)
+            g = cell.get("grade") or ""
+            if subj["subjectType"] == "principal":
+                if g in PRINCIPAL_PASS_GRADES:
+                    passed += 1
+            elif g == "P":
+                passed += 1
+        subject_stats.append(
+            {
+                "subjectId": subj["id"],
+                "subjectName": subj["name"],
+                "code": subj["code"],
+                "sat": sat,
+                "passRate": round((passed / sat) * 100, 1) if sat else 0.0,
+                "averagePoints": round(points_sum / sat, 2) if sat else 0.0,
+            }
+        )
+    subject_stats.sort(key=lambda s: s["passRate"], reverse=True)
 
     return {
         "data": {
             "results": results,
             "subjects": subjects,
+            "summary": {
+                "studentCount": n,
+                "averagePoints": avg_points,
+                "certificateEligible": cert,
+                "certificateEligiblePercent": round((cert / n) * 100, 1) if n else 0.0,
+                "threePrincipalPasses": three_pass,
+                "twoPrincipalPasses": two_pass,
+                "subjectStats": subject_stats,
+            },
         }
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Term locks = open / closed exams
+# ══════════════════════════════════════════════════════════════════════════════
+class TermLockBody(BaseModel):
+    classId: uuid.UUID
+    academicYearId: uuid.UUID
+
+
+@router.post("/terms/{term_id}/lock")
+async def lock_term(
+    term_id: uuid.UUID,
+    body: TermLockBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """Close the exam for a class-term (blocks further grade entry)."""
+    school_id, actor = ctx
+    _require(actor, VIEW_ROLES, "Only admins and head teachers can close an exam.")
+    await _assert_alevel_class(conn, school_id, body.classId)
+    actor_id = _actor_id(actor)
+
+    await conn.execute(
+        """
+        INSERT INTO alevel_term_locks
+          (school_id, class_id, term_id, academic_year_id, locked_by, locked_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        ON CONFLICT (school_id, class_id, term_id) DO NOTHING
+        """,
+        school_id,
+        body.classId,
+        term_id,
+        body.academicYearId,
+        actor_id,
+    )
+    lock = await fetch_term_lock(conn, school_id, body.classId, term_id)
+    return {"data": {"ok": True, **(lock or {"isLocked": True})}}
+
+
+@router.delete("/terms/{term_id}/lock")
+async def unlock_term(
+    term_id: uuid.UUID,
+    body: TermLockBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """Re-open the exam. Admin only — head teachers cannot self-unlock."""
+    school_id, actor = ctx
+    _require(actor, MANAGE_ROLES, "Only admins can reopen a closed exam.")
+    deleted = await conn.fetchval(
+        """
+        DELETE FROM alevel_term_locks
+        WHERE school_id = $1 AND class_id = $2 AND term_id = $3
+        RETURNING id
+        """,
+        school_id,
+        body.classId,
+        term_id,
+    )
+    return {"data": {"ok": True, "wasLocked": bool(deleted), "isOpen": True}}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Enrollment updates (single + bulk)
+# ══════════════════════════════════════════════════════════════════════════════
+class EnrollmentUpdateBody(BaseModel):
+    combinationId: uuid.UUID | None = None
+    subsidiarySubjectId: uuid.UUID | None = None
+    isActive: bool | None = None
+
+
+class BulkEnrollmentUpdateBody(BaseModel):
+    enrollmentIds: list[uuid.UUID]
+    combinationId: uuid.UUID | None = None
+    subsidiarySubjectId: uuid.UUID | None = None
+    isActive: bool | None = None
+
+    @field_validator("enrollmentIds")
+    @classmethod
+    def ids_ok(cls, v: list[uuid.UUID]) -> list[uuid.UUID]:
+        unique = list(dict.fromkeys(v))
+        if not unique:
+            raise ValueError("Select at least one enrollment")
+        if len(unique) > 300:
+            raise ValueError("Update at most 300 enrollments at a time")
+        return unique
+
+
+@router.patch("/enrollments/{enrollment_id}")
+async def update_enrollment(
+    enrollment_id: uuid.UUID,
+    body: EnrollmentUpdateBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    _require(actor, MANAGE_ROLES, "Only admins can manage enrollments.")
+
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(
+            status_code=400, detail={"error": "Provide at least one field to update."}
+        )
+
+    if body.combinationId is not None:
+        ok = await conn.fetchval(
+            "SELECT 1 FROM alevel_combinations WHERE id = $1 AND school_id = $2",
+            body.combinationId,
+            school_id,
+        )
+        if not ok:
+            raise HTTPException(status_code=400, detail={"error": "Invalid combination."})
+    if "subsidiarySubjectId" in updates and body.subsidiarySubjectId is not None:
+        ok = await conn.fetchval(
+            """
+            SELECT 1 FROM alevel_subjects
+            WHERE id = $1 AND school_id = $2 AND subject_type = 'subsidiary' AND is_gp = false
+            """,
+            body.subsidiarySubjectId,
+            school_id,
+        )
+        if not ok:
+            raise HTTPException(
+                status_code=400, detail={"error": "Invalid subsidiary subject."}
+            )
+
+    set_parts: list[str] = []
+    params: list[Any] = []
+    idx = 1
+    if "combinationId" in updates:
+        set_parts.append(f"combination_id = ${idx}")
+        params.append(body.combinationId)
+        idx += 1
+    if "subsidiarySubjectId" in updates:
+        set_parts.append(f"subsidiary_subject_id = ${idx}")
+        params.append(body.subsidiarySubjectId)
+        idx += 1
+    if "isActive" in updates:
+        set_parts.append(f"is_active = ${idx}")
+        params.append(body.isActive)
+        idx += 1
+
+    params.extend([enrollment_id, school_id])
+    row = await conn.fetchrow(
+        f"""
+        UPDATE alevel_enrollments
+        SET {", ".join(set_parts)}
+        WHERE id = ${idx} AND school_id = ${idx + 1}
+        RETURNING id
+        """,
+        *params,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail={"error": "Enrollment not found"})
+    full = await conn.fetchrow(f"{ENROLLMENT_SELECT} WHERE e.id = $1", enrollment_id)
+    return {"data": _enrollment(full)}
+
+
+@router.post("/enrollments/bulk-update")
+async def bulk_update_enrollments(
+    body: BulkEnrollmentUpdateBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """Bulk-change combination, subsidiary, and/or active flag for many enrollments."""
+    school_id, actor = ctx
+    _require(actor, MANAGE_ROLES, "Only admins can manage enrollments.")
+
+    updates = body.model_dump(exclude_unset=True)
+    updates.pop("enrollmentIds", None)
+    if not updates:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "Provide at least one field to update."},
+        )
+
+    if body.combinationId is not None:
+        ok = await conn.fetchval(
+            "SELECT 1 FROM alevel_combinations WHERE id = $1 AND school_id = $2",
+            body.combinationId,
+            school_id,
+        )
+        if not ok:
+            raise HTTPException(status_code=400, detail={"error": "Invalid combination."})
+    if "subsidiarySubjectId" in updates and body.subsidiarySubjectId is not None:
+        ok = await conn.fetchval(
+            """
+            SELECT 1 FROM alevel_subjects
+            WHERE id = $1 AND school_id = $2 AND subject_type = 'subsidiary' AND is_gp = false
+            """,
+            body.subsidiarySubjectId,
+            school_id,
+        )
+        if not ok:
+            raise HTTPException(
+                status_code=400, detail={"error": "Invalid subsidiary subject."}
+            )
+
+    set_parts: list[str] = []
+    params: list[Any] = []
+    idx = 1
+    if "combinationId" in updates:
+        set_parts.append(f"combination_id = ${idx}")
+        params.append(body.combinationId)
+        idx += 1
+    if "subsidiarySubjectId" in updates:
+        set_parts.append(f"subsidiary_subject_id = ${idx}")
+        params.append(body.subsidiarySubjectId)
+        idx += 1
+    if "isActive" in updates:
+        set_parts.append(f"is_active = ${idx}")
+        params.append(body.isActive)
+        idx += 1
+
+    params.extend([school_id, body.enrollmentIds])
+    await conn.execute(
+        f"""
+        UPDATE alevel_enrollments
+        SET {", ".join(set_parts)}
+        WHERE school_id = ${idx} AND id = ANY(${idx + 1}::uuid[])
+        """,
+        *params,
+    )
+    count = await conn.fetchval(
+        """
+        SELECT COUNT(*)::int FROM alevel_enrollments
+        WHERE school_id = $1 AND id = ANY($2::uuid[])
+        """,
+        school_id,
+        body.enrollmentIds,
+    )
+    return {"data": {"updated": int(count or 0)}}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Student grades + report cards
+# ══════════════════════════════════════════════════════════════════════════════
+@router.get("/grades/student/{student_id}")
+async def get_student_grades(
+    student_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+    academic_year_id: uuid.UUID = Query(...),
+):
+    school_id, actor = ctx
+    _require(actor, VIEW_ROLES | GRADE_ROLES, "You cannot view student grades.")
+
+    terms = await conn.fetch(
+        """
+        SELECT id, name FROM terms
+        WHERE school_id = $1 AND academic_year_id = $2
+        ORDER BY start_date ASC NULLS LAST, name ASC
+        """,
+        school_id,
+        academic_year_id,
+    )
+    grade_rows = await conn.fetch(
+        f"""
+        SELECT g.term_id, g.raw_score, g.grade, g.points,
+               {SUBJECT_COLUMNS}
+        FROM alevel_grades g
+        JOIN alevel_subjects s ON s.id = g.subject_id
+        JOIN school_subjects ss ON ss.id = s.school_subject_id
+        WHERE g.school_id = $1 AND g.student_id = $2 AND g.academic_year_id = $3
+        """,
+        school_id,
+        student_id,
+        academic_year_id,
+    )
+    by_term: dict[str, list[dict[str, Any]]] = {}
+    for r in grade_rows:
+        by_term.setdefault(str(r["term_id"]), []).append(
+            {
+                "subjectId": str(r["id"]),
+                "subjectName": r["name"],
+                "subjectType": r["subject_type"],
+                "isGp": r["is_gp"],
+                "rawScore": float(r["raw_score"]) if r["raw_score"] is not None else None,
+                "grade": r["grade"],
+                "points": r["points"],
+                "descriptor": grade_descriptor(r["grade"], r["subject_type"]),
+            }
+        )
+
+    payload = []
+    for t in terms:
+        grades = by_term.get(str(t["id"]), [])
+        payload.append(
+            {
+                "termId": str(t["id"]),
+                "termName": t["name"],
+                "subjects": grades,
+                **compute_student_totals(grades),
+            }
+        )
+    return {"data": {"studentId": str(student_id), "terms": payload}}
+
+
+@router.get("/report-card/{student_id}")
+async def get_report_card(
+    student_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+    term_id: uuid.UUID = Query(...),
+    academic_year_id: uuid.UUID = Query(...),
+):
+    school_id, actor = ctx
+    _require(actor, VIEW_ROLES, "You cannot view report cards.")
+
+    student = await conn.fetchrow(
+        f"""
+        {ENROLLMENT_SELECT}
+        WHERE e.school_id = $1 AND e.student_id = $2 AND e.academic_year_id = $3
+        LIMIT 1
+        """,
+        school_id,
+        student_id,
+        academic_year_id,
+    )
+    if not student:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "Student is not enrolled for this year."},
+        )
+
+    term = await conn.fetchrow(
+        "SELECT id, name FROM terms WHERE id = $1 AND school_id = $2",
+        term_id,
+        school_id,
+    )
+    if not term:
+        raise HTTPException(status_code=404, detail={"error": "Term not found."})
+
+    school = await conn.fetchrow(
+        "SELECT name, logo_url, stamp_url FROM schools WHERE id = $1",
+        school_id,
+    )
+
+    grade_rows = await conn.fetch(
+        f"""
+        SELECT g.raw_score, g.grade, g.points, {SUBJECT_COLUMNS}
+        FROM alevel_grades g
+        JOIN alevel_subjects s ON s.id = g.subject_id
+        JOIN school_subjects ss ON ss.id = s.school_subject_id
+        WHERE g.school_id = $1 AND g.student_id = $2 AND g.term_id = $3
+        ORDER BY s.subject_type, ss.name
+        """,
+        school_id,
+        student_id,
+        term_id,
+    )
+    subjects = [
+        {
+            "subjectId": str(r["id"]),
+            "subjectName": r["name"],
+            "code": r["code"],
+            "subjectType": r["subject_type"],
+            "isGp": r["is_gp"],
+            "rawScore": float(r["raw_score"]) if r["raw_score"] is not None else None,
+            "grade": r["grade"],
+            "points": r["points"],
+            "descriptor": grade_descriptor(r["grade"], r["subject_type"]),
+        }
+        for r in grade_rows
+    ]
+    totals = compute_student_totals(subjects)
+
+    # Class rank among classmates for this term
+    class_id = student["class_id"]
+    position = None
+    class_size = None
+    if class_id:
+        classmates, _ = await _class_student_subjects(
+            conn, school_id, class_id, academic_year_id
+        )
+        # Reuse results ranking logic lightly
+        class_grades = await conn.fetch(
+            """
+            SELECT student_id, subject_id, grade, points
+            FROM alevel_grades
+            WHERE school_id = $1 AND class_id = $2 AND term_id = $3
+            """,
+            school_id,
+            class_id,
+            term_id,
+        )
+        by_stu: dict[str, list[dict[str, Any]]] = {}
+        subj_meta = {
+            str(r["id"]): {"subject_type": r["subject_type"], "is_gp": r["is_gp"]}
+            for r in await conn.fetch(
+                "SELECT id, subject_type, is_gp FROM alevel_subjects WHERE school_id = $1",
+                school_id,
+            )
+        }
+        for g in class_grades:
+            meta = subj_meta.get(str(g["subject_id"]))
+            if not meta:
+                continue
+            by_stu.setdefault(str(g["student_id"]), []).append(
+                {
+                    "subject_type": meta["subject_type"],
+                    "is_gp": meta["is_gp"],
+                    "grade": g["grade"],
+                    "points": g["points"],
+                }
+            )
+        ranked = []
+        for c in classmates:
+            t = compute_student_totals(by_stu.get(c["studentId"], []))
+            ranked.append((c["studentId"], t["total_points"], c["studentName"]))
+        ranked.sort(key=lambda x: (-x[1], (x[2] or "").lower()))
+        class_size = len(ranked)
+        for i, (sid, _, _) in enumerate(ranked, start=1):
+            if sid == str(student_id):
+                position = i
+                break
+
+    meta = await conn.fetchrow(
+        """
+        SELECT m.class_teacher_comment, m.head_teacher_comment,
+               m.approved_at, m.approved_by, u.full_name AS approved_by_name
+        FROM alevel_report_metadata m
+        LEFT JOIN users u ON u.id = m.approved_by
+        WHERE m.school_id = $1 AND m.student_id = $2 AND m.term_id = $3
+        """,
+        school_id,
+        student_id,
+        term_id,
+    )
+
+    from app.lib.storage_urls import resolve_storage_url
+
+    logo = await resolve_storage_url(
+        school["logo_url"] if school else None, school_id=school_id
+    )
+    stamp = await resolve_storage_url(
+        school["stamp_url"] if school else None, school_id=school_id
+    )
+
+    return {
+        "data": {
+            "schoolName": school["name"] if school else None,
+            "logoUrl": logo,
+            "stampUrl": stamp,
+            "studentId": str(student_id),
+            "studentName": student["student_name"],
+            "learnerId": student["learner_id"],
+            "className": _class_name(student),
+            "combinationName": student["combination_name"],
+            "termId": str(term["id"]),
+            "termName": term["name"],
+            "academicYearId": str(academic_year_id),
+            "subjects": subjects,
+            **totals,
+            "position": position,
+            "classSize": class_size,
+            "classTeacherComment": meta["class_teacher_comment"] if meta else None,
+            "headTeacherComment": meta["head_teacher_comment"] if meta else None,
+            "approvedAt": meta["approved_at"].isoformat()
+            if meta and meta["approved_at"]
+            else None,
+            "approvedByName": meta["approved_by_name"] if meta else None,
+        }
+    }
+
+
+class ReportCommentBody(BaseModel):
+    classTeacherComment: str | None = None
+    headTeacherComment: str | None = None
+    approve: bool = False
+
+
+@router.post("/report-card/{student_id}/comment")
+async def save_report_comment(
+    student_id: uuid.UUID,
+    body: ReportCommentBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+    term_id: uuid.UUID = Query(...),
+    academic_year_id: uuid.UUID = Query(...),
+    class_id: uuid.UUID | None = Query(None),
+):
+    school_id, actor = ctx
+    _require(actor, VIEW_ROLES, "You cannot edit report comments.")
+    actor_id = _actor_id(actor)
+
+    existing = await conn.fetchrow(
+        """
+        SELECT approved_at FROM alevel_report_metadata
+        WHERE school_id = $1 AND student_id = $2 AND term_id = $3
+        """,
+        school_id,
+        student_id,
+        term_id,
+    )
+    if existing and existing["approved_at"] and not body.approve:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "This report card is approved. Comments are locked.",
+                "code": "APPROVED",
+            },
+        )
+
+    if body.approve and actor["role"] not in {"head_teacher", "admin"}:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "Only the head teacher or admin can approve."},
+        )
+
+    await conn.execute(
+        """
+        INSERT INTO alevel_report_metadata
+          (school_id, student_id, term_id, academic_year_id, class_id,
+           class_teacher_comment, head_teacher_comment,
+           approved_by, approved_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7,
+                CASE WHEN $8 THEN $9 ELSE NULL END,
+                CASE WHEN $8 THEN NOW() ELSE NULL END,
+                NOW())
+        ON CONFLICT (school_id, student_id, term_id)
+        DO UPDATE SET
+          class_teacher_comment = COALESCE(
+            EXCLUDED.class_teacher_comment, alevel_report_metadata.class_teacher_comment
+          ),
+          head_teacher_comment = COALESCE(
+            EXCLUDED.head_teacher_comment, alevel_report_metadata.head_teacher_comment
+          ),
+          class_id = COALESCE(EXCLUDED.class_id, alevel_report_metadata.class_id),
+          approved_by = CASE
+            WHEN $8 THEN $9 ELSE alevel_report_metadata.approved_by
+          END,
+          approved_at = CASE
+            WHEN $8 THEN NOW() ELSE alevel_report_metadata.approved_at
+          END,
+          updated_at = NOW()
+        """,
+        school_id,
+        student_id,
+        term_id,
+        academic_year_id,
+        class_id,
+        body.classTeacherComment,
+        body.headTeacherComment,
+        body.approve,
+        actor_id,
+    )
+    return {"data": {"ok": True, "approved": body.approve}}
+
+
+@router.post("/report-cards/generate")
+async def generate_report_cards(
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+    class_id: uuid.UUID = Query(...),
+    term_id: uuid.UUID = Query(...),
+    academic_year_id: uuid.UUID = Query(...),
+    student_id: uuid.UUID | None = Query(None),
+):
+    """Generate PDF report card(s). Returns base64 PDF for a single student,
+    or a zip (base64) for the whole class.
+    """
+    import asyncio
+    import base64
+    import io
+    import zipfile
+
+    school_id, actor = ctx
+    _require(actor, VIEW_ROLES, "You cannot generate report cards.")
+
+    from app.lib.alevel_pdf import generate_alevel_report_pdf_bytes
+
+    students, _ = await _class_student_subjects(
+        conn, school_id, class_id, academic_year_id
+    )
+    targets = (
+        [s for s in students if s["studentId"] == str(student_id)]
+        if student_id
+        else students
+    )
+    if not targets:
+        raise HTTPException(status_code=404, detail={"error": "No students found."})
+
+    async def one(sid: str) -> tuple[str, str, bytes]:
+        data = (
+            await get_report_card(
+                uuid.UUID(sid),
+                (school_id, actor),
+                conn,
+                term_id=term_id,
+                academic_year_id=academic_year_id,
+            )
+        )["data"]
+        pdf = await generate_alevel_report_pdf_bytes(data)
+        name = f"{data['learnerId'] or sid}-report.pdf".replace(" ", "_")
+        return sid, name, pdf
+
+    generated = await asyncio.gather(*[one(s["studentId"]) for s in targets])
+
+    if len(generated) == 1:
+        _, name, pdf = generated[0]
+        return {
+            "data": {
+                "filename": name,
+                "pdfBase64": base64.b64encode(pdf).decode("ascii"),
+                "count": 1,
+            }
+        }
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for _, name, pdf in generated:
+            zf.writestr(name, pdf)
+    return {
+        "data": {
+            "filename": "alevel-report-cards.zip",
+            "pdfBase64": base64.b64encode(buf.getvalue()).decode("ascii"),
+            "count": len(generated),
+        }
+    }
+
