@@ -22,7 +22,6 @@ export function SmsReminderPanel({
   const { toast } = useToast();
   const [message, setMessage] = useState(DEFAULT_TEMPLATE);
   const [loading, setLoading] = useState(false);
-  const [makyReachConfigured] = useState(false);
 
   const charCount = message.length;
 
@@ -69,7 +68,7 @@ export function SmsReminderPanel({
         <button
           type="button"
           className="ms-btn-primary w-full"
-          disabled={loading || !makyReachConfigured || students.length === 0}
+          disabled={loading || students.length === 0}
           onClick={() => void send()}
         >
           {loading ? "Sending…" : `Send to ${students.length} recipients`}
@@ -77,12 +76,6 @@ export function SmsReminderPanel({
       }
     >
       <div className="space-y-4">
-        {!makyReachConfigured ? (
-          <div className="rounded-lg border border-theme bg-theme-danger-bg px-3 py-2 text-sm text-theme-danger">
-            Insufficient MakyReach credits. Purchase more credits to send SMS.
-          </div>
-        ) : null}
-
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-theme-muted">Recipients</p>
           <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto text-sm text-theme-muted">

@@ -74,7 +74,7 @@ export function NotifyParentPanel({
             disabled={notify.isPending || !guardian.canNotify}
             onClick={() => void handleSend()}
           >
-            {notify.isPending ? 'Sending…' : 'Queue notification'}
+            {notify.isPending ? 'Sending…' : 'Send SMS'}
           </button>
         </div>
       }
@@ -134,7 +134,7 @@ export function NotifyParentPanel({
         </label>
 
         <p className="text-xs text-theme-muted">
-          Notifications are logged for audit. SMS delivery requires MakyReach credits.
+          Notifications are logged for audit and delivered via MakyReach SMS.
         </p>
       </div>
     </Modal>

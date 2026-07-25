@@ -15,6 +15,12 @@ from app.lib.pdf import ReceiptNotFoundError, generate_fee_receipt_pdf
 from app.lib.rate_limit import get_school_key, limiter
 from app.lib.receipt import format_class_name, format_ugx, generate_receipt_number
 from app.middleware.tenant import get_tenant_and_user
+from app.services.makyreach import (
+    MakyReachError,
+    MakyReachNotConfigured,
+    makyreach_configured,
+    send_bulk_sms,
+)
 from app.routers.fees_shared import (
     PAYMENT_METHODS,
     fees_error as _error,
@@ -1179,10 +1185,25 @@ async def sms_reminders(
         *params,
     )
 
+    template = (body.message or "").strip()
     recipients = []
     for row in rows:
         class_name = format_class_name(row["level"] or "", row["stream"])
         balance = int(row["balance"])
+        default_preview = (
+            f"Dear Parent of {row['student_name']} ({class_name}), school fees for "
+            f"{row['term_name']} are outstanding. Amount due: {format_ugx(balance)}. "
+            f"Please pay at the school office. Thank you — {row['school_name']}."
+        )
+        preview = (
+            template.replace("{student_name}", row["student_name"])
+            .replace("{class_name}", class_name)
+            .replace("{term_name}", row["term_name"])
+            .replace("{balance}", format_ugx(balance))
+            .replace("{school_name}", row["school_name"])
+            if template
+            else default_preview
+        )
         recipients.append(
             {
                 "student_name": row["student_name"],
@@ -1190,20 +1211,76 @@ async def sms_reminders(
                 "class_name": class_name,
                 "balance": balance,
                 "term_name": row["term_name"],
-                "preview": (
-                    f"Dear Parent of {row['student_name']} ({class_name}), school fees for "
-                    f"{row['term_name']} are outstanding. Amount due: {format_ugx(balance)}. "
-                    f"Please pay at the school office. Thank you — {row['school_name']}."
-                ),
+                "preview": preview,
             }
         )
 
+    if not recipients:
+        return {
+            "data": {
+                "queued": 0,
+                "sent": 0,
+                "failed": 0,
+                "message": "No recipients with a primary guardian phone were found.",
+                "recipients": [],
+            }
+        }
+
+    if not makyreach_configured():
+        return {
+            "data": {
+                "queued": len(recipients),
+                "sent": 0,
+                "failed": 0,
+                "message": "MakyReach SMS is not configured. Recipients were prepared but not sent.",
+                "recipients": recipients,
+            }
+        }
+
+    try:
+        result = await send_bulk_sms(
+            messages=[
+                {
+                    "number": r["guardian_phone"],
+                    "message_body": r["preview"],
+                }
+                for r in recipients
+            ],
+            reference=f"fees-{school_id}-{uuid.uuid4().hex[:8]}",
+        )
+    except MakyReachNotConfigured:
+        return {
+            "data": {
+                "queued": len(recipients),
+                "sent": 0,
+                "failed": 0,
+                "message": "MakyReach SMS is not configured. Recipients were prepared but not sent.",
+                "recipients": recipients,
+            }
+        }
+    except MakyReachError as exc:
+        logger.warning("Fee SMS reminders failed: %s", exc)
+        return {
+            "data": {
+                "queued": len(recipients),
+                "sent": 0,
+                "failed": len(recipients),
+                "message": str(exc),
+                "recipients": recipients,
+            }
+        }
+
+    sent = int(result.get("recipients") or 0)
+    skipped = int(result.get("skipped") or 0)
     return {
         "data": {
             "queued": len(recipients),
-            "sent": 0,
-            "failed": 0,
-            "message": "MakyReach SMS is not configured yet. Recipients were prepared but not sent.",
+            "sent": sent,
+            "failed": max(0, len(recipients) - sent - skipped),
+            "skipped": skipped,
+            "cost": result.get("cost"),
+            "remaining_balance": result.get("remaining_balance"),
+            "message": result.get("message") or f"Sent {sent} SMS reminder(s).",
             "recipients": recipients,
         }
     }

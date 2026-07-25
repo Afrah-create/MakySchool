@@ -11,6 +11,12 @@ from pydantic import BaseModel, field_validator
 
 from app.db.pool import get_db
 from app.middleware.subscription_guard import require_tenant_with_subscription
+from app.services.makyreach import (
+    MakyReachError,
+    MakyReachNotConfigured,
+    makyreach_configured,
+    send_sms,
+)
 
 router = APIRouter()
 
@@ -884,15 +890,46 @@ async def notify_student_parent(
             },
         )
 
-    # MakyReach not wired — queue as skipped (mirrors fees SMS stub)
+    send_status = "queued"
+    provider_ref: str | None = None
+    sent = False
+    response_message = "Parent notification queued."
+
+    if not makyreach_configured():
+        send_status = "skipped"
+        response_message = (
+            "Parent notification prepared. MakyReach SMS is not configured — "
+            "the message was saved but not sent."
+        )
+    else:
+        try:
+            result = await send_sms(phones=guardian["phone"], message=message_body)
+            send_status = "sent"
+            sent = True
+            provider_ref = str(result.get("provider_ref") or "") or None
+            response_message = result.get("message") or "Parent notification sent via SMS."
+        except MakyReachNotConfigured:
+            send_status = "skipped"
+            response_message = (
+                "Parent notification prepared. MakyReach SMS is not configured — "
+                "the message was saved but not sent."
+            )
+        except MakyReachError as exc:
+            send_status = "failed"
+            response_message = str(exc)
+
     try:
         row = await conn.fetchrow(
             """
             INSERT INTO attendance_notifications
               (school_id, student_id, guardian_id, trigger_type, attendance_date,
-               timetable_period_id, channel, message_body, status, triggered_by)
-            VALUES ($1, $2, $3, $4, $5, $6, 'sms', $7, 'skipped', $8)
-            RETURNING id, status, created_at
+               timetable_period_id, channel, message_body, status, provider_ref,
+               triggered_by, sent_at)
+            VALUES (
+              $1, $2, $3, $4, $5, $6, 'sms', $7, $8, $9, $10,
+              CASE WHEN $8 = 'sent' THEN now() ELSE NULL END
+            )
+            RETURNING id, status, created_at, sent_at
             """,
             school_id,
             student_id,
@@ -901,6 +938,8 @@ async def notify_student_parent(
             parsed_date,
             body.timetable_period_id,
             message_body,
+            send_status,
+            provider_ref,
             actor_id,
         )
     except asyncpg.UndefinedTableError:
@@ -916,15 +955,13 @@ async def notify_student_parent(
         "data": {
             "id": str(row["id"]),
             "status": row["status"],
-            "queued": True,
-            "sent": False,
-            "message": (
-                "Parent notification prepared. MakyReach SMS is not configured yet — "
-                "the message was saved but not sent."
-            ),
+            "queued": send_status == "queued",
+            "sent": sent,
+            "message": response_message,
             "preview": message_body,
             "guardianPhone": guardian["phone"],
             "guardianName": guardian["full_name"],
+            "providerRef": provider_ref,
         }
     }
 

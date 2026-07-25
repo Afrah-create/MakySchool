@@ -71,7 +71,8 @@ class Settings(BaseSettings):
     MAKYWIRE_WEBHOOK_SECRET: str = ""
 
     MAKYREACH_API_KEY: str = ""
-    MAKYREACH_API_URL: str = ""
+    MAKYREACH_API_URL: str = "https://sms.makylegacy.com/api/v2"
+    MAKYREACH_SENDER_ID: str = "MakySms"
 
     # Central Auth (Supabase-backed auth service)
     AUTH_SERVICE_URL: str = ""
