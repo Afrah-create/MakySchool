@@ -20,6 +20,7 @@ from app.lib.alevel import (
     compute_grade,
     compute_student_totals,
 )
+from app.lib.classes import A_LEVEL_CLASS_LEVELS
 from app.lib.teacher_assignments import format_class_name
 from app.middleware.subscription_guard import require_tenant_with_subscription
 
@@ -102,7 +103,56 @@ def _class_name(row: asyncpg.Record) -> str | None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Selector context: terms (each carrying its academic year)
+# Selector context: A-Level classes (S5/S6 only) and terms
+# ══════════════════════════════════════════════════════════════════════════════
+@router.get("/classes")
+async def list_alevel_classes(ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)):
+    """Only S5/S6 classes — combinations are an Advanced-level concept."""
+    school_id, actor = ctx
+    _require(actor, GRADE_ROLES | VIEW_ROLES, "You cannot access A-Level.")
+    rows = await conn.fetch(
+        """
+        SELECT id, level, stream
+        FROM school_classes
+        WHERE school_id = $1 AND level = ANY($2::text[])
+        ORDER BY level, COALESCE(sort_order, 9999), COALESCE(stream, '')
+        """,
+        school_id,
+        list(A_LEVEL_CLASS_LEVELS),
+    )
+    return {
+        "data": [
+            {"id": str(r["id"]), "level": r["level"], "stream": r["stream"]}
+            for r in rows
+        ]
+    }
+
+
+async def _assert_alevel_class(
+    conn: asyncpg.Connection, school_id: uuid.UUID, class_id: uuid.UUID
+) -> None:
+    level = await conn.fetchval(
+        "SELECT level FROM school_classes WHERE id = $1 AND school_id = $2",
+        class_id,
+        school_id,
+    )
+    if level is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "Class not found.", "code": "INVALID_CLASS"},
+        )
+    if level not in A_LEVEL_CLASS_LEVELS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "Only S5 and S6 classes can take A-Level combinations.",
+                "code": "NOT_ALEVEL_CLASS",
+            },
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Terms (each carrying its academic year)
 # ══════════════════════════════════════════════════════════════════════════════
 @router.get("/terms")
 async def list_terms(ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)):
@@ -770,9 +820,19 @@ async def list_enrollments(
     conn: asyncpg.Connection = Depends(get_db),
     academic_year_id: Optional[uuid.UUID] = Query(None),
     class_id: Optional[uuid.UUID] = Query(None),
+    combination_id: Optional[uuid.UUID] = Query(None),
+    category: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
 ):
     school_id, actor = ctx
     _require(actor, GRADE_ROLES | VIEW_ROLES, "You cannot access A-Level enrollments.")
+
+    if category and category not in COMBINATION_CATEGORIES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "Invalid combination category.", "code": "VALIDATION_ERROR"},
+        )
+
     conditions = ["e.school_id = $1"]
     params: list[Any] = [school_id]
     idx = 2
@@ -784,6 +844,19 @@ async def list_enrollments(
         conditions.append(f"e.class_id = ${idx}")
         params.append(class_id)
         idx += 1
+    if combination_id:
+        conditions.append(f"e.combination_id = ${idx}")
+        params.append(combination_id)
+        idx += 1
+    if category:
+        conditions.append(f"c.category = ${idx}")
+        params.append(category)
+        idx += 1
+    if search and search.strip():
+        conditions.append(f"(s.full_name ILIKE ${idx} OR s.learner_id ILIKE ${idx})")
+        params.append(f"%{search.strip()}%")
+        idx += 1
+
     rows = await conn.fetch(
         f"{ENROLLMENT_SELECT} WHERE {' AND '.join(conditions)} ORDER BY s.full_name",
         *params,
@@ -851,6 +924,8 @@ async def create_enrollment(
             body.studentId,
             school_id,
         )
+    if class_id is not None:
+        await _assert_alevel_class(conn, school_id, class_id)
 
     enrollment_id = await conn.fetchval(
         """
@@ -870,6 +945,111 @@ async def create_enrollment(
         f"{ENROLLMENT_SELECT} WHERE e.id = $1", enrollment_id
     )
     return {"data": _enrollment(row)}
+
+
+class BulkEnrollmentBody(BaseModel):
+    studentIds: list[uuid.UUID]
+    combinationId: uuid.UUID
+    academicYearId: uuid.UUID
+    classId: uuid.UUID
+    subsidiarySubjectId: uuid.UUID | None = None
+
+    @field_validator("studentIds")
+    @classmethod
+    def students_ok(cls, v: list[uuid.UUID]) -> list[uuid.UUID]:
+        unique = list(dict.fromkeys(v))
+        if not unique:
+            raise ValueError("Select at least one student")
+        if len(unique) > 300:
+            raise ValueError("Enroll at most 300 students at a time")
+        return unique
+
+
+@router.post("/enrollments/bulk")
+async def bulk_create_enrollments(
+    body: BulkEnrollmentBody, ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)
+):
+    """Enroll many students into one combination. Already-enrolled students are skipped."""
+    school_id, actor = ctx
+    _require(actor, MANAGE_ROLES, "Only admins can manage enrollments.")
+
+    combo = await conn.fetchval(
+        "SELECT 1 FROM alevel_combinations WHERE id = $1 AND school_id = $2",
+        body.combinationId,
+        school_id,
+    )
+    if not combo:
+        raise HTTPException(status_code=400, detail={"error": "Invalid combination."})
+
+    await _assert_alevel_class(conn, school_id, body.classId)
+
+    if body.subsidiarySubjectId:
+        sub_ok = await conn.fetchval(
+            """
+            SELECT 1 FROM alevel_subjects
+            WHERE id = $1 AND school_id = $2 AND subject_type = 'subsidiary'
+            """,
+            body.subsidiarySubjectId,
+            school_id,
+        )
+        if not sub_ok:
+            raise HTTPException(
+                status_code=400, detail={"error": "Invalid subsidiary subject."}
+            )
+
+    valid_student_ids = [
+        r["id"]
+        for r in await conn.fetch(
+            """
+            SELECT id FROM students
+            WHERE school_id = $1 AND id = ANY($2::uuid[]) AND status = 'active'
+            """,
+            school_id,
+            body.studentIds,
+        )
+    ]
+    invalid = len(body.studentIds) - len(valid_student_ids)
+
+    already = {
+        r["student_id"]
+        for r in await conn.fetch(
+            """
+            SELECT student_id FROM alevel_enrollments
+            WHERE school_id = $1 AND academic_year_id = $2 AND student_id = ANY($3::uuid[])
+            """,
+            school_id,
+            body.academicYearId,
+            valid_student_ids,
+        )
+    }
+    to_enroll = [sid for sid in valid_student_ids if sid not in already]
+
+    if to_enroll:
+        async with conn.transaction():
+            await conn.execute(
+                """
+                INSERT INTO alevel_enrollments
+                  (school_id, student_id, combination_id, academic_year_id,
+                   subsidiary_subject_id, class_id)
+                SELECT $1, u.student_id, $2, $3, $4, $5
+                FROM unnest($6::uuid[]) AS u(student_id)
+                ON CONFLICT (school_id, student_id, academic_year_id) DO NOTHING
+                """,
+                school_id,
+                body.combinationId,
+                body.academicYearId,
+                body.subsidiarySubjectId,
+                body.classId,
+                to_enroll,
+            )
+
+    return {
+        "data": {
+            "enrolled": len(to_enroll),
+            "skipped": len(already),
+            "invalid": invalid,
+        }
+    }
 
 
 @router.delete("/enrollments/{enrollment_id}")

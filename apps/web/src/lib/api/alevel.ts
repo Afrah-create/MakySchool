@@ -1,9 +1,13 @@
 import { apiClient } from './client';
 import type {
   ALevelSubject,
+  ALevelClass,
   ALevelCombination,
   ALevelEnrollment,
+  ALevelEnrollmentFilters,
   ALevelTermOption,
+  BulkALevelEnrollmentPayload,
+  BulkALevelEnrollmentResult,
   ALevelGradingScale,
   ALevelGradesGrid,
   ALevelResultsResponse,
@@ -17,6 +21,11 @@ import type {
 const BASE = '/api/schools/alevel';
 
 export const alevelApi = {
+  /** S5/S6 classes only. */
+  listClasses() {
+    return apiClient<ALevelClass[]>(`${BASE}/classes`).then((r) => r.data);
+  },
+
   listTerms() {
     return apiClient<ALevelTermOption[]>(`${BASE}/terms`).then((r) => r.data);
   },
@@ -84,10 +93,13 @@ export const alevelApi = {
     }).then((r) => r.data);
   },
 
-  listEnrollments(params: { academicYearId?: string; classId?: string } = {}) {
+  listEnrollments(params: ALevelEnrollmentFilters = {}) {
     const q = new URLSearchParams();
     if (params.academicYearId) q.set('academic_year_id', params.academicYearId);
     if (params.classId) q.set('class_id', params.classId);
+    if (params.combinationId) q.set('combination_id', params.combinationId);
+    if (params.category) q.set('category', params.category);
+    if (params.search) q.set('search', params.search);
     const qs = q.toString();
     return apiClient<ALevelEnrollment[]>(
       `${BASE}/enrollments${qs ? `?${qs}` : ''}`,
@@ -96,6 +108,13 @@ export const alevelApi = {
 
   createEnrollment(payload: CreateALevelEnrollmentPayload) {
     return apiClient<ALevelEnrollment>(`${BASE}/enrollments`, {
+      method: 'POST',
+      body: payload,
+    }).then((r) => r.data);
+  },
+
+  bulkCreateEnrollments(payload: BulkALevelEnrollmentPayload) {
+    return apiClient<BulkALevelEnrollmentResult>(`${BASE}/enrollments/bulk`, {
       method: 'POST',
       body: payload,
     }).then((r) => r.data);

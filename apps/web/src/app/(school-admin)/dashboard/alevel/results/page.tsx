@@ -5,12 +5,16 @@ import { Award, Download } from 'lucide-react';
 import { PageHeader } from '@makyschool/ui/components/ui/PageHeader';
 import { EmptyState } from '@makyschool/ui/components/ui/EmptyState';
 import { Skeleton } from '@makyschool/ui/components/ui/Skeleton';
-import type { ALevelStudentResult } from '@makyschool/shared';
-import { useApiSWR } from '@/hooks/useApiSWR';
-import { useALevelResults, useALevelTerms } from '@/hooks/useALevel';
+import type { ALevelClass, ALevelStudentResult } from '@makyschool/shared';
+import { useToast } from '@/providers/ToastProvider';
+import {
+  useALevelClasses,
+  useALevelResults,
+  useALevelTerms,
+} from '@/hooks/useALevel';
 import {
   ClassTermPicker,
-  type ClassOption,
+  formatALevelClass,
 } from '@/components/alevel/ClassTermPicker';
 
 const RESULT_LABEL: Record<string, string> = {
@@ -24,9 +28,8 @@ function gradeFor(result: ALevelStudentResult, subjectId: string) {
   return subject?.grade ?? '';
 }
 
-function classLabel(c: ClassOption | undefined) {
-  if (!c) return '';
-  return c.stream ? `${c.level} ${c.stream}` : c.level;
+function classLabel(c: ALevelClass | undefined) {
+  return c ? formatALevelClass(c) : '';
 }
 
 function downloadCsv(filename: string, rows: string[][]) {
@@ -50,7 +53,8 @@ function downloadCsv(filename: string, rows: string[][]) {
 }
 
 export default function ALevelResultsPage() {
-  const { data: classes } = useApiSWR<ClassOption[]>('/schools/classes');
+  const { toast } = useToast();
+  const { data: classes } = useALevelClasses();
   const { data: terms } = useALevelTerms();
 
   const [classId, setClassId] = useState('');
@@ -71,6 +75,15 @@ export default function ALevelResultsPage() {
   const subjects = data?.subjects ?? [];
 
   function exportCsv() {
+    try {
+      runExport();
+      toast.success(`Exported ${results.length} results to CSV.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not export CSV.');
+    }
+  }
+
+  function runExport() {
     const header = [
       'Position',
       'Student',
@@ -126,7 +139,13 @@ export default function ALevelResultsPage() {
         onTermChange={setTermId}
       />
 
-      {!ready ? (
+      {(classes ?? []).length === 0 ? (
+        <EmptyState
+          icon={Award}
+          title="No S5 or S6 classes"
+          description="A-Level results apply to Advanced-level classes only. Create an S5 or S6 class first."
+        />
+      ) : !ready ? (
         <EmptyState
           icon={Award}
           title="Select a class and term"

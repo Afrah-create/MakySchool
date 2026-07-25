@@ -7,6 +7,7 @@ import { Skeleton } from '@makyschool/ui/components/ui/Skeleton';
 import { EmptyState } from '@makyschool/ui/components/ui/EmptyState';
 import { LoadingButton } from '@makyschool/ui/components/ui/LoadingButton';
 import type { ALevelGradeBand } from '@makyschool/shared';
+import { useToast } from '@/providers/ToastProvider';
 import {
   useALevelGradingScale,
   useSaveALevelGradingScale,
@@ -23,6 +24,7 @@ const DEFAULT_BANDS: ALevelGradeBand[] = [
 ];
 
 export default function ALevelGradingPage() {
+  const { toast } = useToast();
   const { data, isPending, isError, refetch } = useALevelGradingScale();
   const save = useSaveALevelGradingScale();
 
@@ -60,6 +62,7 @@ export default function ALevelGradingPage() {
     setBands(DEFAULT_BANDS);
     setThreshold(35);
     setSaved(false);
+    toast.info('UNEB defaults loaded. Save to apply them.');
   }
 
   async function submit() {
@@ -70,11 +73,13 @@ export default function ALevelGradingPage() {
       .filter((b) => b.grade);
     if (cleaned.length === 0) {
       setError('Add at least one grade band.');
+      toast.error('Add at least one grade band.');
       return;
     }
     const grades = cleaned.map((b) => b.grade);
     if (new Set(grades).size !== grades.length) {
       setError('Grade letters must be unique.');
+      toast.error('Grade letters must be unique.');
       return;
     }
     try {
@@ -83,8 +88,12 @@ export default function ALevelGradingPage() {
         subsidiaryPassThreshold: threshold,
       });
       setSaved(true);
+      toast.success('Grading scale saved.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save grading scale.');
+      const message =
+        err instanceof Error ? err.message : 'Could not save grading scale.';
+      setError(message);
+      toast.error(message);
     }
   }
 

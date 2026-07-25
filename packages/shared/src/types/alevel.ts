@@ -41,6 +41,13 @@ export interface ALevelEnrollment {
   isActive: boolean;
 }
 
+/** An S5/S6 class — the only levels that take subject combinations. */
+export interface ALevelClass {
+  id: string;
+  level: string;
+  stream: string | null;
+}
+
 export interface ALevelTermOption {
   id: string;
   name: string;
@@ -136,6 +143,30 @@ export interface CreateALevelEnrollmentPayload {
   academicYearId: string;
   subsidiarySubjectId?: string | null;
   classId?: string | null;
+}
+
+export interface BulkALevelEnrollmentPayload {
+  studentIds: string[];
+  combinationId: string;
+  academicYearId: string;
+  classId: string;
+  subsidiarySubjectId?: string | null;
+}
+
+export interface BulkALevelEnrollmentResult {
+  enrolled: number;
+  /** Already enrolled for this academic year. */
+  skipped: number;
+  /** Not found in this school, or not active. */
+  invalid: number;
+}
+
+export interface ALevelEnrollmentFilters {
+  academicYearId?: string;
+  classId?: string;
+  combinationId?: string;
+  category?: ALevelCombinationCategory | '';
+  search?: string;
 }
 
 export interface SaveALevelGradesPayload {

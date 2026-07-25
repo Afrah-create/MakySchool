@@ -11,6 +11,7 @@ import { Skeleton } from '@makyschool/ui/components/ui/Skeleton';
 import { LoadingButton } from '@makyschool/ui/components/ui/LoadingButton';
 import type { ALevelSubject, ALevelSubjectType } from '@makyschool/shared';
 import { useApiSWR } from '@/hooks/useApiSWR';
+import { useToast } from '@/providers/ToastProvider';
 import {
   useALevelSubjects,
   useCreateALevelSubject,
@@ -42,6 +43,7 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function ALevelSubjectsPage() {
+  const { toast } = useToast();
   const { data: subjects, isPending, isError, refetch } = useALevelSubjects();
   const { data: catalogue } = useApiSWR<CatalogueSubject[]>('/schools/subjects');
   const createSubject = useCreateALevelSubject();
@@ -85,7 +87,7 @@ export default function ALevelSubjectsPage() {
     setError(null);
     try {
       if (editing) {
-        await updateSubject.mutateAsync({
+        const updated = await updateSubject.mutateAsync({
           id: editing.id,
           payload: {
             code: form.code.trim().toUpperCase(),
@@ -94,6 +96,7 @@ export default function ALevelSubjectsPage() {
             isActive: form.isActive,
           },
         });
+        toast.success(`${updated.name} updated.`);
       } else {
         if (!form.schoolSubjectId) {
           setError('Pick a subject from the catalogue or create a new one.');
@@ -103,7 +106,7 @@ export default function ALevelSubjectsPage() {
           setError('Enter a name for the new subject.');
           return;
         }
-        await createSubject.mutateAsync({
+        const created = await createSubject.mutateAsync({
           schoolSubjectId:
             form.schoolSubjectId === NEW_SUBJECT ? null : form.schoolSubjectId,
           name: form.schoolSubjectId === NEW_SUBJECT ? form.newName.trim() : null,
@@ -112,20 +115,28 @@ export default function ALevelSubjectsPage() {
           isGp: form.subjectType === 'subsidiary' ? form.isGp : false,
           isActive: form.isActive,
         });
+        toast.success(`${created.name} added as an A-Level ${created.subjectType}.`);
       }
       setFormOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save subject.');
+      const message =
+        err instanceof Error ? err.message : 'Could not save subject.';
+      setError(message);
+      toast.error(message);
     }
   }
 
   async function confirmDelete() {
     if (!toDelete) return;
+    const name = toDelete.name;
     try {
       await deleteSubject.mutateAsync(toDelete.id);
+      toast.success(`Removed the A-Level profile for ${name}.`);
       setToDelete(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete subject.');
+      toast.error(
+        err instanceof Error ? err.message : 'Could not remove subject.',
+      );
       setToDelete(null);
     }
   }

@@ -6,24 +6,23 @@ import { PageHeader } from '@makyschool/ui/components/ui/PageHeader';
 import { EmptyState } from '@makyschool/ui/components/ui/EmptyState';
 import { Skeleton } from '@makyschool/ui/components/ui/Skeleton';
 import { LoadingButton } from '@makyschool/ui/components/ui/LoadingButton';
-import { useApiSWR } from '@/hooks/useApiSWR';
+import { useToast } from '@/providers/ToastProvider';
 import {
+  useALevelClasses,
   useALevelCombinations,
   useALevelGrades,
   useALevelTerms,
   useSaveALevelGrades,
 } from '@/hooks/useALevel';
-import {
-  ClassTermPicker,
-  type ClassOption,
-} from '@/components/alevel/ClassTermPicker';
+import { ClassTermPicker } from '@/components/alevel/ClassTermPicker';
 
 function cellKey(studentId: string, subjectId: string) {
   return `${studentId}:${subjectId}`;
 }
 
 export default function ALevelGradesPage() {
-  const { data: classes } = useApiSWR<ClassOption[]>('/schools/classes');
+  const { toast } = useToast();
+  const { data: classes } = useALevelClasses();
   const { data: terms } = useALevelTerms();
   const { data: combinations } = useALevelCombinations();
 
@@ -43,8 +42,6 @@ export default function ALevelGradesPage() {
   const saveGrades = useSaveALevelGrades();
 
   const [values, setValues] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const [syncedGrid, setSyncedGrid] = useState<typeof grid>(undefined);
 
   // Sync local editable values whenever a fresh grid is fetched.
@@ -57,7 +54,6 @@ export default function ALevelGradesPage() {
       }
     }
     setValues(next);
-    setSaved(false);
   }
 
   // Map combinationId -> set of principal subject ids, for per-student applicability.
@@ -84,8 +80,6 @@ export default function ALevelGradesPage() {
   }
 
   async function submit() {
-    setError(null);
-    setSaved(false);
     if (!grid) return;
     const entries: Array<{
       studentId: string;
@@ -108,7 +102,7 @@ export default function ALevelGradesPage() {
         }
         const num = Number(trimmed);
         if (Number.isNaN(num) || num < 0 || num > 100) {
-          setError(
+          toast.error(
             `Invalid score for ${student.studentName} — ${subject.name}. Use 0–100.`,
           );
           return;
@@ -121,10 +115,17 @@ export default function ALevelGradesPage() {
       }
     }
     try {
-      await saveGrades.mutateAsync({ termId, academicYearId, classId, entries });
-      setSaved(true);
+      const result = await saveGrades.mutateAsync({
+        termId,
+        academicYearId,
+        classId,
+        entries,
+      });
+      toast.success(
+        `Saved ${result.saved} grade${result.saved === 1 ? '' : 's'}.`,
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save grades.');
+      toast.error(err instanceof Error ? err.message : 'Could not save grades.');
     }
   }
 
@@ -155,28 +156,17 @@ export default function ALevelGradesPage() {
         terms={terms ?? []}
         classId={classId}
         termId={termId}
-        onClassChange={(v) => {
-          setClassId(v);
-          setSaved(false);
-        }}
-        onTermChange={(v) => {
-          setTermId(v);
-          setSaved(false);
-        }}
+        onClassChange={setClassId}
+        onTermChange={setTermId}
       />
 
-      {error ? (
-        <div className="rounded-xl border border-theme bg-theme-danger-bg/50 px-4 py-3 text-sm text-theme-danger">
-          {error}
-        </div>
-      ) : null}
-      {saved ? (
-        <div className="rounded-xl border border-theme bg-theme-success-bg/50 px-4 py-3 text-sm text-theme-success">
-          Grades saved.
-        </div>
-      ) : null}
-
-      {!ready ? (
+      {(classes ?? []).length === 0 ? (
+        <EmptyState
+          icon={BookOpenCheck}
+          title="No S5 or S6 classes"
+          description="A-Level grading applies to Advanced-level classes only. Create an S5 or S6 class first."
+        />
+      ) : !ready ? (
         <EmptyState
           icon={BookOpenCheck}
           title="Select a class and term"
@@ -240,10 +230,9 @@ export default function ALevelGradesPage() {
                                 inputMode="numeric"
                                 className="ms-input w-16 text-center"
                                 value={values[key] ?? ''}
-                                onChange={(e) => {
-                                  setValues((v) => ({ ...v, [key]: e.target.value }));
-                                  setSaved(false);
-                                }}
+                                onChange={(e) =>
+                                  setValues((v) => ({ ...v, [key]: e.target.value }))
+                                }
                               />
                               {cell?.grade ? (
                                 <span className="text-[10px] font-semibold text-theme-muted">

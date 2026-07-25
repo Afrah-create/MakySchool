@@ -1,10 +1,8 @@
 'use client';
 
-import type { ALevelTermOption } from '@makyschool/shared';
+import type { ALevelClass, ALevelTermOption } from '@makyschool/shared';
 
-export type ClassOption = { id: string; level: string; stream: string | null };
-
-function classLabel(c: ClassOption): string {
+export function formatALevelClass(c: ALevelClass): string {
   return c.stream ? `${c.level} ${c.stream}` : c.level;
 }
 
@@ -16,7 +14,8 @@ export function ClassTermPicker({
   onClassChange,
   onTermChange,
 }: {
-  classes: ClassOption[];
+  /** S5/S6 classes only — see useALevelClasses(). */
+  classes: ALevelClass[];
   terms: ALevelTermOption[];
   classId: string;
   termId: string;
@@ -33,11 +32,14 @@ export function ClassTermPicker({
           className="ms-input"
           value={classId}
           onChange={(e) => onClassChange(e.target.value)}
+          disabled={classes.length === 0}
         >
-          <option value="">Select a class…</option>
+          <option value="">
+            {classes.length === 0 ? 'No S5/S6 classes' : 'Select a class…'}
+          </option>
           {classes.map((c) => (
             <option key={c.id} value={c.id}>
-              {classLabel(c)}
+              {formatALevelClass(c)}
             </option>
           ))}
         </select>

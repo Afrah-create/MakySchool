@@ -12,6 +12,7 @@ import type {
   ALevelCombination,
   ALevelCombinationCategory,
 } from '@makyschool/shared';
+import { useToast } from '@/providers/ToastProvider';
 import {
   useALevelCombinations,
   useALevelSubjects,
@@ -42,6 +43,7 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function ALevelCombinationsPage() {
+  const { toast } = useToast();
   const {
     data: combinations,
     isPending,
@@ -107,22 +109,31 @@ export default function ALevelCombinationsPage() {
       };
       if (editing) {
         await updateCombination.mutateAsync({ id: editing.id, payload });
+        toast.success(`${payload.name} updated.`);
       } else {
         await createCombination.mutateAsync(payload);
+        toast.success(`${payload.name} created.`);
       }
       setFormOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save combination.');
+      const message =
+        err instanceof Error ? err.message : 'Could not save combination.';
+      setError(message);
+      toast.error(message);
     }
   }
 
   async function confirmDelete() {
     if (!toDelete) return;
+    const name = toDelete.name;
     try {
       await deleteCombination.mutateAsync(toDelete.id);
+      toast.success(`${name} deleted.`);
       setToDelete(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete.');
+      toast.error(
+        err instanceof Error ? err.message : 'Could not delete combination.',
+      );
       setToDelete(null);
     }
   }

@@ -3,6 +3,13 @@ import type { SchoolType } from "../types";
 export const PRIMARY_CLASS_LEVELS = ["P1", "P2", "P3", "P4", "P5", "P6", "P7"] as const;
 export const SECONDARY_CLASS_LEVELS = ["S1", "S2", "S3", "S4", "S5", "S6"] as const;
 
+/** Advanced level — the only classes that take subject combinations. */
+export const A_LEVEL_CLASS_LEVELS = ["S5", "S6"] as const;
+
+export function isALevelClassLevel(level: string): boolean {
+  return (A_LEVEL_CLASS_LEVELS as readonly string[]).includes(level);
+}
+
 export function getLevelsForSchoolType(schoolType: SchoolType | string | null): string[] {
   if (schoolType === "secondary") {
     return [...SECONDARY_CLASS_LEVELS];

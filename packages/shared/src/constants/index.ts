@@ -51,12 +51,14 @@ export {
 } from "./academic";
 
 export {
+  A_LEVEL_CLASS_LEVELS,
   PRIMARY_CLASS_LEVELS,
   SECONDARY_CLASS_LEVELS,
   formatClassLabel,
   getLevelSectionsForSchoolType,
   getLevelsForSchoolType,
   groupClassesByLevel,
+  isALevelClassLevel,
   isLevelAllowedForSchoolType,
   sortClasses,
 } from "./classes";

@@ -3,7 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { alevelApi } from '@/lib/api/alevel';
 import type {
+  ALevelEnrollmentFilters,
   ALevelGradingScale,
+  BulkALevelEnrollmentPayload,
   CreateALevelCombinationPayload,
   CreateALevelEnrollmentPayload,
   CreateALevelSubjectPayload,
@@ -12,17 +14,26 @@ import type {
 } from '@makyschool/shared';
 
 export const alevelKeys = {
+  classes: ['alevel', 'classes'] as const,
   terms: ['alevel', 'terms'] as const,
   gradingScale: ['alevel', 'grading-scale'] as const,
   subjects: ['alevel', 'subjects'] as const,
   combinations: ['alevel', 'combinations'] as const,
-  enrollments: (yearId: string, classId: string) =>
-    ['alevel', 'enrollments', yearId, classId] as const,
+  enrollments: (filters: string) => ['alevel', 'enrollments', filters] as const,
   grades: (classId: string, termId: string, yearId: string) =>
     ['alevel', 'grades', classId, termId, yearId] as const,
   results: (classId: string, termId: string, yearId: string) =>
     ['alevel', 'results', classId, termId, yearId] as const,
 };
+
+/** S5/S6 classes only — combinations are an Advanced-level concept. */
+export function useALevelClasses() {
+  return useQuery({
+    queryKey: alevelKeys.classes,
+    queryFn: () => alevelApi.listClasses(),
+    staleTime: 5 * 60_000,
+  });
+}
 
 export function useALevelTerms() {
   return useQuery({
@@ -123,18 +134,21 @@ export function useDeleteALevelCombination() {
 }
 
 export function useALevelEnrollments(
-  academicYearId: string,
-  classId: string,
+  filters: ALevelEnrollmentFilters,
   enabled = true,
 ) {
+  const key = JSON.stringify(filters);
   return useQuery({
-    queryKey: alevelKeys.enrollments(academicYearId, classId),
+    queryKey: alevelKeys.enrollments(key),
     queryFn: () =>
       alevelApi.listEnrollments({
-        academicYearId: academicYearId || undefined,
-        classId: classId || undefined,
+        academicYearId: filters.academicYearId || undefined,
+        classId: filters.classId || undefined,
+        combinationId: filters.combinationId || undefined,
+        category: filters.category || undefined,
+        search: filters.search || undefined,
       }),
-    enabled: enabled && !!academicYearId,
+    enabled: enabled && !!filters.academicYearId,
     staleTime: 30_000,
   });
 }
@@ -144,6 +158,16 @@ export function useCreateALevelEnrollment() {
   return useMutation({
     mutationFn: (payload: CreateALevelEnrollmentPayload) =>
       alevelApi.createEnrollment(payload),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['alevel', 'enrollments'] }),
+  });
+}
+
+export function useBulkCreateALevelEnrollments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: BulkALevelEnrollmentPayload) =>
+      alevelApi.bulkCreateEnrollments(payload),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ['alevel', 'enrollments'] }),
   });
