@@ -17,6 +17,7 @@
     "dev:api": "cd apps/api && if [ -x .venv/bin/uvicorn ]; then .venv/bin/uvicorn main:app --host 0.0.0.0 --port 4000 --reload; else uvicorn main:app --host 0.0.0.0 --port 4000 --reload; fi",
     "migrate": "cd apps/api && if [ -x .venv/bin/python ]; then .venv/bin/python -m app.db.migrate; else python3 -m app.db.migrate; fi",
     "seed": "cd apps/api && if [ -x .venv/bin/python ]; then .venv/bin/python -m app.db.seed; else python3 -m app.db.seed; fi",
+    "seed:alevel": "cd apps/api && if [ -x .venv/bin/python ]; then .venv/bin/python -m app.db.seed_alevel; else python3 -m app.db.seed_alevel; fi",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",

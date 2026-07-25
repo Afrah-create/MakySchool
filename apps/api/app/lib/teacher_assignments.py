@@ -316,6 +316,18 @@ async def sync_teacher_assignments(
         )
 
     for item in preview.to_add:
+        if item.subject_id:
+            # One teacher per subject slot: displace any other teacher holding it.
+            await conn.execute(
+                """
+                DELETE FROM teacher_class_assignments
+                WHERE school_id = $1 AND class_id = $2 AND subject_id = $3 AND teacher_id <> $4
+                """,
+                school_id,
+                item.class_id,
+                item.subject_id,
+                teacher_id,
+            )
         await conn.execute(
             """
             INSERT INTO teacher_class_assignments

@@ -19,29 +19,37 @@ async def fetch_teaching_load_matrix(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
 ) -> dict[str, Any]:
+    # DISTINCT ON guarantees one row per curriculum slot even if legacy data
+    # still holds multiple teacher assignments for the same class+subject
+    # (rows with a resolvable teacher win, then most recent assignment).
     slot_rows = await conn.fetch(
-        f"""
-        SELECT
-          sc.id AS class_id,
-          sc.level,
-          sc.stream,
-          s.id AS subject_id,
-          s.name AS subject_name,
-          tca.teacher_id,
-          COALESCE(teacher.name, teacher.full_name) AS teacher_name
-        FROM school_class_subjects cs
-        JOIN school_classes sc ON sc.id = cs.class_id AND sc.school_id = cs.school_id
-        JOIN school_subjects s ON s.id = cs.subject_id AND s.school_id = cs.school_id
-        LEFT JOIN teacher_class_assignments tca
-          ON tca.school_id = cs.school_id
-         AND tca.class_id = cs.class_id
-         AND tca.subject_id = cs.subject_id
-        LEFT JOIN users teacher
-          ON teacher.id = tca.teacher_id
-         AND teacher.school_id = cs.school_id
-         AND LOWER(teacher.role) = 'teacher'
-        WHERE cs.school_id = $1
-        ORDER BY sc.level, sc.stream NULLS LAST, s.name
+        """
+        SELECT * FROM (
+          SELECT DISTINCT ON (cs.class_id, cs.subject_id)
+            sc.id AS class_id,
+            sc.level,
+            sc.stream,
+            s.id AS subject_id,
+            s.name AS subject_name,
+            tca.teacher_id,
+            COALESCE(teacher.name, teacher.full_name) AS teacher_name
+          FROM school_class_subjects cs
+          JOIN school_classes sc ON sc.id = cs.class_id AND sc.school_id = cs.school_id
+          JOIN school_subjects s ON s.id = cs.subject_id AND s.school_id = cs.school_id
+          LEFT JOIN teacher_class_assignments tca
+            ON tca.school_id = cs.school_id
+           AND tca.class_id = cs.class_id
+           AND tca.subject_id = cs.subject_id
+          LEFT JOIN users teacher
+            ON teacher.id = tca.teacher_id
+           AND teacher.school_id = cs.school_id
+           AND LOWER(teacher.role) = 'teacher'
+          WHERE cs.school_id = $1
+          ORDER BY cs.class_id, cs.subject_id,
+                   (teacher.id IS NOT NULL) DESC,
+                   tca.assigned_at DESC NULLS LAST
+        ) slots
+        ORDER BY level, stream NULLS LAST, subject_name
         """,
         school_id,
     )
@@ -189,10 +197,12 @@ async def apply_slot_updates(
         slot_map[key]["teacher_id"] = str(teacher_id) if teacher_id else None
         slot_map[key]["teacher_name"] = None
 
-    affected_teacher_ids: set[str] = set()
+    # Previous slot holders must sync before new assignees so removal
+    # locks/warnings (submitted marks etc.) are evaluated before the new
+    # teacher's insert displaces their row.
+    previous_holder_ids: list[str] = []
+    new_assignee_ids: list[str] = []
     for update in updates:
-        if update.get("teacher_id"):
-            affected_teacher_ids.add(str(update["teacher_id"]))
         key = _slot_key(str(update["class_id"]), str(update["subject_id"]))
         previous = matrix["slots"]
         prev_slot = next(
@@ -200,7 +210,17 @@ async def apply_slot_updates(
             None,
         )
         if prev_slot and prev_slot.get("teacher_id"):
-            affected_teacher_ids.add(str(prev_slot["teacher_id"]))
+            holder = str(prev_slot["teacher_id"])
+            if holder not in previous_holder_ids:
+                previous_holder_ids.append(holder)
+        if update.get("teacher_id"):
+            assignee = str(update["teacher_id"])
+            if assignee not in new_assignee_ids:
+                new_assignee_ids.append(assignee)
+
+    affected_teacher_ids: list[str] = previous_holder_ids + [
+        tid for tid in new_assignee_ids if tid not in previous_holder_ids
+    ]
 
     all_teacher_ids = {t["id"] for t in matrix["teachers"]}
     for tid in affected_teacher_ids:

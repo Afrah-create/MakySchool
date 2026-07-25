@@ -1,5 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Award,
+  BookOpenCheck,
   Building2,
   CalendarDays,
   CircleDollarSign,
@@ -16,6 +18,7 @@ import {
   Settings2,
   Shield,
   ShieldCheck,
+  Sigma,
   UserRound,
   UsersRound,
 } from "lucide-react";
@@ -41,6 +44,15 @@ const schoolAdminFeesNavChildren: NavItem[] = [
   { href: "/dashboard/fees/other-income", label: "Other income", exact: false, requiredAction: "viewFees" },
   { href: "/dashboard/fees/budget", label: "Budget", exact: false, requiredAction: "viewBudget" },
   { href: "/dashboard/fees/reports", label: "Reports", exact: false, requiredAction: "viewReports" },
+];
+
+const schoolAdminALevelNavChildren: NavItem[] = [
+  { href: "/dashboard/alevel/grades", label: "Enter grades", icon: BookOpenCheck, exact: false, requiredAction: "enterALevelGrades" },
+  { href: "/dashboard/alevel/results", label: "Results", icon: Award, exact: false, requiredAction: "viewALevel" },
+  { href: "/dashboard/alevel/setup/subjects", label: "Subjects", icon: Layers, exact: false, requiredAction: "manageALevel" },
+  { href: "/dashboard/alevel/setup/combinations", label: "Combinations", icon: Sigma, exact: false, requiredAction: "manageALevel" },
+  { href: "/dashboard/alevel/setup/enrollments", label: "Enrollments", icon: UsersRound, exact: false, requiredAction: "manageALevel" },
+  { href: "/dashboard/alevel/setup/grading", label: "Grading scale", icon: ListOrdered, exact: false, requiredAction: "manageALevel" },
 ];
 
 const schoolAdminSettingsNavChildren: NavItem[] = [
@@ -147,6 +159,14 @@ export const schoolAdminNavGroups: NavGroup[] = [
         icon: Shield,
         exact: false,
         requiredAction: "viewAllClasses",
+      },
+      {
+        href: "/dashboard/alevel/grades",
+        label: "A-Level",
+        icon: GraduationCap,
+        exact: false,
+        requiredAction: "viewALevel",
+        children: schoolAdminALevelNavChildren,
       },
     ],
   },

@@ -41,6 +41,9 @@ export const CAN = {
   manageTimetable: ["admin", "head_teacher"],
   viewTimetable: ["admin", "head_teacher", "teacher"],
   viewAnalytics: ["admin", "head_teacher"],
+  manageALevel: ["admin"],
+  viewALevel: ["admin", "head_teacher"],
+  enterALevelGrades: ["admin", "head_teacher", "teacher"],
 } as const satisfies Record<string, MakySchoolRole[]>;
 
 export type PermissionAction = keyof typeof CAN;

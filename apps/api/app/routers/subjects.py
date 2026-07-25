@@ -278,6 +278,27 @@ async def delete_subject(
             },
         )
 
+    alevel_profile = await conn.fetchval(
+        """
+        SELECT 1 FROM alevel_subjects
+        WHERE school_id = $1 AND school_subject_id = $2
+        LIMIT 1
+        """,
+        school_id,
+        subject_id,
+    )
+    if alevel_profile:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": (
+                    "Cannot delete this subject. It has an A-Level profile. "
+                    "Remove it from A-Level setup first."
+                ),
+                "code": "SUBJECT_HAS_ALEVEL_PROFILE",
+            },
+        )
+
     deleted = await conn.fetchrow(
         "DELETE FROM school_subjects WHERE id = $1 AND school_id = $2 RETURNING id",
         subject_id,

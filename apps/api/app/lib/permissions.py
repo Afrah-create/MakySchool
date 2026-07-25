@@ -32,6 +32,9 @@ CAN: dict[str, list[str]] = {
     "manageTimetable": ["admin", "head_teacher"],
     "viewTimetable": ["admin", "head_teacher", "teacher"],
     "viewAnalytics": ["admin", "head_teacher"],
+    "manageALevel": ["admin"],
+    "viewALevel": ["admin", "head_teacher"],
+    "enterALevelGrades": ["admin", "head_teacher", "teacher"],
 }
 
 
