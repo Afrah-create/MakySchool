@@ -1,4 +1,4 @@
-"""A-Level access helpers: term locks (open exams) and teacher subject scope."""
+"""A-Level access helpers: exam status (open/closed) and teacher subject scope."""
 
 from __future__ import annotations
 
@@ -8,54 +8,104 @@ from typing import Any
 import asyncpg
 from fastapi import HTTPException, status
 
+EXAM_STATUSES = frozenset({"draft", "open", "closed"})
 
-async def fetch_term_lock(
+
+def _serialize_exam(row: asyncpg.Record) -> dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "schoolId": str(row["school_id"]),
+        "classId": str(row["class_id"]),
+        "termId": str(row["term_id"]),
+        "academicYearId": str(row["academic_year_id"]),
+        "examTypeId": str(row["exam_type_id"]),
+        "examTypeName": row.get("exam_type_name"),
+        "examTypeCode": row.get("exam_type_code"),
+        "name": row["name"],
+        "status": row["status"],
+        "isOpen": row["status"] == "open",
+        "isLocked": row["status"] == "closed",
+        "openedAt": row["opened_at"].isoformat() if row.get("opened_at") else None,
+        "openedByName": row.get("opened_by_name"),
+        "closedAt": row["closed_at"].isoformat() if row.get("closed_at") else None,
+        "closedByName": row.get("closed_by_name"),
+        "notes": row.get("notes"),
+        "className": row.get("class_name"),
+        "termName": row.get("term_name"),
+        "createdAt": row["created_at"].isoformat() if row.get("created_at") else None,
+    }
+
+
+EXAM_SELECT = """
+    SELECT e.id, e.school_id, e.class_id, e.term_id, e.academic_year_id,
+           e.exam_type_id, e.name, e.status, e.opened_at, e.closed_at, e.notes,
+           e.created_at, e.updated_at,
+           et.name AS exam_type_name, et.code AS exam_type_code,
+           t.name AS term_name,
+           CASE
+             WHEN sc.stream IS NULL OR sc.stream = '' THEN sc.level
+             ELSE sc.level || ' ' || sc.stream
+           END AS class_name,
+           ou.full_name AS opened_by_name,
+           cu.full_name AS closed_by_name
+    FROM alevel_exams e
+    JOIN alevel_exam_types et ON et.id = e.exam_type_id
+    JOIN terms t ON t.id = e.term_id
+    JOIN school_classes sc ON sc.id = e.class_id
+    LEFT JOIN users ou ON ou.id = e.opened_by
+    LEFT JOIN users cu ON cu.id = e.closed_by
+"""
+
+
+async def fetch_exam(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
-    class_id: uuid.UUID,
-    term_id: uuid.UUID,
+    exam_id: uuid.UUID,
 ) -> dict[str, Any] | None:
     row = await conn.fetchrow(
-        """
-        SELECT l.locked_at, l.locked_by, u.full_name AS locked_by_name
-        FROM alevel_term_locks l
-        LEFT JOIN users u ON u.id = l.locked_by
-        WHERE l.school_id = $1 AND l.class_id = $2 AND l.term_id = $3
-        """,
+        f"{EXAM_SELECT} WHERE e.school_id = $1 AND e.id = $2",
         school_id,
-        class_id,
-        term_id,
+        exam_id,
     )
-    if not row:
-        return None
-    return {
-        "isLocked": True,
-        "lockedAt": row["locked_at"].isoformat() if row["locked_at"] else None,
-        "lockedBy": str(row["locked_by"]) if row["locked_by"] else None,
-        "lockedByName": row["locked_by_name"],
-    }
+    return _serialize_exam(row) if row else None
+
+
+async def require_exam(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam_id: uuid.UUID,
+) -> dict[str, Any]:
+    exam = await fetch_exam(conn, school_id, exam_id)
+    if not exam:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Exam not found.", "code": "EXAM_NOT_FOUND"},
+        )
+    return exam
 
 
 async def assert_exam_open(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
-    class_id: uuid.UUID,
-    term_id: uuid.UUID,
-) -> None:
-    """Reject grade entry when the class-term exam is locked (closed)."""
-    locked = await fetch_term_lock(conn, school_id, class_id, term_id)
-    if locked:
+    exam_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Reject grade entry unless the exam status is open."""
+    exam = await require_exam(conn, school_id, exam_id)
+    if exam["status"] != "open":
+        label = "not open yet" if exam["status"] == "draft" else "closed"
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail={
                 "error": (
-                    "This exam is closed. Grades for this class and term are locked. "
-                    "Ask an admin to reopen the exam before making changes."
+                    f"This exam is {label}. Grades cannot be entered until an "
+                    "admin opens the exam for marking."
                 ),
                 "code": "EXAM_LOCKED",
-                **locked,
+                "examId": exam["id"],
+                "status": exam["status"],
             },
         )
+    return exam
 
 
 async def teacher_alevel_subject_ids(
@@ -64,10 +114,7 @@ async def teacher_alevel_subject_ids(
     teacher_id: uuid.UUID,
     class_id: uuid.UUID,
 ) -> set[str]:
-    """A-Level subject profile IDs the teacher is assigned to teach in this class.
-
-    Assignments live on school_subjects; profiles link via school_subject_id.
-    """
+    """A-Level subject profile IDs the teacher is assigned to teach in this class."""
     rows = await conn.fetch(
         """
         SELECT DISTINCT als.id
@@ -120,10 +167,7 @@ async def assert_teacher_can_grade_class(
     teacher_id: uuid.UUID,
     class_id: uuid.UUID,
 ) -> set[str]:
-    """Ensure the teacher teaches at least one A-Level subject in the class.
-
-    Returns the set of alevel_subjects.id they may enter marks for.
-    """
+    """Ensure the teacher teaches at least one A-Level subject in the class."""
     allowed = await teacher_alevel_subject_ids(conn, school_id, teacher_id, class_id)
     if not allowed:
         raise HTTPException(
@@ -137,3 +181,85 @@ async def assert_teacher_can_grade_class(
             },
         )
     return allowed
+
+
+async def fetch_teacher_submission(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> dict[str, Any] | None:
+    row = await conn.fetchrow(
+        """
+        SELECT s.submitted_at, s.unlocked_at, s.unlocked_by,
+               u.full_name AS unlocked_by_name
+        FROM alevel_mark_submissions s
+        LEFT JOIN users u ON u.id = s.unlocked_by
+        WHERE s.school_id = $1 AND s.exam_id = $2 AND s.teacher_id = $3
+        """,
+        school_id,
+        exam_id,
+        teacher_id,
+    )
+    if not row:
+        return None
+    return {
+        "isSubmitted": True,
+        "submittedAt": row["submitted_at"].isoformat() if row["submitted_at"] else None,
+        "unlockedAt": row["unlocked_at"].isoformat() if row["unlocked_at"] else None,
+        "unlockedByName": row["unlocked_by_name"],
+    }
+
+
+async def list_exam_submissions(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam_id: uuid.UUID,
+) -> list[dict[str, Any]]:
+    rows = await conn.fetch(
+        """
+        SELECT s.teacher_id, s.submitted_at, s.unlocked_at,
+               t.full_name AS teacher_name,
+               u.full_name AS unlocked_by_name
+        FROM alevel_mark_submissions s
+        JOIN users t ON t.id = s.teacher_id
+        LEFT JOIN users u ON u.id = s.unlocked_by
+        WHERE s.school_id = $1 AND s.exam_id = $2
+        ORDER BY t.full_name
+        """,
+        school_id,
+        exam_id,
+    )
+    return [
+        {
+            "teacherId": str(r["teacher_id"]),
+            "teacherName": r["teacher_name"],
+            "submittedAt": r["submitted_at"].isoformat() if r["submitted_at"] else None,
+            "unlockedAt": r["unlocked_at"].isoformat() if r["unlocked_at"] else None,
+            "unlockedByName": r["unlocked_by_name"],
+            "isLocked": True,
+        }
+        for r in rows
+    ]
+
+
+async def assert_teacher_can_edit_marks(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+) -> None:
+    """Reject edits when the teacher has already submitted for this exam."""
+    submitted = await fetch_teacher_submission(conn, school_id, exam_id, teacher_id)
+    if submitted:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail={
+                "error": (
+                    "You have already submitted marks for this exam. "
+                    "Ask an admin or head teacher to unlock if you need to resubmit."
+                ),
+                "code": "MARKS_SUBMITTED",
+                **submitted,
+            },
+        )

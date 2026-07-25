@@ -1,25 +1,26 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { BookOpenCheck, Lock, LockOpen, Save } from 'lucide-react';
+import { BookOpenCheck, Lock, LockOpen, Save, Send, Unlock } from 'lucide-react';
 import { PageHeader } from '@makyschool/ui/components/ui/PageHeader';
 import { EmptyState } from '@makyschool/ui/components/ui/EmptyState';
 import { Skeleton } from '@makyschool/ui/components/ui/Skeleton';
 import { LoadingButton } from '@makyschool/ui/components/ui/LoadingButton';
 import { useToast } from '@/providers/ToastProvider';
-import { useCan } from '@/hooks/useCurrentRole';
 import {
   useALevelClasses,
   useALevelCombinations,
+  useALevelExams,
   useALevelGrades,
   useALevelGradingScale,
   useALevelTerms,
-  useLockALevelTerm,
   useSaveALevelGrades,
-  useUnlockALevelTerm,
+  useSubmitALevelMarks,
+  useUnlockALevelTeacherSubmission,
 } from '@/hooks/useALevel';
-import { ClassTermPicker } from '@/components/alevel/ClassTermPicker';
+import { ClassExamPicker } from '@/components/alevel/ClassExamPicker';
 import {
   ALevelGradeGrid,
   cellKey,
@@ -34,12 +35,7 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-
-  const canManage = useCan('manageALevel');
-  const canView = useCan('viewALevel');
-  /** Head teachers + admins can close; only admins can reopen. */
-  const canCloseExam = canManage || canView;
-  const canReopenExam = canManage;
+  const isTeacher = portal === 'teacher';
 
   const { data: classes } = useALevelClasses();
   const { data: terms } = useALevelTerms();
@@ -48,11 +44,34 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
 
   const [classId, setClassId] = useState(searchParams.get('classId') ?? '');
   const [termId, setTermId] = useState(searchParams.get('termId') ?? '');
+  const [examId, setExamId] = useState(searchParams.get('examId') ?? '');
+
+  const { data: exams, isPending: examsLoading } = useALevelExams(
+    classId && termId ? { classId, termId } : {},
+    (!!classId && !!termId) || !!examId,
+  );
+
+  useEffect(() => {
+    if (!examId || (classId && termId)) return;
+    const match = (exams ?? []).find((e) => e.id === examId);
+    if (match) {
+      setClassId(match.classId);
+      setTermId(match.termId);
+    }
+  }, [examId, exams, classId, termId]);
+
+  useEffect(() => {
+    if (!examId || !exams) return;
+    if (!exams.some((e) => e.id === examId)) {
+      setExamId(exams[0]?.id ?? '');
+    }
+  }, [exams, examId]);
 
   useEffect(() => {
     const next = new URLSearchParams();
     if (classId) next.set('classId', classId);
     if (termId) next.set('termId', termId);
+    if (examId) next.set('examId', examId);
     const qs = next.toString();
     const target = qs ? `${pathname}?${qs}` : pathname;
     const current = searchParams.toString()
@@ -61,21 +80,16 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
     if (target !== current) {
       router.replace(target, { scroll: false });
     }
-  }, [classId, termId, pathname, router, searchParams]);
-
-  const selectedTerm = (terms ?? []).find((t) => t.id === termId);
-  const academicYearId = selectedTerm?.academicYearId ?? '';
+  }, [classId, termId, examId, pathname, router, searchParams]);
 
   const { data: grid, isPending, isError, refetch } = useALevelGrades(
-    classId,
-    termId,
-    academicYearId,
-    !!classId && !!termId && !!academicYearId,
+    examId,
+    !!examId,
   );
 
   const saveGrades = useSaveALevelGrades();
-  const lockTerm = useLockALevelTerm();
-  const unlockTerm = useUnlockALevelTerm();
+  const submitMarks = useSubmitALevelMarks();
+  const unlockSubmission = useUnlockALevelTeacherSubmission();
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [baseline, setBaseline] = useState<Record<string, string>>({});
@@ -160,11 +174,10 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
   }, [grid, values, baseline, applies, editableSet]);
 
   const changeCount = dirtyEntries.length;
-  const examOpen = grid?.isOpen !== false;
-  const canEdit = examOpen;
+  const canEdit = grid?.canEdit === true;
 
-  async function submit() {
-    if (!grid || changeCount === 0) return;
+  async function saveDraft() {
+    if (!grid || !examId || changeCount === 0 || !canEdit) return;
     for (const entry of dirtyEntries) {
       if (
         entry.rawScore != null &&
@@ -178,9 +191,7 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
     }
     try {
       const result = await saveGrades.mutateAsync({
-        termId,
-        academicYearId,
-        classId,
+        examId,
         entries: dirtyEntries,
       });
       const parts = [`Saved ${result.saved}`];
@@ -192,118 +203,193 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
     }
   }
 
-  async function toggleLock() {
-    if (!classId || !termId || !academicYearId) return;
+  async function finalizeSubmit() {
+    if (!examId || !canEdit) return;
+    if (changeCount > 0) {
+      toast.error('Save your draft changes before submitting.');
+      return;
+    }
+    if (
+      !window.confirm(
+        'Submit marks for this exam? You will not be able to edit until an admin unlocks you.',
+      )
+    ) {
+      return;
+    }
     try {
-      if (grid?.isLocked) {
-        await unlockTerm.mutateAsync({ termId, classId, academicYearId });
-        toast.success('Exam reopened. Teachers can enter marks again.');
-      } else {
-        await lockTerm.mutateAsync({ termId, classId, academicYearId });
-        toast.success('Exam closed. Grade entry is locked for this class.');
-      }
+      await submitMarks.mutateAsync(examId);
+      toast.success('Marks submitted. Editing is now locked.');
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Could not update exam lock.',
+        err instanceof Error ? err.message : 'Could not submit marks.',
       );
     }
   }
 
-  const ready = !!classId && !!termId;
+  async function unlockTeacher(teacherId: string, teacherName: string) {
+    if (!examId) return;
+    if (
+      !window.confirm(
+        `Unlock ${teacherName} so they can edit and resubmit marks?`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await unlockSubmission.mutateAsync({ examId, teacherId });
+      toast.success(`${teacherName} can enter marks again.`);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Could not unlock teacher.',
+      );
+    }
+  }
+
+  const ready = !!examId;
   const hasGrid = grid && grid.students.length > 0;
-  const lockBusy = lockTerm.isPending || unlockTerm.isPending;
+  const submissions = grid?.submissions ?? [];
 
   return (
     <div className="mx-auto max-w-full space-y-6 p-4 sm:p-6">
       <PageHeader
-        title={portal === 'teacher' ? 'A-Level marks' : 'Enter A-Level grades'}
+        title={isTeacher ? 'A-Level marks' : 'View A-Level grades'}
         description={
-          portal === 'teacher'
-            ? 'Enter marks for subjects you teach. An open exam must exist for the class.'
-            : 'Type a term score (0–100) per subject. Grades and points are computed from the school scale and stored.'
+          isTeacher
+            ? 'Enter marks for subjects you teach, then submit. After submit, marks are locked until unlocked.'
+            : 'View all marks for an exam. Teachers enter and submit; unlock a teacher to allow resubmission.'
         }
         actions={
-          hasGrid ? (
+          hasGrid && isTeacher ? (
             <div className="flex flex-wrap items-center gap-2">
-              {portal === 'admin' &&
-              ((grid!.isLocked && canReopenExam) ||
-                (!grid!.isLocked && canCloseExam)) ? (
-                <LoadingButton
-                  variant="ghost"
-                  loading={lockBusy}
-                  onClick={() => void toggleLock()}
-                >
-                  {grid!.isLocked ? (
-                    <>
-                      <LockOpen className="h-4 w-4" />
-                      Reopen exam
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="h-4 w-4" />
-                      Close exam
-                    </>
-                  )}
-                </LoadingButton>
-              ) : null}
               <LoadingButton
-                variant="primary"
+                variant="ghost"
                 loading={saveGrades.isPending}
                 disabled={!canEdit || changeCount === 0}
-                onClick={() => void submit()}
+                onClick={() => void saveDraft()}
               >
                 <Save className="h-4 w-4" />
                 {changeCount > 0
                   ? `Save ${changeCount} change${changeCount === 1 ? '' : 's'}`
-                  : 'Save grades'}
+                  : 'Save draft'}
+              </LoadingButton>
+              <LoadingButton
+                variant="primary"
+                loading={submitMarks.isPending}
+                disabled={!canEdit || changeCount > 0}
+                onClick={() => void finalizeSubmit()}
+              >
+                <Send className="h-4 w-4" />
+                Submit marks
               </LoadingButton>
             </div>
           ) : undefined
         }
       />
 
-      <ClassTermPicker
+      <ClassExamPicker
         classes={classes ?? []}
         terms={terms ?? []}
+        exams={exams ?? []}
         classId={classId}
         termId={termId}
-        onClassChange={setClassId}
-        onTermChange={setTermId}
+        examId={examId}
+        onClassChange={(id) => {
+          setClassId(id);
+          setExamId('');
+        }}
+        onTermChange={(id) => {
+          setTermId(id);
+          setExamId('');
+        }}
+        onExamChange={setExamId}
+        examsLoading={examsLoading}
       />
 
       {ready && grid ? (
         <div
           className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 text-sm ${
-            grid.isLocked
-              ? 'border-theme bg-theme-danger-bg/40 text-theme-danger'
-              : 'border-theme bg-theme-success-bg/40 text-theme-success'
+            grid.isSubmitted
+              ? 'border-theme bg-theme-warning-bg/40 text-theme-warning'
+              : grid.isOpen
+                ? 'border-theme bg-theme-success-bg/40 text-theme-success'
+                : 'border-theme bg-theme-danger-bg/40 text-theme-danger'
           }`}
         >
-          {grid.isLocked ? (
+          {isTeacher && grid.isSubmitted ? (
             <>
               <Lock className="h-4 w-4 shrink-0" />
               <span>
-                Exam closed
-                {grid.lockedByName ? ` by ${grid.lockedByName}` : ''}
-                {grid.lockedAt
-                  ? ` · ${new Date(grid.lockedAt).toLocaleString()}`
+                You submitted marks
+                {grid.submittedAt
+                  ? ` on ${new Date(grid.submittedAt).toLocaleString()}`
                   : ''}
-                . Marks are read-only.
+                . Ask an admin or head teacher to unlock if you need to resubmit.
+              </span>
+            </>
+          ) : grid.isOpen ? (
+            <>
+              <LockOpen className="h-4 w-4 shrink-0" />
+              <span>
+                {isTeacher
+                  ? `${grid.examName} is open — save a draft, then submit to lock your marks.`
+                  : `${grid.examName} is open — view only. Teachers enter and submit marks.`}
               </span>
             </>
           ) : (
             <>
-              <LockOpen className="h-4 w-4 shrink-0" />
-              <span>Exam open — you can enter and update marks.</span>
+              <Lock className="h-4 w-4 shrink-0" />
+              <span>
+                {grid.examName} is {grid.examStatus}. Marks are read-only.
+              </span>
             </>
           )}
-          {editableSet ? (
+          {isTeacher && editableSet ? (
             <span className="text-theme-muted">
-              Editing {editableSet.size} assigned subject
-              {editableSet.size === 1 ? '' : 's'}.
+              Your subjects: {editableSet.size}
             </span>
           ) : null}
         </div>
+      ) : null}
+
+      {!isTeacher && ready && grid && submissions.length > 0 ? (
+        <div className="rounded-xl border border-theme bg-theme-surface px-4 py-3">
+          <p className="mb-2 text-sm font-medium text-theme">
+            Submitted teachers
+          </p>
+          <ul className="space-y-2">
+            {submissions.map((s) => (
+              <li
+                key={s.teacherId}
+                className="flex flex-wrap items-center justify-between gap-2 text-sm"
+              >
+                <span>
+                  {s.teacherName}
+                  {s.submittedAt ? (
+                    <span className="text-theme-muted">
+                      {' '}
+                      · {new Date(s.submittedAt).toLocaleString()}
+                    </span>
+                  ) : null}
+                </span>
+                <LoadingButton
+                  variant="ghost"
+                  loading={
+                    unlockSubmission.isPending &&
+                    unlockSubmission.variables?.teacherId === s.teacherId
+                  }
+                  onClick={() => void unlockTeacher(s.teacherId, s.teacherName)}
+                >
+                  <Unlock className="h-4 w-4" />
+                  Unlock
+                </LoadingButton>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : !isTeacher && ready && grid && grid.isOpen ? (
+        <p className="text-sm text-theme-muted">
+          No teachers have submitted marks for this exam yet.
+        </p>
       ) : null}
 
       {(classes ?? []).length === 0 ? (
@@ -311,16 +397,29 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
           icon={BookOpenCheck}
           title="No S5 or S6 classes"
           description={
-            portal === 'teacher'
-              ? 'You have no teaching assignments in Advanced-level classes, or none exist yet.'
-              : 'A-Level grading applies to Advanced-level classes only. Create an S5 or S6 class first.'
+            isTeacher
+              ? 'You have no teaching assignments in Advanced-level classes.'
+              : 'Create an S5 or S6 class first.'
           }
         />
-      ) : !ready ? (
+      ) : !classId || !termId ? (
         <EmptyState
           icon={BookOpenCheck}
           title="Select a class and term"
-          description="Choose a class and term above to load the grade sheet."
+          description="Then choose an exam to load the grade sheet."
+        />
+      ) : !examId ? (
+        <EmptyState
+          icon={BookOpenCheck}
+          title="No exam selected"
+          description="Create an exam for this class and term, then open it for marking."
+          action={
+            !isTeacher ? (
+              <Link href="/dashboard/alevel/exams" className="ms-btn-primary">
+                Manage exams
+              </Link>
+            ) : undefined
+          }
         />
       ) : isPending ? (
         <Skeleton className="h-72 w-full rounded-xl" />

@@ -48,12 +48,14 @@ const schoolAdminFeesNavChildren: NavItem[] = [
 ];
 
 const schoolAdminALevelNavChildren: NavItem[] = [
-  { href: "/dashboard/alevel/grades", label: "Enter grades", icon: BookOpenCheck, exact: false, requiredAction: "enterALevelGrades" },
+  { href: "/dashboard/alevel/exams", label: "Exams", icon: ClipboardList, exact: false, requiredAction: "viewALevel" },
+  { href: "/dashboard/alevel/grades", label: "View grades", icon: BookOpenCheck, exact: false, requiredAction: "viewALevel" },
   { href: "/dashboard/alevel/results", label: "Results", icon: Award, exact: false, requiredAction: "viewALevel" },
   { href: "/dashboard/alevel/report-cards", label: "Report cards", icon: FileText, exact: false, requiredAction: "viewALevel" },
   { href: "/dashboard/alevel/setup/subjects", label: "Subjects", icon: Layers, exact: false, requiredAction: "manageALevel" },
   { href: "/dashboard/alevel/setup/combinations", label: "Combinations", icon: Sigma, exact: false, requiredAction: "manageALevel" },
   { href: "/dashboard/alevel/setup/enrollments", label: "Enrollments", icon: UsersRound, exact: false, requiredAction: "manageALevel" },
+  { href: "/dashboard/alevel/setup/exam-types", label: "Exam types", icon: ListOrdered, exact: false, requiredAction: "manageALevel" },
   { href: "/dashboard/alevel/setup/grading", label: "Grading scale", icon: ListOrdered, exact: false, requiredAction: "manageALevel" },
 ];
 
@@ -163,7 +165,7 @@ export const schoolAdminNavGroups: NavGroup[] = [
         requiredAction: "viewAllClasses",
       },
       {
-        href: "/dashboard/alevel/grades",
+        href: "/dashboard/alevel/exams",
         label: "A-Level",
         icon: GraduationCap,
         exact: false,

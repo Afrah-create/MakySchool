@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Award, Download, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { PageHeader } from '@makyschool/ui/components/ui/PageHeader';
@@ -10,13 +10,12 @@ import type { ALevelClass, ALevelStudentResult } from '@makyschool/shared';
 import { useToast } from '@/providers/ToastProvider';
 import {
   useALevelClasses,
+  useALevelExams,
   useALevelResults,
   useALevelTerms,
 } from '@/hooks/useALevel';
-import {
-  ClassTermPicker,
-  formatALevelClass,
-} from '@/components/alevel/ClassTermPicker';
+import { ClassExamPicker } from '@/components/alevel/ClassExamPicker';
+import { formatALevelClass } from '@/components/alevel/ClassTermPicker';
 
 const RESULT_LABEL: Record<string, string> = {
   '1': 'Certificate',
@@ -60,18 +59,29 @@ export default function ALevelResultsPage() {
 
   const [classId, setClassId] = useState('');
   const [termId, setTermId] = useState('');
+  const [examId, setExamId] = useState('');
 
-  const selectedTerm = (terms ?? []).find((t) => t.id === termId);
-  const academicYearId = selectedTerm?.academicYearId ?? '';
-
-  const { data, isPending, isError, refetch } = useALevelResults(
-    classId,
-    termId,
-    academicYearId,
-    !!classId && !!termId && !!academicYearId,
+  const { data: exams, isPending: examsLoading } = useALevelExams(
+    { classId, termId },
+    !!classId && !!termId,
   );
 
-  const ready = !!classId && !!termId;
+  useEffect(() => {
+    if (!examId || !exams) return;
+    if (!exams.some((e) => e.id === examId)) {
+      setExamId(exams[0]?.id ?? '');
+    }
+  }, [exams, examId]);
+
+  const selectedExam = (exams ?? []).find((e) => e.id === examId);
+  const selectedTerm = (terms ?? []).find((t) => t.id === termId);
+
+  const { data, isPending, isError, refetch } = useALevelResults(
+    examId,
+    !!examId,
+  );
+
+  const ready = !!examId;
   const results = data?.results ?? [];
   const subjects = data?.subjects ?? [];
   const summary = data?.summary;
@@ -111,25 +121,22 @@ export default function ALevelResultsPage() {
       RESULT_LABEL[r.result_code] ?? r.result_code,
     ]);
     const cls = classLabel(classes?.find((c) => c.id === classId));
+    const examLabel = selectedExam?.name ?? selectedTerm?.name ?? '';
     downloadCsv(
-      `alevel-results-${cls || 'class'}-${selectedTerm?.name ?? ''}.csv`.replace(
-        /\s+/g,
-        '-',
-      ),
+      `alevel-results-${cls || 'class'}-${examLabel}.csv`.replace(/\s+/g, '-'),
       [header, ...rows],
     );
   }
 
-  const reportHref =
-    classId && termId
-      ? `/dashboard/alevel/report-cards?classId=${classId}&termId=${termId}`
-      : '/dashboard/alevel/report-cards';
+  const reportHref = examId
+    ? `/dashboard/alevel/report-cards?examId=${examId}`
+    : '/dashboard/alevel/report-cards';
 
   return (
     <div className="mx-auto max-w-full space-y-6 p-4 sm:p-6">
       <PageHeader
         title="A-Level results"
-        description="Ranked termly results with computed points and result codes."
+        description="Ranked exam results with computed points and result codes."
         actions={
           results.length > 0 ? (
             <div className="flex flex-wrap gap-2">
@@ -146,13 +153,23 @@ export default function ALevelResultsPage() {
         }
       />
 
-      <ClassTermPicker
+      <ClassExamPicker
         classes={classes ?? []}
         terms={terms ?? []}
+        exams={exams ?? []}
         classId={classId}
         termId={termId}
-        onClassChange={setClassId}
-        onTermChange={setTermId}
+        examId={examId}
+        onClassChange={(id) => {
+          setClassId(id);
+          setExamId('');
+        }}
+        onTermChange={(id) => {
+          setTermId(id);
+          setExamId('');
+        }}
+        onExamChange={setExamId}
+        examsLoading={examsLoading}
       />
 
       {(classes ?? []).length === 0 ? (
@@ -161,11 +178,22 @@ export default function ALevelResultsPage() {
           title="No S5 or S6 classes"
           description="A-Level results apply to Advanced-level classes only. Create an S5 or S6 class first."
         />
-      ) : !ready ? (
+      ) : !classId || !termId ? (
         <EmptyState
           icon={Award}
           title="Select a class and term"
-          description="Choose a class and term above to view results."
+          description="Then choose an exam to view results."
+        />
+      ) : !examId ? (
+        <EmptyState
+          icon={Award}
+          title="No exam selected"
+          description="Create an exam for this class and term, then select it to view results."
+          action={
+            <Link href="/dashboard/alevel/exams" className="ms-btn-primary">
+              Manage exams
+            </Link>
+          }
         />
       ) : isPending ? (
         <Skeleton className="h-72 w-full rounded-xl" />

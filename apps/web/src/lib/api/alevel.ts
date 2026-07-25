@@ -6,6 +6,9 @@ import type {
   ALevelEnrollment,
   ALevelEnrollmentFilters,
   ALevelTermOption,
+  ALevelExam,
+  ALevelExamFilters,
+  ALevelExamType,
   BulkALevelEnrollmentPayload,
   BulkALevelEnrollmentResult,
   BulkUpdateALevelEnrollmentsPayload,
@@ -13,7 +16,11 @@ import type {
   ALevelGradesGrid,
   ALevelReportCard,
   ALevelResultsResponse,
+  CreateALevelExamPayload,
+  CreateALevelExamTypePayload,
   CreateALevelSubjectPayload,
+  UpdateALevelExamPayload,
+  UpdateALevelExamTypePayload,
   UpdateALevelSubjectPayload,
   CreateALevelCombinationPayload,
   CreateALevelEnrollmentPayload,
@@ -25,7 +32,6 @@ import type {
 const BASE = '/api/schools/alevel';
 
 export const alevelApi = {
-  /** S5/S6 classes only. */
   listClasses() {
     return apiClient<ALevelClass[]>(`${BASE}/classes`).then((r) => r.data);
   },
@@ -48,6 +54,77 @@ export const alevelApi = {
     }>(`${BASE}/grading-scale`, {
       method: 'PUT',
       body: payload,
+    }).then((r) => r.data);
+  },
+
+  listExamTypes(includeInactive = false) {
+    const q = includeInactive ? '?include_inactive=true' : '';
+    return apiClient<ALevelExamType[]>(`${BASE}/exam-types${q}`).then(
+      (r) => r.data,
+    );
+  },
+
+  createExamType(payload: CreateALevelExamTypePayload) {
+    return apiClient<ALevelExamType>(`${BASE}/exam-types`, {
+      method: 'POST',
+      body: payload,
+    }).then((r) => r.data);
+  },
+
+  updateExamType(id: string, payload: UpdateALevelExamTypePayload) {
+    return apiClient<ALevelExamType>(`${BASE}/exam-types/${id}`, {
+      method: 'PATCH',
+      body: payload,
+    }).then((r) => r.data);
+  },
+
+  deleteExamType(id: string) {
+    return apiClient<{ ok: boolean }>(`${BASE}/exam-types/${id}`, {
+      method: 'DELETE',
+    }).then((r) => r.data);
+  },
+
+  listExams(params: ALevelExamFilters = {}) {
+    const q = new URLSearchParams();
+    if (params.classId) q.set('class_id', params.classId);
+    if (params.termId) q.set('term_id', params.termId);
+    if (params.academicYearId) q.set('academic_year_id', params.academicYearId);
+    if (params.status) q.set('status', params.status);
+    const qs = q.toString();
+    return apiClient<ALevelExam[]>(`${BASE}/exams${qs ? `?${qs}` : ''}`).then(
+      (r) => r.data,
+    );
+  },
+
+  createExam(payload: CreateALevelExamPayload) {
+    return apiClient<ALevelExam>(`${BASE}/exams`, {
+      method: 'POST',
+      body: payload,
+    }).then((r) => r.data);
+  },
+
+  updateExam(id: string, payload: UpdateALevelExamPayload) {
+    return apiClient<ALevelExam>(`${BASE}/exams/${id}`, {
+      method: 'PATCH',
+      body: payload,
+    }).then((r) => r.data);
+  },
+
+  deleteExam(id: string) {
+    return apiClient<{ ok: boolean }>(`${BASE}/exams/${id}`, {
+      method: 'DELETE',
+    }).then((r) => r.data);
+  },
+
+  openExam(id: string) {
+    return apiClient<ALevelExam>(`${BASE}/exams/${id}/open`, {
+      method: 'POST',
+    }).then((r) => r.data);
+  },
+
+  closeExam(id: string) {
+    return apiClient<ALevelExam>(`${BASE}/exams/${id}/close`, {
+      method: 'POST',
     }).then((r) => r.data);
   },
 
@@ -148,12 +225,8 @@ export const alevelApi = {
     }).then((r) => r.data);
   },
 
-  getGrades(classId: string, termId: string, academicYearId: string) {
-    const q = new URLSearchParams({
-      class_id: classId,
-      term_id: termId,
-      academic_year_id: academicYearId,
-    });
+  getGrades(examId: string) {
+    const q = new URLSearchParams({ exam_id: examId });
     return apiClient<ALevelGradesGrid>(`${BASE}/grades?${q.toString()}`).then(
       (r) => r.data,
     );
@@ -166,44 +239,29 @@ export const alevelApi = {
     }).then((r) => r.data);
   },
 
-  lockTerm(termId: string, classId: string, academicYearId: string) {
-    return apiClient<{
-      ok: boolean;
-      isLocked?: boolean;
-      lockedAt?: string;
-      lockedByName?: string;
-    }>(`${BASE}/terms/${termId}/lock`, {
-      method: 'POST',
-      body: { classId, academicYearId },
-    }).then((r) => r.data);
-  },
-
-  unlockTerm(termId: string, classId: string, academicYearId: string) {
-    return apiClient<{ ok: boolean; wasLocked: boolean; isOpen: boolean }>(
-      `${BASE}/terms/${termId}/lock`,
-      {
-        method: 'DELETE',
-        body: { classId, academicYearId },
-      },
+  submitMarks(examId: string) {
+    return apiClient<{ ok: boolean; isSubmitted?: boolean; submittedAt?: string }>(
+      `${BASE}/exams/${examId}/submit`,
+      { method: 'POST' },
     ).then((r) => r.data);
   },
 
-  getResults(classId: string, termId: string, academicYearId: string) {
-    const q = new URLSearchParams({
-      class_id: classId,
-      term_id: termId,
-      academic_year_id: academicYearId,
-    });
+  unlockTeacherSubmission(examId: string, teacherId: string) {
+    return apiClient<{ ok: boolean; teacherId: string }>(
+      `${BASE}/exams/${examId}/submissions/${teacherId}/unlock`,
+      { method: 'POST' },
+    ).then((r) => r.data);
+  },
+
+  getResults(examId: string) {
+    const q = new URLSearchParams({ exam_id: examId });
     return apiClient<ALevelResultsResponse>(
       `${BASE}/results?${q.toString()}`,
     ).then((r) => r.data);
   },
 
-  getReportCard(studentId: string, termId: string, academicYearId: string) {
-    const q = new URLSearchParams({
-      term_id: termId,
-      academic_year_id: academicYearId,
-    });
+  getReportCard(studentId: string, examId: string) {
+    const q = new URLSearchParams({ exam_id: examId });
     return apiClient<ALevelReportCard>(
       `${BASE}/report-card/${studentId}?${q.toString()}`,
     ).then((r) => r.data);
@@ -211,42 +269,26 @@ export const alevelApi = {
 
   saveReportComment(
     studentId: string,
-    termId: string,
-    academicYearId: string,
+    examId: string,
     payload: {
       classTeacherComment?: string | null;
       headTeacherComment?: string | null;
       approve?: boolean;
     },
-    classId?: string | null,
   ) {
-    const q = new URLSearchParams({
-      term_id: termId,
-      academic_year_id: academicYearId,
-    });
-    if (classId) q.set('class_id', classId);
+    const q = new URLSearchParams({ exam_id: examId });
     return apiClient<{ ok: boolean; approved: boolean }>(
       `${BASE}/report-card/${studentId}/comment?${q.toString()}`,
       { method: 'POST', body: payload },
     ).then((r) => r.data);
   },
 
-  generateReportCards(params: {
-    classId: string;
-    termId: string;
-    academicYearId: string;
-    studentId?: string;
-  }) {
-    const q = new URLSearchParams({
-      class_id: params.classId,
-      term_id: params.termId,
-      academic_year_id: params.academicYearId,
-    });
+  generateReportCards(params: { examId: string; studentId?: string }) {
+    const q = new URLSearchParams({ exam_id: params.examId });
     if (params.studentId) q.set('student_id', params.studentId);
     return apiClient<{
       filename: string;
       pdfBase64?: string;
-      zipBase64?: string;
       count?: number;
     }>(`${BASE}/report-cards/generate?${q.toString()}`, {
       method: 'POST',

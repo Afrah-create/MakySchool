@@ -334,9 +334,11 @@ Term locked: show the full grid read-only with a banner at top
 
 The teacher portal version uses the same grid component but:
 
-Only shows classes the teacher is assigned to
-Does not show the lock/unlock button
-Shows a "Submit for review" button instead of "Save" — this calls the same bulk endpoint but the lock is managed by admin separately
+Only shows classes and **subjects** the teacher is assigned to
+Never shows other teachers’ marks
+**Save draft** while the exam is open and they have not submitted
+**Submit marks** locks their sheet until admin / head teacher **unlocks** them for resubmit
+Admin / head teacher grade page is view-only + unlock list (they do not enter marks)
 Phase 7 — Frontend: Results and report cards
 7.1 Results page (/dashboard/alevel/results)
 

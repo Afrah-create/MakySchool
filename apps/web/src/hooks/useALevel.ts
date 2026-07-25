@@ -4,13 +4,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { alevelApi } from '@/lib/api/alevel';
 import type {
   ALevelEnrollmentFilters,
+  ALevelExamFilters,
   ALevelGradingScale,
   BulkALevelEnrollmentPayload,
   BulkUpdateALevelEnrollmentsPayload,
   CreateALevelCombinationPayload,
   CreateALevelEnrollmentPayload,
+  CreateALevelExamPayload,
+  CreateALevelExamTypePayload,
   CreateALevelSubjectPayload,
   UpdateALevelEnrollmentPayload,
+  UpdateALevelExamPayload,
+  UpdateALevelExamTypePayload,
   UpdateALevelSubjectPayload,
   SaveALevelGradesPayload,
 } from '@makyschool/shared';
@@ -19,18 +24,17 @@ export const alevelKeys = {
   classes: ['alevel', 'classes'] as const,
   terms: ['alevel', 'terms'] as const,
   gradingScale: ['alevel', 'grading-scale'] as const,
+  examTypes: ['alevel', 'exam-types'] as const,
+  exams: (filters: string) => ['alevel', 'exams', filters] as const,
   subjects: ['alevel', 'subjects'] as const,
   combinations: ['alevel', 'combinations'] as const,
   enrollments: (filters: string) => ['alevel', 'enrollments', filters] as const,
-  grades: (classId: string, termId: string, yearId: string) =>
-    ['alevel', 'grades', classId, termId, yearId] as const,
-  results: (classId: string, termId: string, yearId: string) =>
-    ['alevel', 'results', classId, termId, yearId] as const,
-  reportCard: (studentId: string, termId: string, yearId: string) =>
-    ['alevel', 'report-card', studentId, termId, yearId] as const,
+  grades: (examId: string) => ['alevel', 'grades', examId] as const,
+  results: (examId: string) => ['alevel', 'results', examId] as const,
+  reportCard: (studentId: string, examId: string) =>
+    ['alevel', 'report-card', studentId, examId] as const,
 };
 
-/** S5/S6 classes only — combinations are an Advanced-level concept. */
 export function useALevelClasses() {
   return useQuery({
     queryKey: alevelKeys.classes,
@@ -61,6 +65,98 @@ export function useSaveALevelGradingScale() {
     mutationFn: (payload: ALevelGradingScale) =>
       alevelApi.saveGradingScale(payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: alevelKeys.gradingScale }),
+  });
+}
+
+export function useALevelExamTypes(includeInactive = false) {
+  return useQuery({
+    queryKey: [...alevelKeys.examTypes, includeInactive] as const,
+    queryFn: () => alevelApi.listExamTypes(includeInactive),
+    staleTime: 60_000,
+  });
+}
+
+export function useCreateALevelExamType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateALevelExamTypePayload) =>
+      alevelApi.createExamType(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: alevelKeys.examTypes }),
+  });
+}
+
+export function useUpdateALevelExamType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; payload: UpdateALevelExamTypePayload }) =>
+      alevelApi.updateExamType(args.id, args.payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: alevelKeys.examTypes }),
+  });
+}
+
+export function useDeleteALevelExamType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => alevelApi.deleteExamType(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: alevelKeys.examTypes }),
+  });
+}
+
+export function useALevelExams(filters: ALevelExamFilters, enabled = true) {
+  const key = JSON.stringify(filters);
+  return useQuery({
+    queryKey: alevelKeys.exams(key),
+    queryFn: () => alevelApi.listExams(filters),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useCreateALevelExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateALevelExamPayload) =>
+      alevelApi.createExam(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alevel', 'exams'] }),
+  });
+}
+
+export function useUpdateALevelExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; payload: UpdateALevelExamPayload }) =>
+      alevelApi.updateExam(args.id, args.payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alevel', 'exams'] }),
+  });
+}
+
+export function useDeleteALevelExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => alevelApi.deleteExam(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['alevel', 'exams'] }),
+  });
+}
+
+export function useOpenALevelExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => alevelApi.openExam(id),
+    onSuccess: (exam) => {
+      qc.invalidateQueries({ queryKey: ['alevel', 'exams'] });
+      qc.invalidateQueries({ queryKey: alevelKeys.grades(exam.id) });
+    },
+  });
+}
+
+export function useCloseALevelExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => alevelApi.closeExam(id),
+    onSuccess: (exam) => {
+      qc.invalidateQueries({ queryKey: ['alevel', 'exams'] });
+      qc.invalidateQueries({ queryKey: alevelKeys.grades(exam.id) });
+    },
   });
 }
 
@@ -206,16 +302,11 @@ export function useDeleteALevelEnrollment() {
   });
 }
 
-export function useALevelGrades(
-  classId: string,
-  termId: string,
-  academicYearId: string,
-  enabled = true,
-) {
+export function useALevelGrades(examId: string, enabled = true) {
   return useQuery({
-    queryKey: alevelKeys.grades(classId, termId, academicYearId),
-    queryFn: () => alevelApi.getGrades(classId, termId, academicYearId),
-    enabled: enabled && !!classId && !!termId && !!academicYearId,
+    queryKey: alevelKeys.grades(examId),
+    queryFn: () => alevelApi.getGrades(examId),
+    enabled: enabled && !!examId,
     staleTime: 15_000,
   });
 }
@@ -226,82 +317,53 @@ export function useSaveALevelGrades() {
     mutationFn: (payload: SaveALevelGradesPayload) =>
       alevelApi.saveGrades(payload),
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({
-        queryKey: alevelKeys.grades(
-          vars.classId,
-          vars.termId,
-          vars.academicYearId,
-        ),
-      });
+      qc.invalidateQueries({ queryKey: alevelKeys.grades(vars.examId) });
       qc.invalidateQueries({ queryKey: ['alevel', 'results'] });
+      qc.invalidateQueries({ queryKey: ['alevel', 'exams'] });
     },
   });
 }
 
-export function useLockALevelTerm() {
+export function useSubmitALevelMarks() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: {
-      termId: string;
-      classId: string;
-      academicYearId: string;
-    }) => alevelApi.lockTerm(args.termId, args.classId, args.academicYearId),
-    onSuccess: (_, vars) => {
-      qc.invalidateQueries({
-        queryKey: alevelKeys.grades(
-          vars.classId,
-          vars.termId,
-          vars.academicYearId,
-        ),
-      });
+    mutationFn: (examId: string) => alevelApi.submitMarks(examId),
+    onSuccess: (_, examId) => {
+      qc.invalidateQueries({ queryKey: alevelKeys.grades(examId) });
+      qc.invalidateQueries({ queryKey: ['alevel', 'exams'] });
     },
   });
 }
 
-export function useUnlockALevelTerm() {
+export function useUnlockALevelTeacherSubmission() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: {
-      termId: string;
-      classId: string;
-      academicYearId: string;
-    }) => alevelApi.unlockTerm(args.termId, args.classId, args.academicYearId),
+    mutationFn: (args: { examId: string; teacherId: string }) =>
+      alevelApi.unlockTeacherSubmission(args.examId, args.teacherId),
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({
-        queryKey: alevelKeys.grades(
-          vars.classId,
-          vars.termId,
-          vars.academicYearId,
-        ),
-      });
+      qc.invalidateQueries({ queryKey: alevelKeys.grades(vars.examId) });
     },
   });
 }
 
-export function useALevelResults(
-  classId: string,
-  termId: string,
-  academicYearId: string,
-  enabled = true,
-) {
+export function useALevelResults(examId: string, enabled = true) {
   return useQuery({
-    queryKey: alevelKeys.results(classId, termId, academicYearId),
-    queryFn: () => alevelApi.getResults(classId, termId, academicYearId),
-    enabled: enabled && !!classId && !!termId && !!academicYearId,
+    queryKey: alevelKeys.results(examId),
+    queryFn: () => alevelApi.getResults(examId),
+    enabled: enabled && !!examId,
     staleTime: 15_000,
   });
 }
 
 export function useALevelReportCard(
   studentId: string,
-  termId: string,
-  academicYearId: string,
+  examId: string,
   enabled = true,
 ) {
   return useQuery({
-    queryKey: alevelKeys.reportCard(studentId, termId, academicYearId),
-    queryFn: () => alevelApi.getReportCard(studentId, termId, academicYearId),
-    enabled: enabled && !!studentId && !!termId && !!academicYearId,
+    queryKey: alevelKeys.reportCard(studentId, examId),
+    queryFn: () => alevelApi.getReportCard(studentId, examId),
+    enabled: enabled && !!studentId && !!examId,
     staleTime: 15_000,
   });
 }
@@ -311,31 +373,19 @@ export function useSaveALevelReportComment() {
   return useMutation({
     mutationFn: (args: {
       studentId: string;
-      termId: string;
-      academicYearId: string;
-      classId?: string | null;
+      examId: string;
       classTeacherComment?: string | null;
       headTeacherComment?: string | null;
       approve?: boolean;
     }) =>
-      alevelApi.saveReportComment(
-        args.studentId,
-        args.termId,
-        args.academicYearId,
-        {
-          classTeacherComment: args.classTeacherComment,
-          headTeacherComment: args.headTeacherComment,
-          approve: args.approve,
-        },
-        args.classId,
-      ),
+      alevelApi.saveReportComment(args.studentId, args.examId, {
+        classTeacherComment: args.classTeacherComment,
+        headTeacherComment: args.headTeacherComment,
+        approve: args.approve,
+      }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({
-        queryKey: alevelKeys.reportCard(
-          vars.studentId,
-          vars.termId,
-          vars.academicYearId,
-        ),
+        queryKey: alevelKeys.reportCard(vars.studentId, vars.examId),
       });
     },
   });
@@ -343,11 +393,7 @@ export function useSaveALevelReportComment() {
 
 export function useGenerateALevelReportCards() {
   return useMutation({
-    mutationFn: (params: {
-      classId: string;
-      termId: string;
-      academicYearId: string;
-      studentId?: string;
-    }) => alevelApi.generateReportCards(params),
+    mutationFn: (params: { examId: string; studentId?: string }) =>
+      alevelApi.generateReportCards(params),
   });
 }

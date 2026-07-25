@@ -76,17 +76,71 @@ export interface ALevelGradeCell {
   points: number | null;
 }
 
+export type ALevelExamStatus = 'draft' | 'open' | 'closed';
+
+export interface ALevelExamType {
+  id: string;
+  name: string;
+  code: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface ALevelExam {
+  id: string;
+  classId: string;
+  termId: string;
+  academicYearId: string;
+  examTypeId: string;
+  examTypeName: string | null;
+  examTypeCode: string | null;
+  name: string;
+  status: ALevelExamStatus;
+  isOpen: boolean;
+  isLocked: boolean;
+  openedAt: string | null;
+  openedByName: string | null;
+  closedAt: string | null;
+  closedByName: string | null;
+  notes: string | null;
+  className: string | null;
+  termName: string | null;
+  createdAt: string | null;
+  /** Marking progress (list endpoint). */
+  studentCount?: number;
+  applicableCells?: number;
+  gradedCells?: number;
+}
+
 export interface ALevelGradesGrid {
   students: ALevelEnrollment[];
   subjects: ALevelSubject[];
   /** Keyed by `${studentId}:${subjectId}` */
   grades: Record<string, ALevelGradeCell>;
+  examId: string;
+  examName: string;
+  examStatus: ALevelExamStatus;
   isLocked: boolean;
   isOpen: boolean;
-  lockedAt: string | null;
-  lockedByName: string | null;
   /** When set (teachers), only these subject IDs may be edited. */
   editableSubjectIds: string[] | null;
+  /** Teacher may save marks (exam open + not yet submitted). */
+  canEdit: boolean;
+  readOnly: boolean;
+  /** Teacher has submitted marks for this exam. */
+  isSubmitted: boolean;
+  submittedAt: string | null;
+  /** Admin/HT: teachers who have submitted. */
+  submissions: ALevelMarkSubmission[];
+}
+
+export interface ALevelMarkSubmission {
+  teacherId: string;
+  teacherName: string;
+  submittedAt: string | null;
+  unlockedAt: string | null;
+  unlockedByName: string | null;
+  isLocked: boolean;
 }
 
 export interface ALevelResultSubject {
@@ -138,6 +192,8 @@ export interface ALevelResultsResponse {
   results: ALevelStudentResult[];
   subjects: ALevelSubject[];
   summary: ALevelResultsSummary;
+  examId: string;
+  examName?: string;
 }
 
 export interface CreateALevelSubjectPayload {
@@ -198,9 +254,7 @@ export interface ALevelEnrollmentFilters {
 }
 
 export interface SaveALevelGradesPayload {
-  termId: string;
-  academicYearId: string;
-  classId: string;
+  examId: string;
   entries: Array<{
     studentId: string;
     subjectId: string;
@@ -236,6 +290,9 @@ export interface ALevelReportCard {
   learnerId: string;
   className: string | null;
   combinationName: string;
+  examId: string;
+  examName: string;
+  examTypeName: string | null;
   termId: string;
   termName: string;
   academicYearId: string;
@@ -254,4 +311,40 @@ export interface ALevelReportCard {
   headTeacherComment: string | null;
   approvedAt: string | null;
   approvedByName: string | null;
+}
+
+export interface CreateALevelExamTypePayload {
+  name: string;
+  code: string;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+export interface UpdateALevelExamTypePayload {
+  name?: string;
+  code?: string;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+export interface CreateALevelExamPayload {
+  classId: string;
+  termId: string;
+  academicYearId: string;
+  examTypeId: string;
+  name?: string | null;
+  notes?: string | null;
+  openNow?: boolean;
+}
+
+export interface UpdateALevelExamPayload {
+  name?: string;
+  notes?: string | null;
+}
+
+export interface ALevelExamFilters {
+  classId?: string;
+  termId?: string;
+  academicYearId?: string;
+  status?: ALevelExamStatus | '';
 }

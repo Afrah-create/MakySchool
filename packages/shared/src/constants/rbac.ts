@@ -43,7 +43,7 @@ export const CAN = {
   viewAnalytics: ["admin", "head_teacher"],
   manageALevel: ["admin"],
   viewALevel: ["admin", "head_teacher"],
-  enterALevelGrades: ["admin", "head_teacher", "teacher"],
+  enterALevelGrades: ["teacher"],
 } as const satisfies Record<string, MakySchoolRole[]>;
 
 export type PermissionAction = keyof typeof CAN;

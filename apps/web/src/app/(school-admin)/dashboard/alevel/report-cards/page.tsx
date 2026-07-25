@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Download, FileText, Save } from 'lucide-react';
 import { PageHeader } from '@makyschool/ui/components/ui/PageHeader';
 import { EmptyState } from '@makyschool/ui/components/ui/EmptyState';
@@ -11,13 +12,14 @@ import { useToast } from '@/providers/ToastProvider';
 import { useCan } from '@/hooks/useCurrentRole';
 import {
   useALevelClasses,
+  useALevelExams,
   useALevelReportCard,
   useALevelResults,
   useALevelTerms,
   useGenerateALevelReportCards,
   useSaveALevelReportComment,
 } from '@/hooks/useALevel';
-import { ClassTermPicker } from '@/components/alevel/ClassTermPicker';
+import { ClassExamPicker } from '@/components/alevel/ClassExamPicker';
 
 const RESULT_LABEL: Record<string, string> = {
   '1': 'Certificate',
@@ -51,21 +53,37 @@ function ReportCardsClient() {
 
   const [classId, setClassId] = useState(searchParams.get('classId') ?? '');
   const [termId, setTermId] = useState(searchParams.get('termId') ?? '');
+  const [examId, setExamId] = useState(searchParams.get('examId') ?? '');
   const [studentId, setStudentId] = useState(
     searchParams.get('studentId') ?? '',
   );
   const [classComment, setClassComment] = useState('');
   const [headComment, setHeadComment] = useState('');
 
-  const selectedTerm = (terms ?? []).find((t) => t.id === termId);
-  const academicYearId = selectedTerm?.academicYearId ?? '';
-
-  const { data: resultsData } = useALevelResults(
-    classId,
-    termId,
-    academicYearId,
-    !!classId && !!termId && !!academicYearId,
+  const { data: exams, isPending: examsLoading } = useALevelExams(
+    classId && termId ? { classId, termId } : {},
+    (!!classId && !!termId) || !!examId,
   );
+
+  // If navigated with only examId, resolve class/term from the exam list once loaded.
+  useEffect(() => {
+    if (!examId || (classId && termId)) return;
+    const match = (exams ?? []).find((e) => e.id === examId);
+    if (match) {
+      setClassId(match.classId);
+      setTermId(match.termId);
+    }
+  }, [examId, exams, classId, termId]);
+
+  // When class/term change, clear exam if it no longer belongs.
+  useEffect(() => {
+    if (!examId || !exams) return;
+    if (!exams.some((e) => e.id === examId)) {
+      setExamId(exams[0]?.id ?? '');
+    }
+  }, [exams, examId]);
+
+  const { data: resultsData } = useALevelResults(examId, !!examId);
   const students = resultsData?.results ?? [];
 
   useEffect(() => {
@@ -79,12 +97,7 @@ function ReportCardsClient() {
     isPending,
     isError,
     refetch,
-  } = useALevelReportCard(
-    studentId,
-    termId,
-    academicYearId,
-    !!studentId && !!termId && !!academicYearId,
-  );
+  } = useALevelReportCard(studentId, examId, !!studentId && !!examId);
 
   const [syncedReport, setSyncedReport] = useState<typeof report>(undefined);
   if (report !== syncedReport) {
@@ -96,17 +109,15 @@ function ReportCardsClient() {
   const saveComment = useSaveALevelReportComment();
   const generate = useGenerateALevelReportCards();
 
-  const ready = !!classId && !!termId;
+  const ready = !!examId;
   const approved = !!report?.approvedAt;
 
   async function save(approve = false) {
-    if (!studentId) return;
+    if (!studentId || !examId) return;
     try {
       await saveComment.mutateAsync({
         studentId,
-        termId,
-        academicYearId,
-        classId,
+        examId,
         classTeacherComment: classComment,
         headTeacherComment: headComment,
         approve,
@@ -120,11 +131,10 @@ function ReportCardsClient() {
   }
 
   async function download(one = true) {
+    if (!examId) return;
     try {
       const result = await generate.mutateAsync({
-        classId,
-        termId,
-        academicYearId,
+        examId,
         studentId: one ? studentId : undefined,
       });
       if (!result.pdfBase64) {
@@ -148,7 +158,7 @@ function ReportCardsClient() {
     <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
       <PageHeader
         title="A-Level report cards"
-        description="Preview term reports, add comments, approve, and download PDFs."
+        description="Preview exam reports, add comments, approve, and download PDFs."
         actions={
           ready && students.length > 0 ? (
             <div className="flex flex-wrap gap-2">
@@ -174,26 +184,52 @@ function ReportCardsClient() {
         }
       />
 
-      <ClassTermPicker
+      <ClassExamPicker
         classes={classes ?? []}
         terms={terms ?? []}
+        exams={exams ?? []}
         classId={classId}
         termId={termId}
+        examId={examId}
         onClassChange={(id) => {
           setClassId(id);
+          setExamId('');
           setStudentId('');
         }}
         onTermChange={(id) => {
           setTermId(id);
+          setExamId('');
           setStudentId('');
         }}
+        onExamChange={(id) => {
+          setExamId(id);
+          setStudentId('');
+        }}
+        examsLoading={examsLoading}
       />
 
-      {!ready ? (
+      {(classes ?? []).length === 0 ? (
+        <EmptyState
+          icon={FileText}
+          title="No S5 or S6 classes"
+          description="A-Level report cards apply to Advanced-level classes only."
+        />
+      ) : !classId || !termId ? (
         <EmptyState
           icon={FileText}
           title="Select a class and term"
-          description="Choose filters above to open report cards."
+          description="Then choose an exam to open report cards."
+        />
+      ) : !examId ? (
+        <EmptyState
+          icon={FileText}
+          title="No exam selected"
+          description="Create an exam for this class and term, then select it to view report cards."
+          action={
+            <Link href="/dashboard/alevel/exams" className="ms-btn-primary">
+              Manage exams
+            </Link>
+          }
         />
       ) : students.length === 0 ? (
         <EmptyState
@@ -249,7 +285,11 @@ function ReportCardsClient() {
                         {report.combinationName}
                       </p>
                       <p className="mt-1 text-sm text-theme-muted">
-                        {report.termName}
+                        {report.examName}
+                        {report.examTypeName
+                          ? ` · ${report.examTypeName}`
+                          : ''}
+                        {report.termName ? ` · ${report.termName}` : ''}
                         {report.position != null
                           ? ` · Position ${report.position}${
                               report.classSize
