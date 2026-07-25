@@ -51,6 +51,24 @@ class LocalStorageBackend:
     def exists(self, key: str) -> bool:
         return self._path_for_key(key).is_file()
 
+    def download_bytes(self, key: str) -> tuple[bytes, str | None]:
+        path = self._path_for_key(key)
+        if not path.is_file():
+            raise StorageNotFoundError()
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            raise StorageError("Failed to read file", code="STORAGE_DOWNLOAD_FAILED") from exc
+        suffix = path.suffix.lower()
+        content_type = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".webp": "image/webp",
+            ".gif": "image/gif",
+        }.get(suffix)
+        return data, content_type
+
     def get_metadata(self, key: str) -> dict[str, Any]:
         path = self._path_for_key(key)
         if not path.is_file():

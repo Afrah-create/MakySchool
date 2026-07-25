@@ -113,9 +113,12 @@ Base: `/api/schools/alevel`.
 | Grades | `GET /grades?exam_id=`, `POST /grades/bulk` `{ examId, entries }` (teachers only) |
 | Submit / unlock | `POST /exams/{id}/submit`, `GET …/submissions`, `POST …/submissions/{teacherId}/unlock` |
 | Results | `GET /results?exam_id=` (+ `summary`) |
-| Report cards | `GET` / `POST comment` / `POST generate` — all `exam_id` |
+| Report cards | `GET` / `POST comment` / `POST comments/bulk` / `POST generate` (binary PDF/ZIP) |
+| Learner reports | `/api/schools/learner/alevel/report-cards` list / detail / PDF (approved only) |
 
 `GET /exams` includes progress: `studentCount`, `applicableCells`, `gradedCells` (enrollment-aware).
+
+**PDF generation:** branding and student photos are embedded as data URIs when the object exists; missing logo/stamp/photo are omitted (initials avatar instead). Class ZIP builds PDFs in parallel and returns `application/zip`.
 
 ## Frontend
 
@@ -124,9 +127,10 @@ Base: `/api/schools/alevel`.
 | `/dashboard/alevel/exams` | Create / open / close / delete exams |
 | `/dashboard/alevel/setup/exam-types` | BOT / Mid / EOT (+ custom) |
 | `/dashboard/alevel/grades` | View-only grid + unlock submitted teachers |
-| `/dashboard/alevel/results` | Per-exam ranked results + summary |
-| `/dashboard/alevel/report-cards` | Per-exam preview, comments, PDF |
+| `/dashboard/alevel/results` | Per-exam ranked results + summary; CSV export (metadata, dual headers, sortable) |
+| `/dashboard/alevel/report-cards` | Preview, bulk comments, approve, PDF/ZIP |
 | `/teacher/alevel/grades` | Own subjects: draft → submit (locked until unlock) |
+| `/learner/report-cards` | Approved reports + PDF download |
 
 ## Invariants
 
@@ -137,7 +141,8 @@ Base: `/api/schools/alevel`.
 5. One exam per class / term / exam type.  
 6. Teachers grade only assigned subjects while the exam is **open** and they have not submitted.  
 7. After submit, only admin/HT unlock allows resubmit.  
-8. Report subjects vary by student combination.
+8. Report subjects vary by student combination.  
+9. Learners only see **approved** report cards for their linked student.
 
 ## Tests
 

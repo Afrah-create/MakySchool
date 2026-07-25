@@ -78,6 +78,21 @@ async def test_presigned_download_local_returns_uploads_path(tenant_storage, sch
 
 
 @pytest.mark.asyncio
+async def test_download_bytes_round_trip(tenant_storage, school_id):
+    payload = b"photo-bytes"
+    key = await tenant_storage.upload_bytes(
+        school_id,
+        "students",
+        payload,
+        "image/png",
+        "profile.png",
+    )
+    data, content_type = await tenant_storage.download_bytes(school_id, key)
+    assert data == payload
+    assert content_type in {None, "image/png"}
+
+
+@pytest.mark.asyncio
 async def test_upload_rejects_invalid_mime(tenant_storage, school_id):
     with pytest.raises(StorageValidationError):
         await tenant_storage.upload_bytes(

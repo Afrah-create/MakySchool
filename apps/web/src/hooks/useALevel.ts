@@ -391,9 +391,31 @@ export function useSaveALevelReportComment() {
   });
 }
 
+export function useBulkSaveALevelReportComments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      examId: string;
+      studentIds: string[];
+      classTeacherComment?: string | null;
+      headTeacherComment?: string | null;
+      approve?: boolean;
+    }) => alevelApi.bulkSaveReportComments(payload),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['alevel', 'reportCard'] });
+      for (const studentId of vars.studentIds) {
+        qc.invalidateQueries({
+          queryKey: alevelKeys.reportCard(studentId, vars.examId),
+        });
+      }
+    },
+  });
+}
+
 export function useGenerateALevelReportCards() {
   return useMutation({
     mutationFn: (params: { examId: string; studentId?: string }) =>
       alevelApi.generateReportCards(params),
   });
 }
+

@@ -289,3 +289,74 @@ async def learner_timetable(
             }
         )
     }
+
+
+@router.get("/alevel/report-cards")
+async def learner_alevel_report_cards(
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """List approved A-Level report cards for the linked learner only."""
+    school_id, actor = ctx
+    user_id = _require_learner(actor)
+    student = await _linked_student(conn, school_id, user_id)
+
+    from app.lib.alevel_reports import list_approved_report_summaries
+
+    items = await list_approved_report_summaries(conn, school_id, student["id"])
+    return {"data": {"reports": items}}
+
+
+@router.get("/alevel/report-cards/{exam_id}")
+async def learner_alevel_report_card_detail(
+    exam_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    user_id = _require_learner(actor)
+    student = await _linked_student(conn, school_id, user_id)
+
+    from app.lib.alevel_reports import build_report_card_data
+
+    data = await build_report_card_data(
+        conn,
+        school_id,
+        student["id"],
+        exam_id,
+        for_pdf=False,
+        require_approved=True,
+    )
+    return {"data": data}
+
+
+@router.get("/alevel/report-cards/{exam_id}/pdf")
+async def learner_alevel_report_card_pdf(
+    exam_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    from fastapi.responses import Response
+
+    school_id, actor = ctx
+    user_id = _require_learner(actor)
+    student = await _linked_student(conn, school_id, user_id)
+
+    from app.lib.alevel_pdf import generate_alevel_report_pdf_bytes
+    from app.lib.alevel_reports import build_report_card_data
+
+    data = await build_report_card_data(
+        conn,
+        school_id,
+        student["id"],
+        exam_id,
+        for_pdf=True,
+        require_approved=True,
+    )
+    pdf = await generate_alevel_report_pdf_bytes(data)
+    filename = f"{data.get('learnerId') or student['id']}-report.pdf".replace(" ", "_")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

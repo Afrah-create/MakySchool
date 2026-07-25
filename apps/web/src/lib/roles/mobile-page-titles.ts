@@ -27,6 +27,7 @@ const TITLE_BY_PATH: Record<string, string> = {
   "/learner/profile": "Profile",
   "/learner/attendance": "Attendance",
   "/learner/fees": "Fees",
+  "/learner/report-cards": "Report cards",
   "/bursar/dashboard": "Dashboard",
   "/bursar/menu": "Menu",
   "/bursar/structures": "Fee structures",

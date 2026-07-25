@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Award, Download, FileText } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowDownAZ, ArrowUpAZ, Award, Download, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { PageHeader } from '@makyschool/ui/components/ui/PageHeader';
 import { EmptyState } from '@makyschool/ui/components/ui/EmptyState';
 import { Skeleton } from '@makyschool/ui/components/ui/Skeleton';
 import type { ALevelClass, ALevelStudentResult } from '@makyschool/shared';
 import { useToast } from '@/providers/ToastProvider';
+import { useSchool } from '@/providers/SchoolProvider';
 import {
   useALevelClasses,
   useALevelExams,
@@ -16,6 +17,15 @@ import {
 } from '@/hooks/useALevel';
 import { ClassExamPicker } from '@/components/alevel/ClassExamPicker';
 import { formatALevelClass } from '@/components/alevel/ClassTermPicker';
+import {
+  ALEVEL_RESULTS_SORT_OPTIONS,
+  alevelResultsCsvFilename,
+  buildALevelResultsCsv,
+  downloadALevelResultsCsv,
+  sortALevelResults,
+  type ALevelResultsSortDir,
+  type ALevelResultsSortKey,
+} from '@/lib/alevel/exportResultsCsv';
 
 const RESULT_LABEL: Record<string, string> = {
   '1': 'Certificate',
@@ -32,34 +42,17 @@ function classLabel(c: ALevelClass | undefined) {
   return c ? formatALevelClass(c) : '';
 }
 
-function downloadCsv(filename: string, rows: string[][]) {
-  const content = rows
-    .map((row) =>
-      row
-        .map((cell) => {
-          const value = String(cell ?? '');
-          return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-        })
-        .join(','),
-    )
-    .join('\n');
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function ALevelResultsPage() {
   const { toast } = useToast();
+  const { school } = useSchool();
   const { data: classes } = useALevelClasses();
   const { data: terms } = useALevelTerms();
 
   const [classId, setClassId] = useState('');
   const [termId, setTermId] = useState('');
   const [examId, setExamId] = useState('');
+  const [sortKey, setSortKey] = useState<ALevelResultsSortKey>('position');
+  const [sortDir, setSortDir] = useState<ALevelResultsSortDir>('asc');
 
   const { data: exams, isPending: examsLoading } = useALevelExams(
     { classId, termId },
@@ -75,57 +68,55 @@ export default function ALevelResultsPage() {
 
   const selectedExam = (exams ?? []).find((e) => e.id === examId);
   const selectedTerm = (terms ?? []).find((t) => t.id === termId);
+  const selectedClass = (classes ?? []).find((c) => c.id === classId);
 
   const { data, isPending, isError, refetch } = useALevelResults(
     examId,
     !!examId,
   );
 
-  const ready = !!examId;
   const results = data?.results ?? [];
   const subjects = data?.subjects ?? [];
   const summary = data?.summary;
 
+  const sortedResults = useMemo(
+    () => sortALevelResults(results, sortKey, sortDir),
+    [results, sortKey, sortDir],
+  );
+
   function exportCsv() {
+    if (results.length === 0) {
+      toast.error('No results to export.');
+      return;
+    }
     try {
-      runExport();
+      const csv = buildALevelResultsCsv({
+        results,
+        subjects,
+        summary,
+        meta: {
+          schoolName: school?.name ?? null,
+          className: classLabel(selectedClass),
+          termName: selectedTerm?.name ?? null,
+          examName: selectedExam?.name ?? data?.examName ?? null,
+          examTypeName: selectedExam?.examTypeName ?? null,
+          academicYearLabel: selectedTerm?.year
+            ? String(selectedTerm.year)
+            : null,
+        },
+        sortKey,
+        sortDir,
+      });
+      const filename = alevelResultsCsvFilename({
+        className: classLabel(selectedClass),
+        examName: selectedExam?.name ?? selectedTerm?.name,
+        termName: selectedTerm?.name,
+      });
+      downloadALevelResultsCsv(filename, csv);
       toast.success(`Exported ${results.length} results to CSV.`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not export CSV.');
     }
-  }
-
-  function runExport() {
-    const header = [
-      'Position',
-      'Student',
-      'Learner ID',
-      'Combination',
-      ...subjects.map((s) => s.code),
-      'Principal points',
-      'GP',
-      'Subsidiary',
-      'Total points',
-      'Result',
-    ];
-    const rows = results.map((r) => [
-      String(r.position),
-      r.studentName,
-      r.learnerId,
-      r.combinationName,
-      ...subjects.map((s) => gradeFor(r, s.id)),
-      String(r.best_principal_points),
-      String(r.gp_points),
-      String(r.subsidiary_points),
-      String(r.total_points),
-      RESULT_LABEL[r.result_code] ?? r.result_code,
-    ]);
-    const cls = classLabel(classes?.find((c) => c.id === classId));
-    const examLabel = selectedExam?.name ?? selectedTerm?.name ?? '';
-    downloadCsv(
-      `alevel-results-${cls || 'class'}-${examLabel}.csv`.replace(/\s+/g, '-'),
-      [header, ...rows],
-    );
   }
 
   const reportHref = examId
@@ -136,15 +127,53 @@ export default function ALevelResultsPage() {
     <div className="mx-auto max-w-full space-y-6 p-4 sm:p-6">
       <PageHeader
         title="A-Level results"
-        description="Ranked exam results with computed points and result codes."
+        description="Ranked exam results with computed points and result codes. Export a formatted CSV with metadata, dual headers, and subject summaries."
         actions={
           results.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2 text-sm text-theme-muted">
+                <span className="sr-only">Sort by</span>
+                <select
+                  className="ms-input h-10 min-w-[10rem] py-1 text-sm"
+                  value={sortKey}
+                  onChange={(e) =>
+                    setSortKey(e.target.value as ALevelResultsSortKey)
+                  }
+                  aria-label="Sort results by"
+                >
+                  {ALEVEL_RESULTS_SORT_OPTIONS.map((opt) => (
+                    <option key={opt.key} value={opt.key}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="ms-btn-ghost"
+                onClick={() =>
+                  setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+                }
+                title={
+                  sortDir === 'asc' ? 'Ascending — click for descending' : 'Descending — click for ascending'
+                }
+                aria-label={`Sort ${sortDir === 'asc' ? 'ascending' : 'descending'}`}
+              >
+                {sortDir === 'asc' ? (
+                  <ArrowUpAZ className="h-4 w-4" />
+                ) : (
+                  <ArrowDownAZ className="h-4 w-4" />
+                )}
+              </button>
               <Link href={reportHref} className="ms-btn-secondary">
                 <FileText className="h-4 w-4" />
                 Report cards
               </Link>
-              <button type="button" onClick={exportCsv} className="ms-btn-secondary">
+              <button
+                type="button"
+                onClick={exportCsv}
+                className="ms-btn-secondary"
+              >
                 <Download className="h-4 w-4" />
                 Export CSV
               </button>
@@ -277,7 +306,9 @@ export default function ALevelResultsPage() {
                       <tr key={s.subjectId} className="border-t border-theme">
                         <td className="px-4 py-2 text-theme-primary">
                           {s.code}{' '}
-                          <span className="text-theme-muted">{s.subjectName}</span>
+                          <span className="text-theme-muted">
+                            {s.subjectName}
+                          </span>
                         </td>
                         <td className="px-3 py-2 text-center text-theme-muted">
                           {s.sat}
@@ -297,6 +328,15 @@ export default function ALevelResultsPage() {
           ) : null}
 
           <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-theme px-4 py-2.5 text-xs text-theme-muted">
+              <span>
+                Showing {sortedResults.length} student
+                {sortedResults.length === 1 ? '' : 's'} · sorted by{' '}
+                {ALEVEL_RESULTS_SORT_OPTIONS.find((o) => o.key === sortKey)
+                  ?.label ?? sortKey}{' '}
+                ({sortDir === 'asc' ? 'asc' : 'desc'})
+              </span>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
                 <thead className="bg-table-header text-xs font-medium uppercase tracking-wide text-theme-muted">
@@ -322,12 +362,14 @@ export default function ALevelResultsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {results.map((r) => (
+                  {sortedResults.map((r) => (
                     <tr
                       key={r.studentId}
                       className="border-t border-theme hover:bg-theme-raised/40"
                     >
-                      <td className="px-3 py-2 text-theme-muted">{r.position}</td>
+                      <td className="px-3 py-2 text-theme-muted">
+                        {r.position}
+                      </td>
                       <td className="sticky left-0 z-10 bg-theme-surface px-4 py-2">
                         <p className="font-medium text-theme-primary">
                           {r.studentName}

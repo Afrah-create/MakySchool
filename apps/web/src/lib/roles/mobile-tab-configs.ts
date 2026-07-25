@@ -57,7 +57,7 @@ export const learnerMobileTabs: MobileTab[] = [
     href: "/learner/profile",
     label: "Profile",
     icon: User,
-    matchPrefixes: ["/learner/profile", "/learner/attendance", "/learner/fees"],
+    matchPrefixes: ["/learner/profile", "/learner/attendance", "/learner/fees", "/learner/report-cards"],
   },
 ];
 

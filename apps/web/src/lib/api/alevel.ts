@@ -283,15 +283,34 @@ export const alevelApi = {
     ).then((r) => r.data);
   },
 
+  bulkSaveReportComments(payload: {
+    examId: string;
+    studentIds: string[];
+    classTeacherComment?: string | null;
+    headTeacherComment?: string | null;
+    approve?: boolean;
+  }) {
+    return apiClient<{
+      saved: number;
+      skippedApproved: number;
+      skippedNotEnrolled: number;
+    }>(`${BASE}/report-cards/comments/bulk`, {
+      method: 'POST',
+      body: payload,
+    }).then((r) => r.data);
+  },
+
   generateReportCards(params: { examId: string; studentId?: string }) {
     const q = new URLSearchParams({ exam_id: params.examId });
     if (params.studentId) q.set('student_id', params.studentId);
-    return apiClient<{
-      filename: string;
-      pdfBase64?: string;
-      count?: number;
-    }>(`${BASE}/report-cards/generate?${q.toString()}`, {
-      method: 'POST',
-    }).then((r) => r.data);
+    const fallback = params.studentId
+      ? 'alevel-report.pdf'
+      : 'alevel-report-cards.zip';
+    return import('@/lib/api/downloadBinary').then(({ downloadBinaryFile }) =>
+      downloadBinaryFile(`${BASE}/report-cards/generate?${q.toString()}`, {
+        method: 'POST',
+        fallbackFilename: fallback,
+      }),
+    );
   },
 };

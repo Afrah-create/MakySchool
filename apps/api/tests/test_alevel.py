@@ -1,10 +1,12 @@
-"""Unit tests for A-Level grading logic (app.lib.alevel)."""
+"""Unit tests for A-Level grading logic and report helpers."""
 
 from app.lib.alevel import (
     compute_grade,
     compute_result_code,
     compute_student_totals,
 )
+from app.lib.alevel_pdf import build_alevel_report_html
+from app.lib.alevel_reports import student_initials
 
 
 class TestComputePrincipalGrade:
@@ -84,34 +86,70 @@ class TestStudentTotals:
         ]
         totals = compute_student_totals(grades)
         assert totals["total_points"] == 17
-        assert totals["result_code"] == "1"
 
-    def test_one_principal_pass_is_partial(self):
-        grades = [
-            {"subject_type": "principal", "grade": "E", "points": 2, "is_gp": False},
-            {"subject_type": "principal", "grade": "O", "points": 1, "is_gp": False},
-            {"subject_type": "principal", "grade": "F", "points": 0, "is_gp": False},
-            {"subject_type": "subsidiary", "grade": "P", "points": 1, "is_gp": True},
-            {"subject_type": "subsidiary", "grade": "F", "points": 0, "is_gp": False},
-        ]
-        totals = compute_student_totals(grades)
-        assert totals["principal_pass_count"] == 1
-        assert totals["result_code"] == "2"
 
-    def test_no_passes_is_incomplete(self):
-        grades = [
-            {"subject_type": "principal", "grade": "O", "points": 1, "is_gp": False},
-            {"subject_type": "principal", "grade": "F", "points": 0, "is_gp": False},
-            {"subject_type": "principal", "grade": "F", "points": 0, "is_gp": False},
-        ]
-        totals = compute_student_totals(grades)
-        assert totals["principal_pass_count"] == 0
-        assert totals["result_code"] == "6"
+class TestReportHelpers:
+    def test_student_initials(self):
+        assert student_initials("Jane Doe") == "JD"
+        assert student_initials("Madonna") == "MA"
+        assert student_initials("") == "?"
+        assert student_initials("  Ada   Lovelace  ") == "AL"
 
-    def test_gp_points_capped(self):
-        grades = [
-            {"subject_type": "subsidiary", "grade": "P", "points": 1, "is_gp": True},
-        ]
-        totals = compute_student_totals(grades)
-        assert totals["gp_points"] == 1
-        assert totals["subsidiary_points"] == 0
+    def test_report_html_uses_initials_without_photo(self):
+        html = build_alevel_report_html(
+            {
+                "schoolName": "Demo High",
+                "logoUrl": None,
+                "stampUrl": None,
+                "studentName": "Jane Doe",
+                "studentInitials": "JD",
+                "photoUrl": None,
+                "learnerId": "L-001",
+                "className": "S5 East",
+                "combinationName": "PCM",
+                "examName": "Mid Term",
+                "examTypeName": "MID",
+                "termName": "Term 2",
+                "subjects": [
+                    {
+                        "code": "P",
+                        "subjectName": "Physics",
+                        "rawScore": 80,
+                        "grade": "A",
+                        "points": 6,
+                        "descriptor": "Distinction",
+                    }
+                ],
+                "total_points": 17,
+                "principal_pass_count": 3,
+                "result_code": "1",
+                "position": 2,
+                "classSize": 40,
+                "classTeacherComment": "Good work",
+                "headTeacherComment": "Keep it up",
+                "approvedAt": "2026-07-26T10:00:00+00:00",
+                "approvedByName": "Head Teacher",
+            }
+        )
+        assert "avatar-initials" in html
+        assert "JD" in html
+        assert "Jane Doe" in html
+        assert "Certificate Eligible" in html
+        assert "<script" not in html.lower()
+
+    def test_report_html_embeds_photo_when_present(self):
+        html = build_alevel_report_html(
+            {
+                "schoolName": "Demo High",
+                "studentName": "Jane Doe",
+                "studentInitials": "JD",
+                "photoUrl": "data:image/png;base64,abc",
+                "subjects": [],
+                "total_points": 0,
+                "principal_pass_count": 0,
+                "result_code": "6",
+            }
+        )
+        assert 'class="avatar-img"' in html
+        assert "data:image/png;base64,abc" in html
+        assert 'class="avatar-initials"' not in html

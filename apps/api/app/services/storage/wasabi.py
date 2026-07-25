@@ -105,6 +105,20 @@ class WasabiStorageBackend:
         except BotoCoreError as exc:
             raise StorageError("Storage network error", code="STORAGE_NETWORK_ERROR") from exc
 
+    def download_bytes(self, key: str) -> tuple[bytes, str | None]:
+        _, _, ClientError, BotoCoreError = _import_boto()
+        try:
+            response = _get_client().get_object(Bucket=self._bucket, Key=key)
+            body = response["Body"].read()
+            return body, response.get("ContentType")
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                raise StorageNotFoundError() from exc
+            raise StorageError("Failed to download file", code="STORAGE_DOWNLOAD_FAILED") from exc
+        except BotoCoreError as exc:
+            raise StorageError("Storage network error", code="STORAGE_NETWORK_ERROR") from exc
+
     def get_metadata(self, key: str) -> dict[str, Any]:
         _, _, ClientError, BotoCoreError = _import_boto()
         try:

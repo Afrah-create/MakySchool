@@ -8,6 +8,7 @@ import { PageHeader } from '@makyschool/ui/components/ui/PageHeader';
 import { EmptyState } from '@makyschool/ui/components/ui/EmptyState';
 import { Skeleton } from '@makyschool/ui/components/ui/Skeleton';
 import { LoadingButton } from '@makyschool/ui/components/ui/LoadingButton';
+import { ConfirmDialog } from '@makyschool/ui/components/ui/ConfirmDialog';
 import { useToast } from '@/providers/ToastProvider';
 import {
   useALevelClasses,
@@ -30,6 +31,8 @@ type Props = {
   portal?: 'admin' | 'teacher';
 };
 
+type UnlockTarget = { teacherId: string; teacherName: string };
+
 export default function ALevelGradesClient({ portal = 'admin' }: Props) {
   const { toast } = useToast();
   const router = useRouter();
@@ -45,6 +48,8 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
   const [classId, setClassId] = useState(searchParams.get('classId') ?? '');
   const [termId, setTermId] = useState(searchParams.get('termId') ?? '');
   const [examId, setExamId] = useState(searchParams.get('examId') ?? '');
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [unlockTarget, setUnlockTarget] = useState<UnlockTarget | null>(null);
 
   const { data: exams, isPending: examsLoading } = useALevelExams(
     classId && termId ? { classId, termId } : {},
@@ -203,21 +208,20 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
     }
   }
 
-  async function finalizeSubmit() {
+  function requestSubmit() {
     if (!examId || !canEdit) return;
     if (changeCount > 0) {
       toast.error('Save your draft changes before submitting.');
       return;
     }
-    if (
-      !window.confirm(
-        'Submit marks for this exam? You will not be able to edit until an admin unlocks you.',
-      )
-    ) {
-      return;
-    }
+    setSubmitOpen(true);
+  }
+
+  async function confirmSubmit() {
+    if (!examId || !canEdit) return;
     try {
       await submitMarks.mutateAsync(examId);
+      setSubmitOpen(false);
       toast.success('Marks submitted. Editing is now locked.');
     } catch (err) {
       toast.error(
@@ -226,18 +230,15 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
     }
   }
 
-  async function unlockTeacher(teacherId: string, teacherName: string) {
-    if (!examId) return;
-    if (
-      !window.confirm(
-        `Unlock ${teacherName} so they can edit and resubmit marks?`,
-      )
-    ) {
-      return;
-    }
+  async function confirmUnlock() {
+    if (!examId || !unlockTarget) return;
     try {
-      await unlockSubmission.mutateAsync({ examId, teacherId });
-      toast.success(`${teacherName} can enter marks again.`);
+      await unlockSubmission.mutateAsync({
+        examId,
+        teacherId: unlockTarget.teacherId,
+      });
+      toast.success(`${unlockTarget.teacherName} can enter marks again.`);
+      setUnlockTarget(null);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Could not unlock teacher.',
@@ -276,7 +277,7 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
                 variant="primary"
                 loading={submitMarks.isPending}
                 disabled={!canEdit || changeCount > 0}
-                onClick={() => void finalizeSubmit()}
+                onClick={requestSubmit}
               >
                 <Send className="h-4 w-4" />
                 Submit marks
@@ -377,7 +378,12 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
                     unlockSubmission.isPending &&
                     unlockSubmission.variables?.teacherId === s.teacherId
                   }
-                  onClick={() => void unlockTeacher(s.teacherId, s.teacherName)}
+                  onClick={() =>
+                    setUnlockTarget({
+                      teacherId: s.teacherId,
+                      teacherName: s.teacherName,
+                    })
+                  }
                 >
                   <Unlock className="h-4 w-4" />
                   Unlock
@@ -448,6 +454,30 @@ export default function ALevelGradesClient({ portal = 'admin' }: Props) {
           canEdit={canEdit}
         />
       )}
+
+      <ConfirmDialog
+        open={submitOpen}
+        title="Submit marks?"
+        description="After you submit, you will not be able to edit these marks until an admin or head teacher unlocks you."
+        confirmLabel="Submit marks"
+        loading={submitMarks.isPending}
+        onConfirm={() => void confirmSubmit()}
+        onCancel={() => setSubmitOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={!!unlockTarget}
+        title="Unlock teacher?"
+        description={
+          unlockTarget
+            ? `Unlock ${unlockTarget.teacherName} so they can edit and resubmit marks for this exam.`
+            : ''
+        }
+        confirmLabel="Unlock"
+        loading={unlockSubmission.isPending}
+        onConfirm={() => void confirmUnlock()}
+        onCancel={() => setUnlockTarget(null)}
+      />
     </div>
   );
 }

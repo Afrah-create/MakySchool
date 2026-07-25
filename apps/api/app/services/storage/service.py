@@ -151,6 +151,12 @@ class TenantStorageService:
         normalized = assert_tenant_key(school_id, key)
         return await self._run(self._backend.exists, normalized)
 
+    async def download_bytes(
+        self, school_id: uuid.UUID, key: str
+    ) -> tuple[bytes, str | None]:
+        normalized = assert_tenant_key(school_id, key)
+        return await self._run(self._backend.download_bytes, normalized)
+
     async def get_metadata(self, school_id: uuid.UUID, key: str) -> dict[str, Any]:
         normalized = assert_tenant_key(school_id, key)
         return await self._run(self._backend.get_metadata, normalized)

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any, Optional
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, field_validator
 
 from app.db.pool import get_db
@@ -2572,164 +2572,82 @@ async def get_report_card(
     school_id, actor = ctx
     _require(actor, VIEW_ROLES, "You cannot view report cards.")
 
-    exam = await require_exam(conn, school_id, exam_id)
-    academic_year_id = uuid.UUID(exam["academicYearId"])
-    term_id = uuid.UUID(exam["termId"])
+    from app.lib.alevel_reports import build_report_card_data
 
-    student = await conn.fetchrow(
-        f"""
-        {ENROLLMENT_SELECT}
-        WHERE e.school_id = $1 AND e.student_id = $2 AND e.academic_year_id = $3
-        LIMIT 1
-        """,
-        school_id,
-        student_id,
-        academic_year_id,
+    data = await build_report_card_data(
+        conn, school_id, student_id, exam_id, for_pdf=False
     )
-    if not student:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "Student is not enrolled for this year."},
-        )
-
-    school = await conn.fetchrow(
-        "SELECT name, logo_url, stamp_url FROM schools WHERE id = $1",
-        school_id,
-    )
-
-    grade_rows = await conn.fetch(
-        f"""
-        SELECT g.raw_score, g.grade, g.points, {SUBJECT_COLUMNS}
-        FROM alevel_grades g
-        JOIN alevel_subjects s ON s.id = g.subject_id
-        JOIN school_subjects ss ON ss.id = s.school_subject_id
-        WHERE g.school_id = $1 AND g.student_id = $2 AND g.exam_id = $3
-        ORDER BY s.subject_type, ss.name
-        """,
-        school_id,
-        student_id,
-        exam_id,
-    )
-    subjects = [
-        {
-            "subjectId": str(r["id"]),
-            "subjectName": r["name"],
-            "code": r["code"],
-            "subjectType": r["subject_type"],
-            "isGp": r["is_gp"],
-            "rawScore": float(r["raw_score"]) if r["raw_score"] is not None else None,
-            "grade": r["grade"],
-            "points": r["points"],
-            "descriptor": grade_descriptor(r["grade"], r["subject_type"]),
-        }
-        for r in grade_rows
-    ]
-    totals = compute_student_totals(subjects)
-
-    # Class rank among classmates for this exam
-    class_id = student["class_id"]
-    position = None
-    class_size = None
-    if class_id:
-        classmates, _ = await _class_student_subjects(
-            conn, school_id, class_id, academic_year_id
-        )
-        class_grades = await conn.fetch(
-            """
-            SELECT student_id, subject_id, grade, points
-            FROM alevel_grades
-            WHERE school_id = $1 AND exam_id = $2
-            """,
-            school_id,
-            exam_id,
-        )
-        by_stu: dict[str, list[dict[str, Any]]] = {}
-        subj_meta = {
-            str(r["id"]): {"subject_type": r["subject_type"], "is_gp": r["is_gp"]}
-            for r in await conn.fetch(
-                "SELECT id, subject_type, is_gp FROM alevel_subjects WHERE school_id = $1",
-                school_id,
-            )
-        }
-        for g in class_grades:
-            meta = subj_meta.get(str(g["subject_id"]))
-            if not meta:
-                continue
-            by_stu.setdefault(str(g["student_id"]), []).append(
-                {
-                    "subject_type": meta["subject_type"],
-                    "is_gp": meta["is_gp"],
-                    "grade": g["grade"],
-                    "points": g["points"],
-                }
-            )
-        ranked = []
-        for c in classmates:
-            t = compute_student_totals(by_stu.get(c["studentId"], []))
-            ranked.append((c["studentId"], t["total_points"], c["studentName"]))
-        ranked.sort(key=lambda x: (-x[1], (x[2] or "").lower()))
-        class_size = len(ranked)
-        for i, (sid, _, _) in enumerate(ranked, start=1):
-            if sid == str(student_id):
-                position = i
-                break
-
-    meta = await conn.fetchrow(
-        """
-        SELECT m.class_teacher_comment, m.head_teacher_comment,
-               m.approved_at, m.approved_by, u.full_name AS approved_by_name
-        FROM alevel_report_metadata m
-        LEFT JOIN users u ON u.id = m.approved_by
-        WHERE m.school_id = $1 AND m.student_id = $2 AND m.exam_id = $3
-        """,
-        school_id,
-        student_id,
-        exam_id,
-    )
-
-    from app.lib.storage_urls import resolve_storage_url
-
-    logo = await resolve_storage_url(
-        school["logo_url"] if school else None, school_id=school_id
-    )
-    stamp = await resolve_storage_url(
-        school["stamp_url"] if school else None, school_id=school_id
-    )
-
-    return {
-        "data": {
-            "schoolName": school["name"] if school else None,
-            "logoUrl": logo,
-            "stampUrl": stamp,
-            "studentId": str(student_id),
-            "studentName": student["student_name"],
-            "learnerId": student["learner_id"],
-            "className": _class_name(student),
-            "combinationName": student["combination_name"],
-            "examId": exam["id"],
-            "examName": exam["name"],
-            "examTypeName": exam.get("examTypeName"),
-            "termId": str(term_id),
-            "termName": exam.get("termName"),
-            "academicYearId": str(academic_year_id),
-            "subjects": subjects,
-            **totals,
-            "position": position,
-            "classSize": class_size,
-            "classTeacherComment": meta["class_teacher_comment"] if meta else None,
-            "headTeacherComment": meta["head_teacher_comment"] if meta else None,
-            "approvedAt": meta["approved_at"].isoformat()
-            if meta and meta["approved_at"]
-            else None,
-            "approvedByName": meta["approved_by_name"] if meta else None,
-        }
-    }
+    return {"data": data}
 
 
 class ReportCommentBody(BaseModel):
     classTeacherComment: str | None = None
     headTeacherComment: str | None = None
     approve: bool = False
+
+
+class BulkReportCommentBody(BaseModel):
+    examId: uuid.UUID
+    studentIds: list[uuid.UUID]
+    classTeacherComment: str | None = None
+    headTeacherComment: str | None = None
+    approve: bool = False
+
+
+async def _upsert_report_comment(
+    conn: asyncpg.Connection,
+    *,
+    school_id: uuid.UUID,
+    student_id: uuid.UUID,
+    exam: dict[str, Any],
+    class_teacher_comment: str | None,
+    head_teacher_comment: str | None,
+    approve: bool,
+    actor_id: uuid.UUID,
+) -> None:
+    """Insert or update report metadata. Pass comments as None to leave unchanged."""
+    term_id = uuid.UUID(exam["termId"])
+    academic_year_id = uuid.UUID(exam["academicYearId"])
+    class_id = uuid.UUID(exam["classId"])
+    exam_id = uuid.UUID(exam["id"])
+    approved_by: uuid.UUID | None = actor_id if approve else None
+
+    await conn.execute(
+        """
+        INSERT INTO alevel_report_metadata
+          (school_id, student_id, term_id, academic_year_id, class_id, exam_id,
+           class_teacher_comment, head_teacher_comment,
+           approved_by, approved_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::uuid,
+                CASE WHEN $9::uuid IS NOT NULL THEN NOW() ELSE NULL END,
+                NOW())
+        ON CONFLICT (school_id, student_id, exam_id)
+        DO UPDATE SET
+          class_teacher_comment = COALESCE(
+            EXCLUDED.class_teacher_comment, alevel_report_metadata.class_teacher_comment
+          ),
+          head_teacher_comment = COALESCE(
+            EXCLUDED.head_teacher_comment, alevel_report_metadata.head_teacher_comment
+          ),
+          class_id = COALESCE(EXCLUDED.class_id, alevel_report_metadata.class_id),
+          approved_by = COALESCE(
+            EXCLUDED.approved_by, alevel_report_metadata.approved_by
+          ),
+          approved_at = COALESCE(
+            EXCLUDED.approved_at, alevel_report_metadata.approved_at
+          ),
+          updated_at = NOW()
+        """,
+        school_id,
+        student_id,
+        term_id,
+        academic_year_id,
+        class_id,
+        exam_id,
+        class_teacher_comment,
+        head_teacher_comment,
+        approved_by,
+    )
 
 
 @router.post("/report-card/{student_id}/comment")
@@ -2745,9 +2663,6 @@ async def save_report_comment(
     actor_id = _actor_id(actor)
 
     exam = await require_exam(conn, school_id, exam_id)
-    term_id = uuid.UUID(exam["termId"])
-    academic_year_id = uuid.UUID(exam["academicYearId"])
-    class_id = uuid.UUID(exam["classId"])
 
     existing = await conn.fetchrow(
         """
@@ -2773,45 +2688,104 @@ async def save_report_comment(
             detail={"error": "Only the head teacher or admin can approve."},
         )
 
-    await conn.execute(
-        """
-        INSERT INTO alevel_report_metadata
-          (school_id, student_id, term_id, academic_year_id, class_id, exam_id,
-           class_teacher_comment, head_teacher_comment,
-           approved_by, approved_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-                CASE WHEN $9 THEN $10 ELSE NULL END,
-                CASE WHEN $9 THEN NOW() ELSE NULL END,
-                NOW())
-        ON CONFLICT (school_id, student_id, exam_id)
-        DO UPDATE SET
-          class_teacher_comment = COALESCE(
-            EXCLUDED.class_teacher_comment, alevel_report_metadata.class_teacher_comment
-          ),
-          head_teacher_comment = COALESCE(
-            EXCLUDED.head_teacher_comment, alevel_report_metadata.head_teacher_comment
-          ),
-          class_id = COALESCE(EXCLUDED.class_id, alevel_report_metadata.class_id),
-          approved_by = CASE
-            WHEN $9 THEN $10 ELSE alevel_report_metadata.approved_by
-          END,
-          approved_at = CASE
-            WHEN $9 THEN NOW() ELSE alevel_report_metadata.approved_at
-          END,
-          updated_at = NOW()
-        """,
-        school_id,
-        student_id,
-        term_id,
-        academic_year_id,
-        class_id,
-        exam_id,
-        body.classTeacherComment,
-        body.headTeacherComment,
-        body.approve,
-        actor_id,
+    await _upsert_report_comment(
+        conn,
+        school_id=school_id,
+        student_id=student_id,
+        exam=exam,
+        class_teacher_comment=body.classTeacherComment,
+        head_teacher_comment=body.headTeacherComment,
+        approve=body.approve,
+        actor_id=actor_id,
     )
     return {"data": {"ok": True, "approved": body.approve}}
+
+
+@router.post("/report-cards/comments/bulk")
+async def bulk_save_report_comments(
+    body: BulkReportCommentBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """Apply the same comment(s) to multiple students for one exam."""
+    school_id, actor = ctx
+    _require(actor, VIEW_ROLES, "You cannot edit report comments.")
+    actor_id = _actor_id(actor)
+
+    if not body.studentIds:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "Select at least one student.", "code": "EMPTY"},
+        )
+    if (
+        body.classTeacherComment is None
+        and body.headTeacherComment is None
+        and not body.approve
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Provide a class teacher comment, head teacher comment, or approve.",
+                "code": "EMPTY_COMMENT",
+            },
+        )
+
+    if body.approve and actor["role"] not in {"head_teacher", "admin"}:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "Only the head teacher or admin can approve."},
+        )
+
+    exam = await require_exam(conn, school_id, body.examId)
+    class_id = uuid.UUID(exam["classId"])
+    academic_year_id = uuid.UUID(exam["academicYearId"])
+
+    enrolled, _ = await _class_student_subjects(
+        conn, school_id, class_id, academic_year_id
+    )
+    enrolled_ids = {s["studentId"] for s in enrolled}
+
+    approved_rows = await conn.fetch(
+        """
+        SELECT student_id FROM alevel_report_metadata
+        WHERE school_id = $1 AND exam_id = $2 AND approved_at IS NOT NULL
+        """,
+        school_id,
+        body.examId,
+    )
+    already_approved = {str(r["student_id"]) for r in approved_rows}
+
+    saved = 0
+    skipped_approved = 0
+    skipped_not_enrolled = 0
+
+    for sid in body.studentIds:
+        sid_str = str(sid)
+        if sid_str not in enrolled_ids:
+            skipped_not_enrolled += 1
+            continue
+        if sid_str in already_approved and not body.approve:
+            skipped_approved += 1
+            continue
+        await _upsert_report_comment(
+            conn,
+            school_id=school_id,
+            student_id=sid,
+            exam=exam,
+            class_teacher_comment=body.classTeacherComment,
+            head_teacher_comment=body.headTeacherComment,
+            approve=body.approve,
+            actor_id=actor_id,
+        )
+        saved += 1
+
+    return {
+        "data": {
+            "saved": saved,
+            "skippedApproved": skipped_approved,
+            "skippedNotEnrolled": skipped_not_enrolled,
+        }
+    }
 
 
 @router.post("/report-cards/generate")
@@ -2821,18 +2795,25 @@ async def generate_report_cards(
     exam_id: uuid.UUID = Query(...),
     student_id: uuid.UUID | None = Query(None),
 ):
-    """Generate PDF report card(s). Returns base64 PDF for a single student,
-    or a zip (base64) for the whole class.
+    """Generate PDF report card(s). Returns binary PDF or ZIP.
+
+    Class ZIPs build PDFs in parallel (separate pool connections) so the
+    request finishes before Next.js rewrite proxies time out.
     """
     import asyncio
-    import base64
     import io
     import zipfile
 
+    from app.db.pool import get_pool
+    from app.lib.alevel_pdf import generate_alevel_report_pdf_bytes
+    from app.lib.alevel_reports import (
+        build_report_card_data,
+        compute_exam_ranks,
+        load_school_branding,
+    )
+
     school_id, actor = ctx
     _require(actor, VIEW_ROLES, "You cannot generate report cards.")
-
-    from app.lib.alevel_pdf import generate_alevel_report_pdf_bytes
 
     exam = await require_exam(conn, school_id, exam_id)
     class_id = uuid.UUID(exam["classId"])
@@ -2849,40 +2830,60 @@ async def generate_report_cards(
     if not targets:
         raise HTTPException(status_code=404, detail={"error": "No students found."})
 
-    async def one(sid: str) -> tuple[str, str, bytes]:
-        data = (
-            await get_report_card(
-                uuid.UUID(sid),
-                (school_id, actor),
-                conn,
-                exam_id=exam_id,
-            )
-        )["data"]
-        pdf = await generate_alevel_report_pdf_bytes(data)
-        name = f"{data['learnerId'] or sid}-report.pdf".replace(" ", "_")
-        return sid, name, pdf
+    branding = await load_school_branding(conn, school_id, for_pdf=True)
+    ranks, class_size = await compute_exam_ranks(
+        conn, school_id, exam_id, students
+    )
 
-    generated = await asyncio.gather(*[one(s["studentId"]) for s in targets])
+    # Cap concurrency so we do not exhaust the DB pool (max_size=20).
+    sem = asyncio.Semaphore(min(4, max(1, len(targets))))
+    pool = await get_pool()
+
+    async def one(s: dict[str, Any]) -> tuple[str, bytes]:
+        sid = uuid.UUID(s["studentId"])
+        async with sem:
+            async with pool.acquire() as worker:
+                data = await build_report_card_data(
+                    worker,
+                    school_id,
+                    sid,
+                    exam_id,
+                    for_pdf=True,
+                    branding=branding,
+                    ranks=ranks,
+                    class_size=class_size,
+                    classmates=students,
+                )
+                pdf = await generate_alevel_report_pdf_bytes(data)
+                safe_learner = (data.get("learnerId") or s["studentId"]).replace(
+                    " ", "_"
+                )
+                # Unique zip entry even when learner IDs collide / are blank.
+                name = f"{safe_learner}-{str(sid)[:8]}-report.pdf"
+                return name, pdf
+
+    generated = await asyncio.gather(*[one(s) for s in targets])
 
     if len(generated) == 1:
-        _, name, pdf = generated[0]
-        return {
-            "data": {
-                "filename": name,
-                "pdfBase64": base64.b64encode(pdf).decode("ascii"),
-                "count": 1,
-            }
-        }
+        name, pdf = generated[0]
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        )
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for _, name, pdf in generated:
+        for name, pdf in generated:
             zf.writestr(name, pdf)
-    return {
-        "data": {
-            "filename": "alevel-report-cards.zip",
-            "pdfBase64": base64.b64encode(buf.getvalue()).decode("ascii"),
-            "count": len(generated),
-        }
-    }
+    payload = buf.getvalue()
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="alevel-report-cards.zip"',
+            "Content-Length": str(len(payload)),
+            "Cache-Control": "no-store",
+        },
+    )
 

@@ -287,6 +287,8 @@ export interface ALevelReportCard {
   stampUrl: string | null;
   studentId: string;
   studentName: string;
+  studentInitials: string;
+  photoUrl: string | null;
   learnerId: string;
   className: string | null;
   combinationName: string;
@@ -311,6 +313,23 @@ export interface ALevelReportCard {
   headTeacherComment: string | null;
   approvedAt: string | null;
   approvedByName: string | null;
+}
+
+export interface ALevelApprovedReportSummary {
+  examId: string;
+  examName: string;
+  examTypeName: string | null;
+  examTypeCode: string | null;
+  termId: string;
+  termName: string;
+  academicYearId: string;
+  academicYearLabel: string | null;
+  approvedAt: string | null;
+  total_points: number;
+  principal_pass_count: number;
+  result_code: string;
+  hasClassTeacherComment: boolean;
+  hasHeadTeacherComment: boolean;
 }
 
 export interface CreateALevelExamTypePayload {
