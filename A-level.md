@@ -1,434 +1,614 @@
-MakySchool — A-Level Implementation Plan
+You are a senior full-stack engineer working on MakySchool. Before writing a single line of code, you must thoroughly audit the existing fees implementation and produce a detailed, repo-specific implementation plan. Do not implement anything yet. The output of this task is a plan document only.
 
-Traditional UACE track. Termly internal grading tool. Not UNEB certification.
+Step 1 — Codebase audit
 
-How the system flows end to end
+Read every one of the following and report your findings in full:
 
-Before the plan, here is the complete data journey so every phase has context:
+Database layer
 
-Admin configures          Teacher enters          System computes
-─────────────────         ──────────────          ───────────────
-Subjects (PCM etc.)  →    Raw score 0–100   →    Grade (A/B/C/D/E/O/F)
-Combinations         →    Per subject            Points (6/5/4/3/2/1/0)
-Enroll students      →    Per term           →   Total points (max 20)
-                                             →   Result code (1/2/6)
-                                             →   Class ranking
-                                             →   Term report card (PDF)
-Phase 1 — Database foundation
-1.1 Migration (next available number after inventory)
+Read all migration files in apps/api/migrations/ that contain the word "fee" in their filename or content. For each one, report: the migration number, what tables it creates or modifies, every column on those tables including types and constraints, and every foreign key relationship. Pay specific attention to fee_structures, student_fee_accounts, fee_payments, invoices, and invoice_items.
 
-Six tables, all scoped by school_id.
+Backend
 
-alevel_subjects
+Read apps/api/app/routers/fees.py in full. For every endpoint, report: HTTP method, path, what query params or body it accepts, what SQL it runs or what logic it executes, what it returns, and which roles are allowed. Note whether any endpoint currently creates or reads a fee_structures row, and what columns it writes.
 
-Stores the school's A-Level subject catalogue. Every subject is either principal or subsidiary. General Paper is a subsidiary with a special is_gp = true flag so the system can treat its scoring differently. Each school configures their own subjects rather than sharing a global catalogue, keeping multi-tenancy clean.
+Read apps/api/app/lib/ and report any fee-related helper files found there and what they contain.
 
-Columns needed: id, school_id, name, code (3–5 chars, e.g. PHY), subject_type (enum: principal/subsidiary), is_gp (boolean, only true for GP), is_active, created_at, updated_at.
+Shared types
 
-Unique constraint on (school_id, code) — a school cannot have two subjects with the same code.
+Read packages/shared/src/types/ and report every type related to fees — field names, field types, and which API responses they map to.
 
-alevel_combinations
+Frontend
 
-Named subject groupings like PCM or HEL. Stores only the combination's identity — the actual subject membership lives in the junction table below.
+List every file under apps/web/src/app/(school-admin)/dashboard/fees/ and apps/web/src/(bursar)/. Read each page file and component file found. For each, report: what data it fetches, what form fields it renders, what API endpoints it calls, and what the user flow is.
 
-Columns: id, school_id, name (e.g. "PCM"), label (e.g. "Physics, Chemistry, Mathematics"), category (enum: science/arts/business/technical), is_active, created_at.
+Read apps/web/src/lib/api/fees.ts and apps/web/src/hooks/useFees.ts (or equivalent filenames — search if the names differ). Report every function and hook exported.
 
-Unique on (school_id, name).
+Read apps/web/src/lib/roles/school-admin-nav.ts and report where fees appears in the navigation.
 
-alevel_combination_subjects
+Patterns to note
 
-Junction table linking each combination to exactly 3 principal subjects. Enforced at the API layer (validation before insert), not by a DB-level check constraint, because PostgreSQL cannot easily count rows in a CHECK constraint.
+While reading, note the exact patterns used for: bulk SQL inserts, role checking, response shape, error shape, slide-over/modal form patterns in existing pages, how other multi-item forms work (if any exist — check invoices or any form with dynamic line items). These patterns must be replicated exactly in the implementation.
 
-Columns: id, school_id, combination_id (FK → alevel_combinations), subject_id (FK → alevel_subjects).
+Step 2 — Gap analysis
 
-Unique on (combination_id, subject_id) — a subject cannot appear twice in one combination.
+After the audit, answer these questions explicitly based on what you found:
 
-alevel_enrollments
+What columns does fee_structures currently have? Is there a single amount column or already a reference to items?
+Does a fee_structure_items table (or equivalent) already exist in any migration?
+Does invoice_items already exist? If yes, what columns does it have and is it currently being populated when invoices are generated?
+When the admin creates a fee structure today, what exactly happens — what rows are written to which tables with what values?
+When invoices are generated, what is the current logic — does it copy the single amount or does it already reference items?
+Does the frontend fee structure form currently have any concept of line items, or is it a single amount input?
+Are there any existing fee structure records in a seed file that would need to be migrated?
+What is the next available migration number?
+Is there any locking mechanism on fee structures once invoices are generated, or can the structure be freely edited at any time?
+Do student_fee_accounts link to fee_structures directly, or to invoices, or both?
+Step 3 — Produce the implementation plan
 
-The critical link: one row per student per academic year. Captures which combination they are doing and which subsidiary (Sub-Maths or ICT) they chose alongside mandatory GP.
+Based entirely on what you found in Steps 1 and 2, write a detailed implementation plan covering these areas. Every decision in the plan must reference something you actually found in the codebase — no assumptions, no greenfield designs.
 
-Columns: id, school_id, student_id (FK → students), combination_id (FK → alevel_combinations), academic_year_id (FK → academic_years), class_id (FK → school_classes), subsidiary_subject_id (FK → alevel_subjects — must be subsidiary, not GP), is_active, created_at.
+Plan section A — Migration
 
-Unique on (school_id, student_id, academic_year_id) — one enrollment per student per year.
+Specify:
 
-Indexes on: (school_id, class_id, academic_year_id) for class-level enrollment queries, (school_id, student_id) for student-level lookups.
+The exact migration filename and number
+Whether fee_structure_items needs to be created from scratch or already partially exists
+Every column needed on fee_structure_items with exact PostgreSQL types, constraints, and defaults — inferred from how similar tables in the schema are structured
+Whether fee_structures.amount should be kept, deprecated, or made a computed value — and why, based on what queries currently read it
+The backfill strategy for existing fee_structures rows — exactly what SQL inserts a default item row for each existing structure so no data is lost
+Any indexes needed based on the query patterns you observed in the router
+Whether any existing constraints need to change
+Plan section B — Backend changes
 
-alevel_grades
+Specify for each endpoint that needs to change or be added:
 
-The core marks table. One row per student per subject per term. Stores both the raw score the teacher entered and the computed grade/points so reporting never recomputes — it reads stored values. This is important: if the grade boundary table ever changes, historical reports remain stable because they read stored grades, not recomputed ones.
+The exact HTTP method and path, matching the existing router's URL conventions exactly
+What the request body or query params look like, with field names matching your shared type conventions
+What SQL it runs — describe the logic precisely, referencing actual table and column names from the schema
+What validation is needed and where (Pydantic model vs business logic check vs DB constraint)
+What the response shape looks like, matching the {"data": ...} convention
+Which roles are allowed, using the exact role strings found in the codebase
+Whether any existing endpoints need to change their SQL to JOIN through fee_structure_items instead of reading fee_structures.amount directly
 
-Columns: id, school_id, student_id, subject_id, term_id, academic_year_id, class_id, raw_score (numeric 5,2, nullable), grade (text, nullable — A/B/C/D/E/O/F for principal, P/F for subsidiary), points (smallint, nullable), entered_by (FK → users), entered_at, updated_at.
+Specifically address:
 
-Unique on (school_id, student_id, subject_id, term_id) — one grade row per student per subject per term. ON CONFLICT DO UPDATE is valid here because teachers can correct marks before the term is locked.
+Create fee structure (header only, no items yet)
+Add item to structure
+Edit item
+Delete item (with lock check)
+Reorder items
+Get structure with items expanded
+List structures for a class/term
+Whether invoice generation needs to change and if so exactly how
+Plan section C — Shared types
 
-Indexes on: (school_id, class_id, term_id) for grade grid queries, (school_id, student_id, academic_year_id) for report card queries.
+List every new or modified TypeScript type needed, with all field names and types written out. Reference existing type conventions found in the shared package.
 
-alevel_term_locks
+Plan section D — Frontend changes
 
-Controls whether grades for a class-term can still be edited. Once a head teacher locks a term, the grade entry endpoint rejects updates.
+For each page or component that needs to change or be created:
 
-Columns: id, school_id, class_id, term_id, academic_year_id, locked_at, locked_by (FK → users).
+Exact file path
+What it currently does (from your audit) vs what it needs to do
+The user flow step by step
+What form fields are needed
+What API calls it makes
+What loading, empty, and error states it needs, following the patterns found in existing pages
 
-Unique on (school_id, class_id, term_id).
+Specifically address:
 
-1.2 Schema design decisions worth noting
+The fee structure creation/edit form — how it transitions from a single amount input to a header + dynamic line items UI
+The line items editor — how items are added, edited, reordered, and deleted inline
+The lock behavior — what the UI shows once a structure has invoices generated against it
+Whether the bursar view needs any changes to reflect multi-item structures on invoices and receipts
+Plan section E — Data integrity rules
 
-Why store computed grade and points? Because report cards must be stable. If you recompute on read, changing a grade boundary retroactively changes historical reports. Storing them at entry time is the correct approach for an exam records system.
+State explicitly:
 
-Why no CA split? Traditional UACE is 100% exam-based. The raw_score is the full mark for the term. No weighting formula.
+When a fee structure is locked (no more item edits allowed) and what triggers the lock
+What happens to existing student fee accounts if a structure's items are edited before locking
+Whether optional items are in scope for this implementation or deferred
+Whether different student categories (day/boarding) with different amounts are in scope or deferred
+The exact behavior when invoice generation is triggered — which tables get rows, in what order, with what values derived from which source columns
+Plan section F — Implementation order
 
-Why alevel_term_locks as a separate table? Keeps the grades table simple. A lock check is one EXISTS query on a separate table rather than a status column that complicates the grades upsert logic.
+List the exact sequence of steps, where each step has a clear done condition. The sequence must respect dependencies — for example, the migration must be verified before any backend code is written against it, and types must be verified before frontend code is written.
 
-Phase 2 — Business logic library
+Output format
 
-Create apps/api/app/lib/alevel.py. Pure functions, no DB calls, imported by the router.
+Structure your output as a markdown document with clear headings for each section. Under each heading, be specific and concrete — reference actual table names, column names, file paths, function names, and role strings found in the codebase. Do not use placeholder names. Do not describe what you would do if you found something — describe what the plan is based on what you actually found.
 
-2.1 Grade boundary constants
+If you find anything ambiguous or contradictory in the existing code — for example, a column referenced in the router that does not exist in any migration, or a type that does not match the API response — flag it explicitly as a discrepancy and propose how to resolve it before implementationContext you must read before writing anything
 
-Define these at module level as a named constant — not hardcoded in the function body — so they can be found and adjusted in one place if needed:
+You are implementing a fees module refinement for MakySchool. The audit has already been done and the plan is confirmed. Your job is to implement exactly what the plan describes — no new design decisions, no alternative approaches. Every pattern must match the existing codebase exactly.
 
-Principal subjects:
+Stack: FastAPI + asyncpg, PostgreSQL, Next.js 16, React 19, Tailwind CSS v4, TypeScript.
 
-80–100 → A, 6 points
-70–79 → B, 5 points
-60–69 → C, 4 points
-50–59 → D, 3 points
-40–49 → E, 2 points
-35–39 → O, 1 point
-0–34 → F, 0 points
+Auth pattern: TenantCtx = Annotated[tuple[uuid.UUID, dict[str, Any]], Depends(require_tenant_with_subscription)], unpacked as school_id, actor = ctx. Use fees_actor_id(actor) from fees_shared.py for all write operations — not actor["sub"] directly. Role checks via _require_permission(actor, "manageFees") or "viewFees".
 
-Subsidiary subjects (GP, Sub-Maths, ICT):
+Response shape: Always {"data": ...}. Errors: {"error": "...", "code": "...", "fields": {...}}.
 
-Score ≥ 35 → grade "P", 1 point
-Score < 35 → grade "F", 0 points
-2.2 Functions to implement
+Bulk SQL: Always use unnest-based single-statement inserts — never loop individual inserts.
 
-compute_grade(score, subject_type) → (grade, points)
-Takes a raw percentage score (float, 0–100) and subject type string. Returns a tuple of the grade letter and integer points. Raises ValueError if score is outside 0–100 range. This is called once per grade entry and the result is stored — not called at report time.
+Money: All amounts are BIGINT UGX integers. Never floats.
 
-compute_student_totals(grades) → dict
-Takes a list of dicts, each containing subject_type, grade, points, is_gp. Returns:
+Types location: apps/web/src/lib/fees/types.ts — not the shared package.
 
-principal_points_by_subject — list of (subject_name, points) for the 3 principals
-best_principal_points — sum of the 3 principal subject points (if student took fewer than 3, sum what exists)
-gp_points — 0 or 1 (from the GP subject)
-subsidiary_points — 0 or 1 (from Sub-Maths or ICT)
-total_points — sum of all three (max 20)
-principal_pass_count — count of principal subjects where grade is A, B, C, D, or E (not O or F)
-result_code — "1" if principal_pass_count ≥ 2, "2" if 1, "6" if 0
+Frontend patterns: Use the existing AddInvoicePanel and AddOtherIncomePanel as the reference for dynamic line item forms. Use useApiSWR and apiClient — not React Query. Use @makyschool/ui Modal, Button, Input components. Money display via formatUGX, parsing via parseUGXInput.
 
-compute_result_code(principal_pass_count) → str
-Isolated helper used by compute_student_totals. Returns "1", "2", or "6".
+Step 0 — Before touching any file
 
-validate_score(score) → None
-Raises ValueError with a human-readable message if score is not between 0 and 100 inclusive. Called before compute_grade.
+Confirm the following by reading the actual files:
 
-2.3 Test coverage requirement
+Read apps/api/migrations/ — confirm the highest existing number and that 044_fee_structure_items.sql does not yet exist
+Read apps/api/app/routers/fees.py — note the exact import of fees_actor_id and _require_permission and how they are called
+Read apps/api/app/services/fees/invoices.py — note the exact signature of create_invoices_for_fee_structure and what arguments it currently receives
+Read apps/api/app/routers/fees_shared.py — note every helper function exported
+Read apps/web/src/lib/fees/types.ts — note the exact current shape of FeeStructure
+Read apps/web/src/components/fees/AddInvoicePanel.tsx — note exactly how the dynamic line items array is managed in state and how the items are submitted
+Read apps/web/src/components/fees/AddOtherIncomePanel.tsx — note the same
+Read apps/web/src/components/fees/AddFeeStructurePanel.tsx — note the exact current form fields and submit logic
+Read apps/web/src/components/fees/FeeStructuresContent.tsx — note what columns the table renders and what actions exist
+Read apps/web/src/components/fees/AssignFeeStructureDialog.tsx — note the full current flow
 
-Before the router is built, write test cases in apps/api/tests/test_alevel.py covering:
+Report what you find for each. Do not proceed until all ten are confirmed.
 
-Score of 80 → A, 6 points
-Score of 79 → B, 5 points
-Score of 35 → O for principal, P for subsidiary (same boundary, different handling)
-Score of 34 → F for both types
-Score of 0 → F, 0 points
-Score of 100 → A, 6 points
-compute_student_totals with 3 principal passes → result code "1"
-compute_student_totals with 1 principal pass → result code "2"
-compute_student_totals with all O/F grades → result code "6"
+Step 1 — Migration
 
-All tests must pass before Phase 3 begins.
+File: apps/api/migrations/044_fee_structure_items.sql
 
-Phase 3 — Backend router
+1a. Create the items table
 
-Create apps/api/app/routers/alevel.py. Register via mount_v1_and_legacy(app, alevel_router, "/api/schools/alevel") in main.py, placed after the timetable mount.
+Model this exactly on invoice_items and other_income_items from migration 027. The table must have:
 
-3.1 Exam configuration endpoints (admin only)
+id — UUID primary key, gen_random_uuid()
+school_id — UUID NOT NULL, FK → schools ON DELETE CASCADE
+fee_structure_id — UUID NOT NULL, FK → fee_structures ON DELETE CASCADE
+account_id — UUID nullable, FK → accounts ON DELETE SET NULL
+description — TEXT NOT NULL
+amount — BIGINT NOT NULL CHECK (amount > 0)
+sort_order — INT NOT NULL DEFAULT 0
+is_optional — BOOLEAN NOT NULL DEFAULT false (stored, not used in v1 logic)
+created_at — TIMESTAMPTZ DEFAULT now()
+updated_at — TIMESTAMPTZ DEFAULT now()
 
-GET /alevel/subjects
-Returns all active subjects for the school. Optional subject_type filter. Includes is_gp flag. Used to populate combination and grade entry selectors.
+Two indexes: one on (fee_structure_id), one on (school_id).
 
-POST /alevel/subjects
-Creates a subject. Validates code uniqueness within school. Validates is_gp is only true when subject_type is subsidiary. Admin role only.
+1b. Add lock columns to fee_structures
+sql
+ALTER TABLE fee_structures
+  ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS locked_reason TEXT;
+1c. Backfill existing structures
 
-PATCH /alevel/subjects/{id}
-Updates name, code, is_active. Validates code uniqueness if changed. Admin only. Cannot change subject_type after creation — if a school makes a mistake they deactivate and recreate.
+For every existing fee_structures row that has amount > 0 and no matching rows in fee_structure_items, insert one item row using the structure's description as the item description (falling back to 'School fees' if description is null or empty). This must be idempotent — re-running must not create duplicates.
 
-GET /alevel/combinations
-Returns combinations with their 3 principal subjects expanded via JOIN through the junction table. Active combinations only by default; optional include_inactive param for admin views.
+sql
+INSERT INTO fee_structure_items
+  (school_id, fee_structure_id, description, amount, sort_order)
+SELECT
+  fs.school_id,
+  fs.id,
+  COALESCE(NULLIF(TRIM(fs.description), ''), 'School fees'),
+  fs.amount,
+  0
+FROM fee_structures fs
+WHERE NOT EXISTS (
+  SELECT 1 FROM fee_structure_items i
+  WHERE i.fee_structure_id = fs.id
+)
+AND fs.amount > 0;
+1d. Do not drop fee_structures.amount
 
-POST /alevel/combinations
-Creates a combination. Body must contain exactly 3 principal subject IDs — validate this count and validate each subject exists, belongs to this school, and is type principal. Creates the junction rows in the same transaction. Admin only.
+Keep it as a maintained denormalized total. It is still read by list queries, assign, sync-accounts, and analytics. The application keeps it accurate after every item mutation.
 
-PATCH /alevel/combinations/{id}
-Updates name, label, category, is_active, and optionally replaces the subject list. If replacing subjects, delete existing junction rows and insert new ones in the same transaction. Validate exactly 3 principals. Admin only.
+Verify the migration runs cleanly on both an empty database and a database with existing fee structure rows before proceeding to Step 2.
 
-GET /alevel/enrollments
-Returns student enrollments with student name, learner ID, combination name, subsidiary subject name, and class. Filter by class_id and/or academic_year_id. Sorted by student name.
+Step 2 — Backend helpers
+2a. New helpers in apps/api/app/routers/fees_shared.py
 
-POST /alevel/enrollments
-Enrolls a single student. Validates: student exists in school and is active, combination exists and is active, subsidiary subject is type subsidiary and not GP, no existing active enrollment for this student+year. Admin only.
+Add these three functions. Do not modify existing functions in this file.
 
-POST /alevel/enrollments/bulk
-Enrolls multiple students at once. Body: list of entries all sharing the same class_id, academic_year_id, combination_id, subsidiary_subject_id, and a list of student_ids. Validate each student individually before any inserts. Use a single unnest INSERT. Skip students already enrolled and return a report of how many were enrolled vs skipped. Admin only.
+async def structure_is_locked(conn, structure_id: uuid.UUID) -> bool
 
-PATCH /alevel/enrollments/{id}
-Update combination, subsidiary subject choice, or is_active. Cannot change student or academic year. Admin only.
+Returns True if fee_structures.locked_at IS NOT NULL for this structure. Use a single fetchval.
 
-POST /alevel/terms/{term_id}/lock
-Locks grade entry for a class-term. Body: class_id, academic_year_id. Inserts a row in alevel_term_locks. Idempotent — if already locked, return 200 without error. Head teacher and admin roles.
+async def recompute_structure_amount(conn, structure_id: uuid.UUID, school_id: uuid.UUID) -> int
 
-DELETE /alevel/terms/{term_id}/lock
-Unlocks a previously locked term. Same body. Admin only — head teacher cannot self-unlock, only admin can override. This creates an audit trail because the grades table records entered_by on every update.
+Runs SELECT COALESCE(SUM(amount), 0) FROM fee_structure_items WHERE fee_structure_id = $1 AND school_id = $2. Then updates fee_structures SET amount = $result, updated_at = now() WHERE id = $1. Returns the new total as an integer.
 
-3.2 Grade entry endpoints (teacher + admin)
+async def load_structure_with_items(conn, school_id: uuid.UUID, structure_id: uuid.UUID) -> dict | None
 
-GET /alevel/grades
-Required params: class_id, term_id, academic_year_id.
+Fetches the fee_structures row and all its fee_structure_items in two queries. Returns a dict with all structure fields plus items: list[dict] sorted by sort_order then created_at, and locked: bool derived from locked_at IS NOT NULL. Returns None if the structure does not belong to this school.
 
-This is the most complex query in the module. It must return a student × subject grid in one response:
+2b. New Pydantic models in apps/api/app/routers/fees.py
 
-Fetch all active enrollments for this class+year → gives the student list and their combinations
-Derive each student's full subject set: 3 principals from their combination + GP + their subsidiary
-Fetch all existing grades for these students in this term
-Pivot the result: return a list of students, each with a grades object keyed by subject_id containing raw_score, grade, points
-Include the full subject list for the class as a separate top-level key so the frontend can build columns
-Include a is_locked boolean derived from alevel_term_locks
+Add these models. Mirror the naming convention of existing models in that file.
 
-Teachers: validate they are assigned to this class via teacher_class_assignments before returning data.
+python
+class FeeStructureItemInput(BaseModel):
+    description: str
+    amount: int  # BIGINT UGX, must be > 0
+    account_id: uuid.UUID | None = None
+    sort_order: int = 0
 
-POST /alevel/grades/bulk
-Upserts grades for an entire class-term in one call.
+class CreateFeeStructureBody(BaseModel):
+    class_id: uuid.UUID
+    term_name: str
+    academic_year: int
+    description: str | None = None
+    items: list[FeeStructureItemInput]  # required, min 1 item
 
-Required body fields: class_id, term_id, academic_year_id, and entries — array of objects each with student_id, subject_id, raw_score.
+    @field_validator("items")
+    @classmethod
+    def items_not_empty(cls, v):
+        if not v:
+            raise ValueError("At least one fee item is required")
+        if len(v) > 50:
+            raise ValueError("Maximum 50 items per structure")
+        return v
 
-Processing logic:
+class AddFeeStructureItemBody(BaseModel):
+    description: str
+    amount: int
+    account_id: uuid.UUID | None = None
+    sort_order: int = 0
 
-Check alevel_term_locks — if locked, return 423 LOCKED with a clear message
-Validate the teacher owns this class (if role is teacher)
-For each entry, call compute_grade(raw_score, subject_type) to get grade and points — fetch subject types in one query before the loop, not inside it
-Use a single unnest-based INSERT ... ON CONFLICT (school_id, student_id, subject_id, term_id) DO UPDATE SET raw_score, grade, points, entered_by, updated_at
-Return count of rows upserted
+class UpdateFeeStructureItemBody(BaseModel):
+    description: str | None = None
+    amount: int | None = None
+    account_id: uuid.UUID | None = None
+    sort_order: int | None = None
 
-The unnest must pass parallel arrays: student_ids, subject_ids, raw_scores, grades, points_values, entered_by. All computed before the DB call.
+class ReorderFeeStructureItemsBody(BaseModel):
+    item_ids: list[uuid.UUID]  # all item IDs in desired order
 
-GET /alevel/grades/student/{student_id}
-Param: academic_year_id. Returns all terms in that year with their grades for this student, plus computed totals from compute_student_totals() for each term. Used by the student detail view and report card generation.
+class UpdateFeeStructureHeaderBody(BaseModel):
+    description: str | None = None
+    is_active: bool | None = None
+    # amount is NOT accepted — it is derived from items
+Step 3 — Backend endpoints
 
-3.3 Results and reporting endpoints
+All endpoints go in apps/api/app/routers/fees.py. Add them in this order.
 
-GET /alevel/results
-Required: class_id, term_id, academic_year_id.
+3a. Replace POST /structures (create with items)
 
-Returns one row per student with: student name, learner ID, combination name, grade per principal subject, GP grade, subsidiary grade, total points, principal pass count, result code, and class rank (computed by ordering by total_points DESC, then by name for ties).
+Replace the existing single-amount create endpoint entirely. The new version:
 
-This endpoint reads stored grades — no recomputation. Fast, deterministic. Admin and head_teacher roles.
+Calls _require_permission(actor, "manageFees")
+Validates at least 1 item in body
+Checks no existing structure for (school_id, class_id, term_name, academic_year) — same conflict logic as before, return 409 with existing id if conflict
+In one transaction:
+INSERT the fee_structures row with amount = SUM(body.items[*].amount) computed in Python before the insert
+Bulk INSERT all items using unnest with parallel arrays: school_id[], fee_structure_id[], description[], amount[], account_id[], sort_order[]. Use $1::uuid[], $2::text[] etc. pattern
+Returns the full structure with items via load_structure_with_items
 
-GET /alevel/results/summary
-Same filters as above but returns class-level aggregates: student count, average total points, percentage with result code 1 (full certificate eligible), percentage with 2+ principal passes, subject-level pass rates (for each subject, what % of students got A–E). Used by the analytics section of the results page.
+Bulk unnest pattern for items (required — no loops):
 
-GET /alevel/report-card/{student_id}
-Params: term_id, academic_year_id. Returns the full data payload needed to render a student's A-Level term report card: student personal details, class, combination, term, all subject grades with descriptors, totals, result code, class rank, head teacher comment field (nullable), and class teacher comment field (nullable). Does not generate the PDF itself — that is a separate step.
+Pass parallel arrays to a single INSERT statement:
 
-POST /alevel/report-card/{student_id}/comment
-Saves head teacher or class teacher comment for a student's term report card. Stored in a comments JSONB column on a new alevel_report_metadata table (id, school_id, student_id, term_id, class_teacher_comment, head_teacher_comment, approved_by, approved_at). Upserts on (school_id, student_id, term_id).
+sql
+INSERT INTO fee_structure_items
+  (school_id, fee_structure_id, description, amount, account_id, sort_order)
+SELECT $1, $2, unnest($3::text[]), unnest($4::bigint[]),
+       unnest($5::uuid[]), unnest($6::int[])
 
-POST /alevel/report-cards/generate
-Body: class_id, term_id, academic_year_id. Generates PDFs for all students in the class. Calls the existing PDF infrastructure in apps/api/app/lib/ — look at how the fees receipt PDF is built and replicate that pattern. Returns a zip URL or a list of individual PDF URLs depending on what the existing storage infrastructure supports. Admin and head_teacher only.
+Where $3 through $6 are Python lists built from body.items before the query call.
 
-Phase 4 — Shared types
+3b. New GET /structures/{structure_id}
+Calls _require_permission(actor, "viewFees")
+Calls load_structure_with_items(conn, school_id, structure_id)
+Returns 404 if not found, otherwise {"data": result}
+3c. Replace PATCH /structures/{id} (header only)
 
-Add packages/shared/src/types/alevel.ts. Export from packages/shared/src/types/index.ts.
+Update only description and is_active. If the client sends amount, ignore it silently — amount is derived. No lock check required for header edits. Returns updated structure without items (keep it light — list view only needs header).
 
-Types needed — every field must match the exact API response shape:
+3d. New POST /structures/{structure_id}/items (add one item)
+_require_permission(actor, "manageFees")
+Check structure_is_locked — if True, raise 422 with code STRUCTURE_LOCKED and message "This fee structure is locked because invoices have been generated. No changes can be made."
+INSERT one row into fee_structure_items
+Call recompute_structure_amount in same transaction
+Return {"data": new_item_dict}
+3e. New POST /structures/{structure_id}/items/bulk (add multiple items at once)
 
-ALevelSubjectType — 'principal' | 'subsidiary'
-ALevelSubject — all columns from alevel_subjects, camelCased
-ALevelCombination — includes principals: ALevelSubject[]
-ALevelEnrollment — includes expanded student, combination, and subsidiary names
-ALevelGradeCell — { rawScore: number | null; grade: string | null; points: number | null }
-ALevelStudentGradeRow — student info + grades: { [subjectId: string]: ALevelGradeCell }
-ALevelClassGradeResponse — { subjects: ALevelSubject[]; students: ALevelStudentGradeRow[]; isLocked: boolean }
-ALevelStudentResult — student info + combination + per-subject grades + totals + resultCode + rank
-ALevelResultsResponse — { students: ALevelStudentResult[]; summary?: ALevelResultsSummary }
-ALevelResultsSummary — class average, pass rates, subject-level stats
-BulkGradeEntry — { studentId: string; subjectId: string; rawScore: number }
-BulkGradePayload — classId, termId, academicYearId, entries array
-ALevelReportCardData — full payload for report rendering
-ALevelCommentPayload — classTeacherComment, headTeacherComment
-Phase 5 — Frontend: Exam configuration
+Same lock check as above. Body: list[FeeStructureItemInput], max 50. Uses the same unnest pattern as the create endpoint. Recomputes amount after. Returns {"data": {"added": count, "items": [...]}}.
 
-Route group: (school-admin)/dashboard/alevel/setup/
+This is the primary path for adding items — the single-item endpoint exists for convenience only.
 
-5.1 Setup layout
+3f. New PATCH /structures/{structure_id}/items/{item_id}
+Lock check — reject if locked
+Validate item belongs to this school and structure
+Update only fields present in body (COALESCE pattern)
+Recompute structure amount if amount was changed
+Return updated item
+3g. New DELETE /structures/{structure_id}/items/{item_id}
+Lock check — reject if locked
+Check item count — if only 1 item remains, reject with 422 code LAST_ITEM and message "Cannot delete the last fee item. A fee structure must have at least one item."
+DELETE the item
+Recompute structure amount
+Return {"data": {"deleted": true}}
+3h. New PUT /structures/{structure_id}/items/reorder
+Lock check — reject if locked
+Body: item_ids: list[uuid.UUID] — all item IDs for this structure in desired order
+Validate all provided IDs belong to this structure and school
+Update sort_order for each: use unnest to set sort_order = position in one statement
+sql
+UPDATE fee_structure_items AS i
+SET sort_order = r.pos, updated_at = now()
+FROM unnest($1::uuid[], $2::int[]) AS r(id, pos)
+WHERE i.id = r.id AND i.school_id = $3
 
-Create a layout file for /dashboard/alevel/setup/ that renders a sub-navigation tab bar with four tabs: Subjects, Combinations, Enrollments, and a back link to the main A-Level area. The layout wraps all setup pages.
+Where $2 is [0, 1, 2, ...] positional integers built from the order of item_ids.
 
-5.2 Subjects page (/setup/subjects)
+Return {"data": {"reordered": true}}
+3i. Modify POST /structures/{id}/assign
 
-Table view: Name, code, type badge (Principal = blue, Subsidiary = slate), GP chip (shown only if is_gp = true), active toggle (PATCH on change, optimistic update).
+After successful account and invoice creation:
 
-Add/edit slide-over: Name input, code input (auto-uppercase on change, max 5 chars), subject type radio (Principal / Subsidiary), GP checkbox (only enabled and visible when Subsidiary is selected — hide for Principal). Submit calls POST or PATCH. Invalidates subject list on success.
+Change invoice generation to use items — described in Step 4
+Set the lock: UPDATE fee_structures SET locked_at = now(), locked_reason = 'Invoices generated' WHERE id = $1
+Everything in one transaction — if invoice creation fails, lock is not set
+3j. Keep POST /structures/{id}/sync-accounts unchanged
 
-Validation shown inline: code must be unique (show error from API), name required, cannot mark a Principal subject as GP.
+It reads fs.amount which is now a maintained aggregate. No changes needed. Add a comment: "Reads denormalized amount from fee_structures — kept in sync by item mutations."
 
-5.3 Combinations page (/setup/combinations)
+Step 4 — Change invoice generation
 
-Table view: Name pill, label text, category badge (Science = emerald, Arts = amber, Business = blue, Technical = slate), subject pills showing the 3 principals, active toggle.
+File: apps/api/app/services/fees/invoices.py
 
-Add/edit slide-over: Name input, label input, category dropdown, and a principal subjects multi-select. The multi-select shows only active principal subjects. As subjects are selected, show them as removable chips. Show a counter "X of 3 selected" that turns red if not exactly 3. Disable the submit button unless exactly 3 are selected.
+4a. Modify create_invoices_for_fee_structure
 
-5.4 Enrollments page (/setup/enrollments)
+Change the function signature. Instead of accepting a single amount: int, add a parameter items: list[dict]. Each dict has description, amount, account_id (nullable), sort_order.
 
-Filters: Academic year selector, class selector. These are required — show a prompt to select both before rendering the table.
+If called from assign, the caller first fetches items via:
 
-Table view: Student name, learner ID, combination name, subsidiary subject name (styled differently from combination), active status.
+sql
+SELECT description, account_id, amount, sort_order
+FROM fee_structure_items
+WHERE fee_structure_id = $1 AND school_id = $2
+ORDER BY sort_order, created_at
 
-Single enroll: A button opens a slide-over. Student dropdown (shows students in the selected class not yet enrolled this year), combination dropdown, subsidiary dropdown (shows active subsidiary subjects excluding GP — GP is always included automatically). Submit calls POST enrollment.
+Then passes them into the function.
 
-Bulk enroll slide-over: Select combination and subsidiary first. Then show a checklist of all unenrolled students in the class. Select all / deselect all toggle. Shows count selected. Submit calls bulk endpoint. After success, show a summary: "N students enrolled, M already had enrollments and were skipped."
+Inside the function, for each student invoice:
 
-Phase 6 — Frontend: Grade entry
+INSERT one invoices row with total_amount = SUM(items[*].amount)
+Bulk INSERT all invoice_items rows using unnest — one row per structure item per student
 
-Route: (school-admin)/dashboard/alevel/grades
+The unnest for invoice_items must handle all students × all items efficiently. Build it as: for each student, generate N item rows, collect all rows across all students into flat parallel arrays, then one INSERT for all of them.
 
-Also accessible to teachers via the teacher portal at (teacher)/teacher/alevel/grades — same component, different route group, same hook.
+Fallback: If items is empty (should not happen post-backfill but be defensive), fall back to the old single-line behavior using fs.amount and description 'School fees'. Log a warning.
 
-6.1 Controls bar
+4b. Update the caller in fees.py
 
-Three selectors: academic year, class (filtered to S5/S6 only — A-Level classes), term. All three required before the grid renders. Persist selections in URL search params so refreshing the page restores the view.
+In the assign endpoint, before calling create_invoices_for_fee_structure:
 
-Show a lock badge next to the term selector if the term is locked — "Locked by [name] on [date]". Lock/unlock button visible to admin and head teacher only.
+python
+items = await conn.fetch(
+    """
+    SELECT description, account_id, amount, sort_order
+    FROM fee_structure_items
+    WHERE fee_structure_id = $1 AND school_id = $2
+    ORDER BY sort_order, created_at
+    """,
+    structure_id, school_id,
+)
+items_list = [dict(r) for r in items]
 
-6.2 Grade grid
+Then pass items_list into the function.
 
-This is the centrepiece of the module. Design it carefully.
+Step 5 — Shared types
 
-Column structure: First column is student name + learner ID (sticky, does not scroll). Then one column per subject in this order: the 3 principals from their combination (alphabetically by subject code), then General Paper, then their subsidiary. Last column is a read-only "Total" showing points and result code badge.
+File: apps/web/src/lib/fees/types.ts
 
-Because students in one class may have different combinations, handle column display as the union of all subjects needed by any student in the class. For a student who does not take a particular column's subject, render that cell as a muted dash and make it non-editable.
+Add these types without removing anything that currently exists:
 
-Score input per cell:
+typescript
+export type FeeStructureItem = {
+  id: string;
+  feeStructureId: string;
+  description: string;
+  amount: number; // UGX integer
+  accountId: string | null;
+  accountCode: string | null;
+  accountName: string | null;
+  sortOrder: number;
+  isOptional: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 
-Number input, 0–100
-On change, immediately compute the grade letter and points using client-side logic mirroring the Python boundaries — display below the input in small muted text (e.g. "B · 5 pts")
-The input border turns emerald for A–E (pass), amber for O (subsidiary pass), rose for F (fail)
-Tab key moves to the next cell (same student, next subject) then next student
+export type FeeStructureDetail = FeeStructure & {
+  items: FeeStructureItem[];
+  locked: boolean;
+  lockedAt: string | null;
+};
 
-Totals column: Updates live as scores change. Shows total points (e.g. "17 / 20"), principal pass count (e.g. "3P"), and result code badge. This gives teachers instant feedback.
+export type FeeStructureItemInput = {
+  description: string;
+  amount: number;
+  accountId?: string | null;
+  sortOrder?: number;
+};
 
-Bulk actions header: Above the grid, a row of quick-action buttons: "Clear all" (resets unsaved changes), "Save all" (triggers bulk submit). Number of unsaved changes shown as a badge on Save: "Save 23 changes".
+export type CreateFeeStructurePayload = {
+  classId: string;
+  termName: string;
+  academicYear: number;
+  description?: string;
+  items: FeeStructureItemInput[];
+};
 
-State management:
-Store all scores in one flat object: { [studentId:subjectId]: number | null }. Derive unsaved changes by diffing against the server data from useQuery. Do not use individual useState per cell — that causes 300 re-renders on "Mark all" actions.
+export type AddFeeStructureItemPayload = FeeStructureItemInput;
 
-On save: collect only cells that have changed (diff against server state), build the entries array in one pass, POST the bulk payload. On success, the query invalidates and refetches, resetting the diff baseline.
+export type UpdateFeeStructureItemPayload = Partial<FeeStructureItemInput>;
 
-Loading state: Skeleton grid showing the expected number of rows and columns — not a full-page spinner. Skeleton columns match the subject count.
+export type BulkAddFeeStructureItemsPayload = {
+  items: FeeStructureItemInput[];
+};
 
-Empty states:
+export type ReorderFeeStructureItemsPayload = {
+  itemIds: string[];
+};
 
-No students enrolled: "No A-Level students enrolled in this class for this year" + link to enrollment setup
-Term locked: show the full grid read-only with a banner at top
-6.3 Grade entry for teachers
+Also extend the existing FeeStructure type to add:
 
-The teacher portal version uses the same grid component but:
+typescript
+locked?: boolean;
+lockedAt?: string | null;
+itemCount?: number;
+items?: FeeStructureItem[]; // present on detail fetch only
+Step 6 — Frontend: API client functions
 
-Only shows classes and **subjects** the teacher is assigned to
-Never shows other teachers’ marks
-**Save draft** while the exam is open and they have not submitted
-**Submit marks** locks their sheet until admin / head teacher **unlocks** them for resubmit
-Admin / head teacher grade page is view-only + unlock list (they do not enter marks)
-Phase 7 — Frontend: Results and report cards
-7.1 Results page (/dashboard/alevel/results)
+File: wherever the fees API client functions live (confirm exact path in Step 0).
 
-Controls: academic year, class, term. Persist in URL params.
+Add these functions following the exact same pattern as existing fees API calls:
 
-Results table columns: Rank, student name, learner ID, combination pill, then one column per subject (abbreviated code), GP, subsidiary, total points, result code badge.
+getFeeStructure(structureId) — GET /schools/fees/structures/{id}
+createFeeStructure(payload: CreateFeeStructurePayload) — POST /schools/fees/structures
+addFeeStructureItem(structureId, item: AddFeeStructureItemPayload) — POST /schools/fees/structures/{id}/items
+addFeeStructureItemsBulk(structureId, payload: BulkAddFeeStructureItemsPayload) — POST /schools/fees/structures/{id}/items/bulk
+updateFeeStructureItem(structureId, itemId, payload: UpdateFeeStructureItemPayload) — PATCH /schools/fees/structures/{id}/items/{itemId}
+deleteFeeStructureItem(structureId, itemId) — DELETE /schools/fees/structures/{id}/items/{itemId}
+reorderFeeStructureItems(structureId, payload: ReorderFeeStructureItemsPayload) — PUT /schools/fees/structures/{id}/items/reorder
+Step 7 — Frontend: Replace AddFeeStructurePanel
 
-Result code badge styling:
+File: apps/web/src/components/fees/AddFeeStructurePanel.tsx
 
-Code 1 → emerald background "Certificate Eligible"
-Code 2 → amber background "Partial Pass"
-Code 6 → muted background "Incomplete"
+Replace the current single-amount form entirely. The new form has two sections:
 
-Summary cards above the table (use the existing StatPill pattern from the reference files you uploaded): Total students, Average points, Certificate eligible (count + %), 3 Principal passes (count + %), 2 Principal passes (count + %).
+Section 1 — Structure header:
 
-Subject pass rate section below the table: A small table showing for each subject: subject name, number of students who sat it, pass rate (A–E), average points. Sorted by pass rate descending.
+Class selector (same as current)
+Term name selector (drop down of the terms)
+Academic year input (drop down)
+Description input (optional, same as current — this is the header description, not an item description)
 
-CSV export: Client-side. Build a CSV string from the results data. Columns: rank, name, learner ID, combination, each subject grade, total points, result code. Trigger a download using a Blob URL. No API call.
+Section 2 — Fee items (dynamic line items):
 
-Print view: A @media print stylesheet that hides controls, export button, and sidebar — leaving only the results table and summary. Accessible via the browser print command.
+Model this exactly on how AddInvoicePanel or AddOtherIncomePanel manages its items array — read those files first and replicate the same local state pattern.
 
-7.2 Report card page (/dashboard/alevel/report-cards)
+Each item row has:
 
-Controls: academic year, class, term. Then a student selector (dropdown or searchable list).
+Description text input (e.g. "Tuition", "Development Fund", "PTA Levy")
+Amount input using parseUGXInput on change and formatUGX for display
+Optional account selector (dropdown of income accounts from existing accounts endpoint — check how AddInvoicePanel fetches these)
+Remove button (trash icon, disabled if only one row remains)
+Drag handle for reordering (use a simple up/down arrow approach — no drag library needed unless one already exists in the project)
 
-Single report card preview: Renders the report card layout as an HTML component — not a PDF preview — so comments can be edited in place before generating the PDF.
+Below the items: an "Add item" button that appends a new empty row.
 
-Report card layout should include:
+Live total: Show a summary row at the bottom of the items section: "Total: UGX X,XXX,XXX" — sum of all valid item amounts in real time.
 
-School name, logo, stamp (from the schools table — your existing setup stores these)
-Academic year, term, class, combination name
-Student name, learner ID, photo if available
-Subject grades table: subject name, raw score, grade, points, descriptor (Distinction / Very Good / Credit / Pass / Minimum Pass / Subsidiary Pass / Fail)
-Total points row, principal pass count, result code
-Class rank ("5th out of 42")
-Class teacher comment (editable textarea that auto-saves via the comment endpoint)
-Head teacher comment (editable only by head_teacher role)
-Approval section: "Approved by [head teacher name] on [date]" — or "Pending approval"
+Preset suggestions: Show a row of quick-add chips above the items list for common Ugandan school fee types: Tuition, Meals, Development Fund, PTA Levy, Medical, ICT Levy, Book Fund, Examination Fee, Uniform. Clicking a chip appends a new item row with that description pre-filled and the amount input focused.
 
-Approve button: Visible to head_teacher only. Calls the comment/approve endpoint. Sets approved_by and approved_at. Once approved, comments are locked.
+Validation (client-side before submit):
 
-Generate PDF button: Calls POST /alevel/report-cards/generate for the single student. Shows a loading spinner. On success, opens the PDF in a new tab or triggers download depending on what the storage layer returns.
+At least one item required
+Each item must have a non-empty description
+Each item must have an amount > 0
+Show inline error below the offending row
 
-Bulk generate: On the class-level view (before selecting a student), a "Generate All PDFs" button that calls the bulk generate endpoint for the whole class. Shows a progress indicator.
+Submit: Calls createFeeStructure with the full payload including items array. On success, close the panel and mutate/revalidate the structures list. Show a success toast. On error, display the API error message inline.
 
-Phase 8 — Navigation and routing
-8.1 School admin nav additions
+State management: Store items as a local array of objects with a client-side key (use crypto.randomUUID() or a counter) for stable React keys. Do not use the array index as the key. This matches how the existing invoice panel manages items — verify and replicate exactly.
 
-In school-admin-nav.ts, add an "A-Level" group with these items. Check whether an Academic group already exists — if so, add A-Level items there rather than creating a duplicate group.
+Step 8 — Frontend: New EditFeeStructurePanel
 
-Items:
+File: apps/web/src/components/fees/EditFeeStructurePanel.tsx
 
-Grades → /dashboard/alevel/grades — GraduationCap icon
-Results → /dashboard/alevel/results — BarChart3 icon
-Report Cards → /dashboard/alevel/report-cards — FileText icon
-Setup → /dashboard/alevel/setup/subjects (links to first setup tab) — Settings icon, admin role only
-8.2 Teacher nav additions
+This panel opens when admin clicks Edit on an existing structure.
 
-In teacher-nav.ts, add under Teaching:
+On open: Fetches getFeeStructure(structureId) to get the full detail including items.
 
-A-Level Grades → /teacher/alevel/grades — GraduationCap icon
-8.3 Teacher route group
+If unlocked:
 
-Create apps/web/src/app/(teacher)/teacher/alevel/grades/page.tsx. This page imports and renders the same grade grid component used in the admin route, but wraps it with teacher-specific access control (only shows that teacher's assigned classes).
+Header fields (description, is_active) are editable — PATCH /structures/{id} on save
+Items table is fully editable: edit description/amount inline, delete items (last item delete disabled), add new items, reorder with up/down buttons
+Each inline edit calls the individual item endpoint immediately on blur (not on panel save) — same "autosave per line" pattern if that is how existing panels work, otherwise collect changes and save on panel save. Check the existing pattern in AddInvoicePanel and match it
+"Add items in bulk" button opens a secondary form with multiple rows at once, submits via the bulk endpoint
 
-Phase 9 — Performance requirements
+If locked:
 
-The grade entry bulk save must handle a class of 60 students × 5 subjects = 300 grade rows in under 1 second end to end.
+Show a banner: "This structure is locked. Invoices have been generated and no changes can be made to fee items."
+All item fields rendered as read-only text
+Header fields (description only, not is_active or amount) remain editable — locking should not prevent renaming the structure
+Assign button still available to add more students who were not yet assigned
 
-Ensure these constraints are met:
+Loading state: Skeleton rows matching the expected items count while fetching.
 
-Backend: The bulk upsert uses a single unnest-based INSERT. Subject types are fetched in one query before grade computation — not one query per subject. The entire operation is one transaction. No Python loops that make DB calls.
+Empty items state (should not happen post-backfill): Show a message and an "Add first item" button.
 
-Frontend: All 300 cell values live in one flat state object. The diff to find changed cells is one Object.entries() pass. The payload is built in one map. One fetch call. No batching.
+Step 9 — Frontend: Update FeeStructuresContent
 
-Report generation: PDFs are generated server-side using the existing PDF library. For bulk generation of 40+ students, use asyncio.gather to build all PDFs concurrently rather than sequentially.
+File: apps/web/src/components/fees/FeeStructuresContent.tsx
+
+Changes to the existing table:
+
+Amount column: label stays "Total Amount", value stays the same (it is still fs.amount, now just computed from items)
+New "Items" column: shows item count as a badge, e.g. "3 items". Click opens EditFeeStructurePanel
+New "Status" column: shows a lock badge ("Locked") in amber if locked_at is not null, otherwise shows "Active" or "Inactive" from is_active
+Actions column: "Edit" button opens EditFeeStructurePanel. "Assign" button remains. Add "View detail" if not already present
+The existing "Add structure" button now opens the new AddFeeStructurePanel
+
+No changes to pagination, filtering, or sorting logic.
+
+Step 10 — Frontend: Update AssignFeeStructureDialog
+
+File: apps/web/src/components/fees/AssignFeeStructureDialog.tsx
+
+Before submitting:
+
+Fetch the structure detail if not already loaded to show the fee breakdown to the admin before they confirm: "Assigning will create invoices with the following line items: [list]"
+Show the item breakdown in the confirmation modal: description, amount per item, total
+The assign call itself does not change — it still calls POST /structures/{id}/assign
+After successful assign, the structure will be returned as locked from the API. Refresh the structures list so the lock badge appears immediately
+Step 11 — Frontend: Update AddInvoicePanel structure selection
+
+File: apps/web/src/components/fees/AddInvoicePanel.tsx
+
+When the user selects a fee structure from the structure dropdown:
+
+Currently: copies the single structure.amount as one invoice line item.
+
+New behavior: fetch getFeeStructure(selectedStructureId) to get the full detail with items. Then map each fee_structure_items row to an invoice line item, pre-populating: description from item.description, amount from item.amount, account_id from item.account_id. Replace all existing invoice lines with these structure-derived lines. The user can then add, edit, or remove lines before saving the invoice.
+
+If the structure fetch fails, fall back to the single-amount behavior with a warning toast.
+
+Performance requirements
+
+Bulk item creation: 50 items per structure in one unnest INSERT — single round-trip.
+
+Invoice generation for bulk assign: If assigning to 200 students with 5 fee items each = 1,000 invoice_item rows. These must be inserted in one unnest INSERT across all students, not looped per student. Build flat parallel arrays across all student-invoice pairs before the INSERT call.
+
+Frontend item list: Up to 50 items rendered as controlled inputs. Do not use individual useState per item — store the entire items array in one state object and update immutably. This avoids 50 individual re-renders on "clear all" actions.
 
 Delivery sequence
-Step	What	Done when
-1	Migration runs cleanly	Tables exist in DB, confirmed via psql or Supabase dashboard
-2	alevel.py functions + all tests pass	pytest green on all grade boundary cases
-3	Router registered, all routes in /api/docs	API restarts without error
-4	Shared types added, typecheck passes	npm run typecheck clean across all workspaces
-5	API client and hooks written	Typecheck still clean
-6	Subjects CRUD works end to end	Can create PHY, confirm in table
-7	Combinations CRUD works	Can create PCM with 3 subjects
-8	Enrollments work	Can enroll a student, verify in DB
-9	Grade grid renders and saves	Enter scores, see grade letters, save succeeds
-10	Term lock/unlock works	Lock blocks save, unlock re-enables
-11	Results page renders correctly	Ranking and result codes correct
-12	Report card preview renders	Comments saveable, approval works
-13	PDF generation works	PDF opens with correct data
-14	Nav links resolve	All routes load without 404
+
+Complete and verify each step before moving to the next:
+
+Step	Done when
+1	Migration 044 runs cleanly; every existing structure has ≥1 item in fee_structure_items; locked_at column exists
+2	Helper functions pass manual testing via curl or pytest
+3	All new endpoints appear in /api/docs; item CRUD works; lock correctly blocks edits
+4	Assign creates multi-line invoices; structure is locked after assign; invoice_items has one row per fee structure item per student
+5	TypeScript compiles with no errors after type additions
+6	API client functions compile and make correct requests
+7	Add structure form creates with multiple items; preset chips work; live total correct
+8	Edit panel shows items; inline edits save; locked state shows banner and disables edits
+9	Structures table shows item count and lock badge
+10	Assign dialog shows item breakdown before confirming
+11	Selecting a structure in invoice panel fills all line items
+12	Regression: existing payments, waive, outstanding balance, receipt PDF all still work
+Conventions to enforce
+Never loop DB inserts — always unnest
+fees_actor_id(actor) not actor["sub"] for write operations
+Lock check before every item mutation — return 422 with code STRUCTURE_LOCKED
+Last item check before delete — return 422 with code LAST_ITEM
+All amounts BIGINT — never float, never string
+formatUGX for all money display — never raw number rendering
+No drag-and-drop library unless one already exists in the project — use up/down buttons
+Preset chip list for common Ugandan school fee types on the create form
+Read-only mode on locked structures — never hide the data, just disable the inputs
+Skeleton placeholders matching the item count while loading — never blank content begins.

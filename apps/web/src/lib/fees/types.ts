@@ -17,7 +17,80 @@ export type FeeStructure = {
   total_owed: number;
   total_collected: number;
   total_outstanding: number;
+  locked?: boolean;
+  locked_at?: string | null;
+  locked_reason?: string | null;
+  deleted?: boolean;
+  deleted_at?: string | null;
+  item_count?: number;
+  items?: FeeStructureItem[];
 };
+
+export type FeeStructureItem = {
+  id: string;
+  fee_structure_id: string;
+  description: string;
+  amount: number;
+  account_id: string | null;
+  account_code?: string | null;
+  account_name?: string | null;
+  sort_order: number;
+  is_optional?: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type FeeStructureDetail = FeeStructure & {
+  items: FeeStructureItem[];
+  locked: boolean;
+  locked_at: string | null;
+  deleted?: boolean;
+  deleted_at?: string | null;
+};
+
+export type FeeStructureItemInput = {
+  description: string;
+  amount: number;
+  account_id?: string | null;
+  sort_order?: number;
+};
+
+export type CreateFeeStructurePayload = {
+  class_id: string;
+  term_name: string;
+  academic_year: number;
+  description?: string;
+  items: FeeStructureItemInput[];
+};
+
+export type AddFeeStructureItemPayload = FeeStructureItemInput;
+
+export type UpdateFeeStructureItemPayload = Partial<FeeStructureItemInput>;
+
+export type BulkAddFeeStructureItemsPayload = {
+  items: FeeStructureItemInput[];
+};
+
+export type ReorderFeeStructureItemsPayload = {
+  item_ids: string[];
+};
+
+export type UpdateFeeStructureHeaderPayload = {
+  description?: string | null;
+  is_active?: boolean;
+};
+
+export const FEE_STRUCTURE_PRESETS = [
+  "Tuition",
+  "Meals",
+  "Development Fund",
+  "PTA Levy",
+  "Medical",
+  "ICT Levy",
+  "Book Fund",
+  "Examination Fee",
+  "Uniform",
+] as const;
 
 export type FeePayment = {
   id: string;
@@ -81,6 +154,12 @@ export type RecordPaymentResult = {
     term_name: string;
     payment_method: PaymentMethod;
     payment_date: string;
+    invoice_id?: string | null;
+    allocations?: Array<{
+      invoice_item_id: string;
+      amount: number;
+      description?: string;
+    }>;
   };
   account: {
     amount_owed: number;
@@ -88,6 +167,14 @@ export type RecordPaymentResult = {
     balance: number;
     status: string;
   };
+  invoice?: {
+    id: string;
+    invoice_number: string;
+    status: string;
+    total_amount: number;
+    amount_paid: number;
+    balance: number;
+  } | null;
 };
 
 export type BulkRecordPaymentResult = {
@@ -206,6 +293,13 @@ export type InvoiceItem = {
   quantity: number;
   unit_amount: number;
   total_amount: number;
+  amount_paid?: number;
+  balance?: number;
+};
+
+export type PaymentAllocationInput = {
+  invoice_item_id: string;
+  amount: number;
 };
 
 export type InvoiceSummary = {
@@ -219,13 +313,15 @@ export type InvoiceSummary = {
   total_amount: number;
   amount_paid: number;
   balance: number;
-  student_name: string;
+  student_name?: string;
   learner_id?: string;
   class_name?: string;
+  fee_structure_id?: string | null;
 };
 
 export type InvoiceDetail = InvoiceSummary & {
   student_id: string;
+  student_name: string;
   fee_structure_id?: string | null;
   notes?: string | null;
   cancel_reason?: string | null;

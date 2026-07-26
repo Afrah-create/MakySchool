@@ -27,6 +27,8 @@ import { formatUGX, formatUGXInput, parseUGXInput } from "@/lib/formatCurrency";
 import type {
   BulkRecordPaymentResult,
   InvoiceDetail,
+  InvoiceItem,
+  InvoiceSummary,
   OutstandingStudent,
   PaymentMethod,
   RecordPaymentResult,
@@ -36,8 +38,6 @@ import { paymentMethodLabel } from "@/lib/fees/types";
 import type { ClassOption } from "@/lib/students/types";
 import { useToast } from "@/providers/ToastProvider";
 import { DEFAULT_PAGE_SIZE } from "@makyschool/shared/constants";
-
-
 
 type OutstandingResponse = {
   students: OutstandingStudent[];
@@ -54,6 +54,42 @@ type OutstandingResponse = {
 type SuccessState =
   | { mode: "single"; result: RecordPaymentResult }
   | { mode: "bulk"; result: BulkRecordPaymentResult };
+
+type AllocationDraft = {
+  invoice_item_id: string;
+  description: string;
+  balance: number;
+  amount: number;
+  selected: boolean;
+};
+
+function itemBalance(item: InvoiceItem) {
+  if (typeof item.balance === "number") return item.balance;
+  if (typeof item.amount_paid === "number") return Math.max(item.total_amount - item.amount_paid, 0);
+  return item.total_amount;
+}
+
+function draftsFromInvoice(invoice: InvoiceDetail): AllocationDraft[] {
+  const outstanding = (invoice.items ?? [])
+    .filter((item) => item.id && itemBalance(item) > 0)
+    .map((item) => ({
+      invoice_item_id: item.id!,
+      description: item.description,
+      balance: itemBalance(item),
+      amount: itemBalance(item),
+      selected: true,
+    }));
+  if (outstanding.length > 0) return outstanding;
+  return [
+    {
+      invoice_item_id: "",
+      description: "Invoice balance",
+      balance: invoice.balance,
+      amount: invoice.balance,
+      selected: true,
+    },
+  ];
+}
 
 export function RecordPaymentContent() {
   const searchParams = useSearchParams();
@@ -80,6 +116,7 @@ export function RecordPaymentContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<SuccessState | null>(null);
+  const [drafts, setDrafts] = useState<AllocationDraft[]>([]);
 
   const invoiceId = searchParams.get("invoice_id");
   const preselectedStudentId = searchParams.get("student_id");
@@ -122,7 +159,44 @@ export function RecordPaymentContent() {
     accounts.find((item) => item.fee_structure_id === activeStudent?.fee_structure_id) ??
     accounts[0];
 
-  const maxAmount = invoiceData?.balance ?? activeAccount?.balance ?? activeStudent?.balance ?? 0;
+  const studentInvoicesQuery =
+    activeStudent && !invoiceId
+      ? `/schools/fees/invoices/student/${activeStudent.student_id}`
+      : null;
+  const { data: studentInvoicesData } = useApiSWR<{ invoices: InvoiceSummary[] }>(
+    studentInvoicesQuery,
+  );
+
+  const linkedInvoiceId = useMemo(() => {
+    if (invoiceId) return invoiceId;
+    if (!activeStudent || !studentInvoicesData?.invoices) return null;
+    const structureId = activeAccount?.fee_structure_id ?? activeStudent.fee_structure_id;
+    const open = studentInvoicesData.invoices.find(
+      (inv) =>
+        inv.balance > 0 &&
+        !["cancelled", "voided", "paid"].includes(inv.status) &&
+        (!structureId || inv.fee_structure_id === structureId),
+    );
+    return open?.id ?? null;
+  }, [
+    invoiceId,
+    activeStudent,
+    studentInvoicesData?.invoices,
+    activeAccount?.fee_structure_id,
+  ]);
+
+  const { data: linkedInvoiceData } = useApiSWR<InvoiceDetail>(
+    linkedInvoiceId && !invoiceId ? `/schools/fees/invoices/${linkedInvoiceId}` : null,
+  );
+  const payInvoice = invoiceData ?? linkedInvoiceData ?? null;
+
+  const allocationTotal = useMemo(
+    () => drafts.filter((d) => d.selected).reduce((sum, d) => sum + (d.amount > 0 ? d.amount : 0), 0),
+    [drafts],
+  );
+
+  const maxAmount = payInvoice?.balance ?? activeAccount?.balance ?? activeStudent?.balance ?? 0;
+  const useItemAllocations = Boolean(payInvoice && (payInvoice.items?.length ?? 0) > 0);
 
   useEffect(() => {
     setPage(1);
@@ -145,7 +219,7 @@ export function RecordPaymentContent() {
       learner_id: invoiceData.learner_id ?? "",
       class_name: invoiceData.class_name ?? "",
       account_id: "",
-      fee_structure_id: "",
+      fee_structure_id: invoiceData.fee_structure_id ?? "",
       amount_owed: invoiceData.total_amount,
       amount_paid: invoiceData.amount_paid,
       balance: invoiceData.balance,
@@ -153,13 +227,27 @@ export function RecordPaymentContent() {
       term_name: invoiceData.term_name,
       academic_year: invoiceData.academic_year,
     });
-    setAmount(invoiceData.balance);
   }, [invoiceData]);
 
   useEffect(() => {
-    if (!activeStudent || invoiceData) return;
+    if (!payInvoice) {
+      setDrafts([]);
+      return;
+    }
+    const next = draftsFromInvoice(payInvoice);
+    setDrafts(next);
+    setAmount(next.filter((d) => d.selected).reduce((sum, d) => sum + d.amount, 0));
+  }, [payInvoice?.id, payInvoice?.amount_paid, payInvoice?.balance]);
+
+  useEffect(() => {
+    if (!activeStudent || payInvoice) return;
     setAmount(activeStudent.balance);
-  }, [activeStudent?.account_id, activeStudent?.balance, invoiceData]);
+  }, [activeStudent?.account_id, activeStudent?.balance, payInvoice]);
+
+  useEffect(() => {
+    if (!useItemAllocations) return;
+    setAmount(allocationTotal);
+  }, [allocationTotal, useItemAllocations]);
 
   function toggleSelect(student: OutstandingStudent) {
     setSelectedStudentsMap((current) => {
@@ -195,6 +283,10 @@ export function RecordPaymentContent() {
     setError(null);
   }
 
+  function updateDraft(id: string, patch: Partial<AllocationDraft>) {
+    setDrafts((prev) => prev.map((row) => (row.invoice_item_id === id ? { ...row, ...patch } : row)));
+  }
+
   async function submitSingle(event: React.FormEvent) {
     event.preventDefault();
     if (!activeStudent) return;
@@ -204,7 +296,34 @@ export function RecordPaymentContent() {
       setError("Fee structure is missing for this student. Refresh the page and try again.");
       return;
     }
-    if (amount <= 0 || amount > maxAmount) {
+
+    let paymentAmount = amount;
+    let allocations:
+      | Array<{ invoice_item_id: string; amount: number }>
+      | undefined;
+
+    if (useItemAllocations) {
+      const selected = drafts.filter((d) => d.selected && d.amount > 0);
+      if (selected.length === 0) {
+        setError("Select at least one fee category and enter an amount.");
+        return;
+      }
+      for (const row of selected) {
+        if (row.amount > row.balance) {
+          setError(`Amount for “${row.description}” exceeds its outstanding balance.`);
+          return;
+        }
+      }
+      paymentAmount = selected.reduce((sum, row) => sum + row.amount, 0);
+      if (selected.every((row) => row.invoice_item_id)) {
+        allocations = selected.map((row) => ({
+          invoice_item_id: row.invoice_item_id,
+          amount: row.amount,
+        }));
+      }
+    }
+
+    if (paymentAmount <= 0 || paymentAmount > maxAmount) {
       setError(`Enter an amount up to ${formatUGX(maxAmount)}.`);
       return;
     }
@@ -217,11 +336,13 @@ export function RecordPaymentContent() {
         body: {
           student_id: activeStudent.student_id,
           fee_structure_id: feeStructureId,
-          amount,
+          amount: paymentAmount,
           payment_method: method,
           payment_reference: reference.trim() || undefined,
           payment_date: paymentDate,
           notes: notes.trim() || undefined,
+          invoice_id: linkedInvoiceId || undefined,
+          allocations,
         },
       });
       setSuccess({ mode: "single", result: response.data });
@@ -248,8 +369,8 @@ export function RecordPaymentContent() {
   }
 
   if (success?.mode === "single") {
-    const { payment, account } = success.result;
-    const paidInFull = account.balance <= 0;
+    const { payment, account, invoice } = success.result;
+    const paidInFull = (invoice?.balance ?? account.balance) <= 0;
     return (
       <section className="mx-auto max-w-2xl space-y-6">
         <RecordPaymentSuccessBanner
@@ -265,15 +386,31 @@ export function RecordPaymentContent() {
                 <p className="mt-1 text-sm text-theme-muted">
                   {payment.class_name} · {payment.term_name} · {paymentMethodLabel(payment.payment_method)}
                 </p>
+                {invoice ? (
+                  <p className="mt-1 text-xs text-theme-muted">
+                    Invoice {invoice.invoice_number} · {invoice.status} · balance{" "}
+                    {formatUGX(invoice.balance)}
+                  </p>
+                ) : null}
               </div>
               <span
                 className={`rounded-full px-3 py-1 text-xs font-semibold ${
                   paidInFull ? "bg-theme-success-text/15 text-theme-success-text" : "badge-warning"
                 }`}
               >
-                {paidInFull ? "Paid in full" : `Balance ${formatUGX(account.balance)}`}
+                {paidInFull ? "Paid in full" : `Balance ${formatUGX(invoice?.balance ?? account.balance)}`}
               </span>
             </div>
+            {(payment.allocations?.length ?? 0) > 0 ? (
+              <ul className="mt-4 space-y-1 border-t border-theme pt-3">
+                {payment.allocations!.map((row) => (
+                  <li key={row.invoice_item_id} className="flex justify-between gap-3 text-sm">
+                    <span className="text-theme-muted">{row.description ?? "Fee item"}</span>
+                    <span className="tabular-nums font-medium">{formatUGX(row.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <PdfDownloadButton
@@ -339,8 +476,8 @@ export function RecordPaymentContent() {
     <FeesPageShell
       title="Record payment"
       description={
-        invoiceData
-          ? `Paying invoice ${invoiceData.invoice_number} — max ${formatUGX(invoiceData.balance)}`
+        payInvoice
+          ? `Paying invoice ${payInvoice.invoice_number} — select fee categories below (max ${formatUGX(payInvoice.balance)})`
           : "Search students, record single or bulk fee payments, and generate receipts."
       }
     >
@@ -567,21 +704,102 @@ export function RecordPaymentContent() {
                 ) : null}
 
                 <form onSubmit={(e) => void submitSingle(e)} className="space-y-4">
-                  <label className="block">
-                    <span className="mb-1 block text-xs text-theme-muted">Amount (UGX)</span>
-                    <input
-                      className="ms-input w-full"
-                      value={formatUGXInput(amount)}
-                      onChange={(e) => setAmount(parseUGXInput(e.target.value))}
-                    />
-                    <button
-                      type="button"
-                      className="mt-1 text-xs font-medium text-theme-accent hover:underline"
-                      onClick={() => setAmount(maxAmount)}
-                    >
-                      Use full balance ({formatUGX(maxAmount)})
-                    </button>
-                  </label>
+                  {useItemAllocations ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-theme-muted">Fee categories</span>
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-theme-accent hover:underline"
+                          onClick={() =>
+                            setDrafts((prev) =>
+                              prev.map((row) => ({
+                                ...row,
+                                selected: true,
+                                amount: row.balance,
+                              })),
+                            )
+                          }
+                        >
+                          Pay all outstanding
+                        </button>
+                      </div>
+                      {payInvoice ? (
+                        <p className="text-xs text-theme-muted">
+                          Invoice {payInvoice.invoice_number} · outstanding{" "}
+                          {formatUGX(payInvoice.balance)}
+                        </p>
+                      ) : null}
+                      {drafts.map((row) => (
+                        <div
+                          key={row.invoice_item_id || row.description}
+                          className="rounded-lg border border-theme p-3"
+                        >
+                          <label className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              className="mt-1"
+                              checked={row.selected}
+                              onChange={(e) =>
+                                updateDraft(row.invoice_item_id, {
+                                  selected: e.target.checked,
+                                  amount: e.target.checked ? row.balance : 0,
+                                })
+                              }
+                            />
+                            <div className="min-w-0 flex-1 space-y-2">
+                              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <span className="text-sm font-medium text-theme-primary">
+                                  {row.description}
+                                </span>
+                                <span className="text-xs text-theme-muted">
+                                  {formatUGX(row.balance)} due
+                                </span>
+                              </div>
+                              {row.selected ? (
+                                <div className="flex overflow-hidden rounded-xl border border-theme">
+                                  <span className="flex items-center bg-theme-surface-raised px-3 text-sm text-theme-muted">
+                                    UGX
+                                  </span>
+                                  <input
+                                    className="ms-input w-full border-0"
+                                    value={formatUGXInput(row.amount)}
+                                    onChange={(e) =>
+                                      updateDraft(row.invoice_item_id, {
+                                        amount: Math.min(
+                                          parseUGXInput(e.target.value),
+                                          row.balance,
+                                        ),
+                                      })
+                                    }
+                                  />
+                                </div>
+                              ) : null}
+                            </div>
+                          </label>
+                        </div>
+                      ))}
+                      <p className="text-right text-sm font-semibold text-theme-primary">
+                        Total: {formatUGX(allocationTotal)}
+                      </p>
+                    </div>
+                  ) : (
+                    <label className="block">
+                      <span className="mb-1 block text-xs text-theme-muted">Amount (UGX)</span>
+                      <input
+                        className="ms-input w-full"
+                        value={formatUGXInput(amount)}
+                        onChange={(e) => setAmount(parseUGXInput(e.target.value))}
+                      />
+                      <button
+                        type="button"
+                        className="mt-1 text-xs font-medium text-theme-accent hover:underline"
+                        onClick={() => setAmount(maxAmount)}
+                      >
+                        Use full balance ({formatUGX(maxAmount)})
+                      </button>
+                    </label>
+                  )}
 
                   <fieldset className="space-y-2">
                     <legend className="text-xs text-theme-muted">Payment method</legend>

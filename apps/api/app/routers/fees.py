@@ -8,7 +8,7 @@ from typing import Any
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.db.pool import get_db, get_pool
 from app.lib.pdf import ReceiptNotFoundError, generate_fee_receipt_pdf
@@ -25,29 +25,212 @@ from app.routers.fees_shared import (
     PAYMENT_METHODS,
     fees_error as _error,
     fees_actor_id,
+    load_structure_with_items,
     parse_payment_date,
     parse_uuid,
+    recompute_structure_amount,
     record_fee_payment as _record_fee_payment,
     recalculate_fee_account as _recalculate_fee_account,
     require_fees_permission as _require_permission,
+    serialize_structure_item,
 )
 
 router = APIRouter()
 logger = logging.getLogger("makyschool")
 
 
-class FeeStructureCreate(BaseModel):
-    class_id: str | None = None
-    term_name: str | None = None
-    academic_year: int | None = None
-    amount: int | None = None
+class FeeStructureItemInput(BaseModel):
+    description: str
+    amount: int
+    account_id: str | None = None
+    sort_order: int = 0
+
+    @field_validator("description")
+    @classmethod
+    def description_required(cls, value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            raise ValueError("Description is required")
+        return text
+
+    @field_validator("amount")
+    @classmethod
+    def amount_positive(cls, value: int) -> int:
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError("Amount must be a positive whole number")
+        return value
+
+
+class CreateFeeStructureBody(BaseModel):
+    class_id: str
+    term_name: str
+    academic_year: int
     description: str | None = None
+    items: list[FeeStructureItemInput]
+
+    @field_validator("items")
+    @classmethod
+    def items_not_empty(cls, value: list[FeeStructureItemInput]) -> list[FeeStructureItemInput]:
+        if not value:
+            raise ValueError("At least one fee item is required")
+        if len(value) > 50:
+            raise ValueError("Maximum 50 items per structure")
+        return value
 
 
-class FeeStructurePatch(BaseModel):
+class AddFeeStructureItemBody(BaseModel):
+    description: str
+    amount: int
+    account_id: str | None = None
+    sort_order: int = 0
+
+    @field_validator("description")
+    @classmethod
+    def description_required(cls, value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            raise ValueError("Description is required")
+        return text
+
+    @field_validator("amount")
+    @classmethod
+    def amount_positive(cls, value: int) -> int:
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError("Amount must be a positive whole number")
+        return value
+
+
+class UpdateFeeStructureItemBody(BaseModel):
+    description: str | None = None
     amount: int | None = None
+    account_id: str | None = None
+    sort_order: int | None = None
+
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> "UpdateFeeStructureItemBody":
+        if (
+            self.description is None
+            and self.amount is None
+            and self.account_id is None
+            and self.sort_order is None
+        ):
+            raise ValueError("At least one field is required")
+        return self
+
+    @field_validator("amount")
+    @classmethod
+    def amount_positive(cls, value: int | None) -> int | None:
+        if value is not None and (not isinstance(value, int) or value <= 0):
+            raise ValueError("Amount must be a positive whole number")
+        return value
+
+
+class ReorderFeeStructureItemsBody(BaseModel):
+    item_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("item_ids")
+    @classmethod
+    def item_ids_not_empty(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("item_ids is required")
+        return value
+
+
+class UpdateFeeStructureHeaderBody(BaseModel):
     description: str | None = None
     is_active: bool | None = None
+    # amount is NOT accepted — it is derived from items
+
+
+class BulkAddFeeStructureItemsBody(BaseModel):
+    items: list[FeeStructureItemInput]
+
+    @field_validator("items")
+    @classmethod
+    def items_bounds(cls, value: list[FeeStructureItemInput]) -> list[FeeStructureItemInput]:
+        if not value:
+            raise ValueError("At least one fee item is required")
+        if len(value) > 50:
+            raise ValueError("Maximum 50 items per structure")
+        return value
+
+
+def _raise_structure_locked() -> None:
+    raise _error(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "This fee structure is locked because invoices have been generated. No changes can be made.",
+        "STRUCTURE_LOCKED",
+    )
+
+
+def _raise_structure_deleted() -> None:
+    raise _error(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "This fee structure has been deleted. Restore it before making changes.",
+        "STRUCTURE_DELETED",
+    )
+
+
+async def _ensure_structure_mutable(
+    conn: asyncpg.Connection, school_id: uuid.UUID, structure_id: uuid.UUID
+) -> None:
+    row = await conn.fetchrow(
+        """
+        SELECT deleted_at, locked_at FROM fee_structures
+        WHERE id = $1 AND school_id = $2
+        LIMIT 1
+        """,
+        structure_id,
+        school_id,
+    )
+    if not row:
+        raise _error(status.HTTP_404_NOT_FOUND, "Fee structure not found.", "NOT_FOUND")
+    if row["deleted_at"] is not None:
+        _raise_structure_deleted()
+    if row["locked_at"] is not None:
+        _raise_structure_locked()
+
+
+def _parse_optional_account_id(value: str | None) -> uuid.UUID | None:
+    if value is None or not str(value).strip():
+        return None
+    return parse_uuid(str(value), "account_id")
+
+
+async def _bulk_insert_structure_items(
+    conn: asyncpg.Connection,
+    *,
+    school_id: uuid.UUID,
+    structure_id: uuid.UUID,
+    items: list[FeeStructureItemInput],
+) -> None:
+    descriptions = [item.description.strip() for item in items]
+    amounts = [item.amount for item in items]
+    account_ids = [_parse_optional_account_id(item.account_id) for item in items]
+    sort_orders = [
+        item.sort_order if item.sort_order is not None else index
+        for index, item in enumerate(items)
+    ]
+    await conn.execute(
+        """
+        INSERT INTO fee_structure_items
+          (school_id, fee_structure_id, description, amount, account_id, sort_order)
+        SELECT $1, $2, description, amount, account_id, sort_order
+        FROM unnest($3::text[], $4::bigint[], $5::uuid[], $6::int[])
+          AS t(description, amount, account_id, sort_order)
+        """,
+        school_id,
+        structure_id,
+        descriptions,
+        amounts,
+        account_ids,
+        sort_orders,
+    )
+
+
+class PaymentAllocationInput(BaseModel):
+    invoice_item_id: str
+    amount: int
 
 
 class PaymentCreate(BaseModel):
@@ -58,6 +241,8 @@ class PaymentCreate(BaseModel):
     payment_reference: str | None = None
     payment_date: str | None = None
     notes: str | None = None
+    invoice_id: str | None = None
+    allocations: list[PaymentAllocationInput] | None = None
 
 
 class BulkPaymentLine(BaseModel):
@@ -94,6 +279,7 @@ async def list_structures(
     academic_year: int | None = Query(None),
     term_name: str | None = Query(None),
     class_id: str | None = Query(None),
+    include_deleted: bool = Query(False),
     ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
     conn: asyncpg.Connection = Depends(get_db),
 ):
@@ -103,6 +289,9 @@ async def list_structures(
     conditions = ["fs.school_id = $1"]
     params: list[Any] = [school_id]
     idx = 2
+
+    if not include_deleted:
+        conditions.append("fs.deleted_at IS NULL")
 
     if academic_year is not None:
         conditions.append(f"fs.academic_year = ${idx}")
@@ -127,7 +316,13 @@ async def list_structures(
           COUNT(sfa.id)::int AS student_count,
           COALESCE(SUM(sfa.amount_owed), 0)::bigint AS total_owed,
           COALESCE(SUM(sfa.amount_paid), 0)::bigint AS total_collected,
-          COALESCE(SUM(sfa.balance), 0)::bigint AS total_outstanding
+          COALESCE(SUM(sfa.balance), 0)::bigint AS total_outstanding,
+          (
+            SELECT COUNT(*)::int FROM fee_structure_items fsi
+            WHERE fsi.fee_structure_id = fs.id
+          ) AS item_count,
+          (fs.locked_at IS NOT NULL) AS locked,
+          (fs.deleted_at IS NOT NULL) AS deleted
         FROM fee_structures fs
         JOIN school_classes sc ON sc.id = fs.class_id
         LEFT JOIN student_fee_accounts sfa ON sfa.fee_structure_id = fs.id
@@ -137,12 +332,33 @@ async def list_structures(
         """,
         *params,
     )
-    return {"data": [dict(r) for r in rows]}
+    result = []
+    for r in rows:
+        item = dict(r)
+        item["locked"] = bool(item.get("locked"))
+        item["deleted"] = bool(item.get("deleted"))
+        item["item_count"] = int(item.get("item_count") or 0)
+        result.append(item)
+    return {"data": result}
+
+
+@router.get("/structures/{structure_id}")
+async def get_structure(
+    structure_id: uuid.UUID,
+    ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, user = ctx
+    _require_permission(user, "viewFees")
+    data = await load_structure_with_items(conn, school_id, structure_id)
+    if not data:
+        raise _error(status.HTTP_404_NOT_FOUND, "Fee structure not found.", "NOT_FOUND")
+    return {"data": data}
 
 
 @router.post("/structures", status_code=status.HTTP_201_CREATED)
 async def create_structure(
-    body: FeeStructureCreate,
+    body: CreateFeeStructureBody,
     ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
     conn: asyncpg.Connection = Depends(get_db),
 ):
@@ -150,14 +366,14 @@ async def create_structure(
     _require_permission(user, "manageFees")
 
     fields: dict[str, str] = {}
-    if not body.class_id:
+    if not body.class_id or not str(body.class_id).strip():
         fields["class_id"] = "Class is required."
     if not body.term_name or not body.term_name.strip():
         fields["term_name"] = "Term name is required."
     if body.academic_year is None or not isinstance(body.academic_year, int):
         fields["academic_year"] = "Academic year is required."
-    if body.amount is None or not isinstance(body.amount, int) or body.amount <= 0:
-        fields["amount"] = "Amount must be a positive whole number."
+    if not body.items:
+        fields["items"] = "At least one fee item is required."
     if fields:
         raise _error(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -166,9 +382,10 @@ async def create_structure(
             fields,
         )
 
+    class_uuid = parse_uuid(body.class_id, "class_id")
     class_row = await conn.fetchrow(
         "SELECT level, stream FROM school_classes WHERE id = $1 AND school_id = $2 LIMIT 1",
-        uuid.UUID(body.class_id),
+        class_uuid,
         school_id,
     )
     if not class_row:
@@ -182,12 +399,13 @@ async def create_structure(
     term = body.term_name.strip()
     duplicate = await conn.fetchrow(
         """
-        SELECT 1 FROM fee_structures
+        SELECT id FROM fee_structures
         WHERE school_id = $1 AND class_id = $2 AND term_name = $3 AND academic_year = $4
+          AND deleted_at IS NULL
         LIMIT 1
         """,
         school_id,
-        uuid.UUID(body.class_id),
+        class_uuid,
         term,
         body.academic_year,
     )
@@ -197,30 +415,44 @@ async def create_structure(
             status.HTTP_409_CONFLICT,
             f"A fee structure for {class_name} in {term} already exists. Edit the existing one instead.",
             "CONFLICT",
+            existing_id=str(duplicate["id"]),
         )
 
-    row = await conn.fetchrow(
-        """
-        INSERT INTO fee_structures (
-          school_id, class_id, term_name, academic_year, amount, description, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING *
-        """,
-        school_id,
-        uuid.UUID(body.class_id),
-        term,
-        body.academic_year,
-        body.amount,
-        body.description.strip() if body.description else None,
-        uuid.UUID(str(user["sub"])),
-    )
-    return {"data": dict(row)}
+    total_amount = sum(item.amount for item in body.items)
+    actor_id = fees_actor_id(user)
+
+    async with conn.transaction():
+        row = await conn.fetchrow(
+            """
+            INSERT INTO fee_structures (
+              school_id, class_id, term_name, academic_year, amount, description, created_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id
+            """,
+            school_id,
+            class_uuid,
+            term,
+            body.academic_year,
+            total_amount,
+            body.description.strip() if body.description else None,
+            actor_id,
+        )
+        structure_id = row["id"]
+        await _bulk_insert_structure_items(
+            conn,
+            school_id=school_id,
+            structure_id=structure_id,
+            items=body.items,
+        )
+
+    data = await load_structure_with_items(conn, school_id, structure_id)
+    return {"data": data}
 
 
 @router.patch("/structures/{structure_id}")
 async def patch_structure(
     structure_id: uuid.UUID,
-    body: FeeStructurePatch,
+    body: UpdateFeeStructureHeaderBody,
     ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
     conn: asyncpg.Connection = Depends(get_db),
 ):
@@ -228,52 +460,314 @@ async def patch_structure(
     _require_permission(user, "manageFees")
 
     existing = await conn.fetchrow(
-        "SELECT * FROM fee_structures WHERE id = $1 AND school_id = $2 LIMIT 1",
+        "SELECT id, deleted_at FROM fee_structures WHERE id = $1 AND school_id = $2 LIMIT 1",
         structure_id,
         school_id,
     )
     if not existing:
         raise _error(status.HTTP_404_NOT_FOUND, "Fee structure not found.", "NOT_FOUND")
-
-    if body.amount is not None and (not isinstance(body.amount, int) or body.amount <= 0):
-        raise _error(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "Amount must be a positive whole number.",
-            "VALIDATION_ERROR",
-            {"amount": "Amount must be a positive whole number."},
-        )
+    if existing["deleted_at"] is not None:
+        _raise_structure_deleted()
 
     updated = await conn.fetchrow(
         """
         UPDATE fee_structures
-        SET amount = COALESCE($1, amount),
-            description = COALESCE($2, description),
-            is_active = COALESCE($3, is_active),
+        SET description = COALESCE($1, description),
+            is_active = COALESCE($2, is_active),
             updated_at = NOW()
-        WHERE id = $4 AND school_id = $5
+        WHERE id = $3 AND school_id = $4 AND deleted_at IS NULL
         RETURNING *
         """,
-        body.amount,
         body.description if body.description is not None else None,
         body.is_active,
         structure_id,
         school_id,
     )
+    return {"data": {"fee_structure": dict(updated)}}
 
-    count_row = await conn.fetchrow(
-        "SELECT COUNT(*)::int AS count FROM student_fee_accounts WHERE fee_structure_id = $1",
+
+@router.post("/structures/{structure_id}/items", status_code=status.HTTP_201_CREATED)
+async def add_structure_item(
+    structure_id: uuid.UUID,
+    body: AddFeeStructureItemBody,
+    ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, user = ctx
+    _require_permission(user, "manageFees")
+
+    structure = await conn.fetchrow(
+        "SELECT id FROM fee_structures WHERE id = $1 AND school_id = $2 LIMIT 1",
+        structure_id,
+        school_id,
+    )
+    if not structure:
+        raise _error(status.HTTP_404_NOT_FOUND, "Fee structure not found.", "NOT_FOUND")
+    await _ensure_structure_mutable(conn, school_id, structure_id)
+
+    account_id = _parse_optional_account_id(body.account_id)
+    async with conn.transaction():
+        row = await conn.fetchrow(
+            """
+            INSERT INTO fee_structure_items
+              (school_id, fee_structure_id, description, amount, account_id, sort_order)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING *
+            """,
+            school_id,
+            structure_id,
+            body.description.strip(),
+            body.amount,
+            account_id,
+            body.sort_order,
+        )
+        await recompute_structure_amount(conn, structure_id, school_id)
+
+    return {"data": serialize_structure_item(row)}
+
+
+@router.post("/structures/{structure_id}/items/bulk", status_code=status.HTTP_201_CREATED)
+async def add_structure_items_bulk(
+    structure_id: uuid.UUID,
+    body: BulkAddFeeStructureItemsBody,
+    ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, user = ctx
+    _require_permission(user, "manageFees")
+
+    structure = await conn.fetchrow(
+        "SELECT id FROM fee_structures WHERE id = $1 AND school_id = $2 LIMIT 1",
+        structure_id,
+        school_id,
+    )
+    if not structure:
+        raise _error(status.HTTP_404_NOT_FOUND, "Fee structure not found.", "NOT_FOUND")
+    await _ensure_structure_mutable(conn, school_id, structure_id)
+
+    async with conn.transaction():
+        await _bulk_insert_structure_items(
+            conn,
+            school_id=school_id,
+            structure_id=structure_id,
+            items=body.items,
+        )
+        await recompute_structure_amount(conn, structure_id, school_id)
+        items = await conn.fetch(
+            """
+            SELECT *
+            FROM fee_structure_items
+            WHERE fee_structure_id = $1 AND school_id = $2
+            ORDER BY sort_order ASC, created_at ASC
+            """,
+            structure_id,
+            school_id,
+        )
+
+    return {
+        "data": {
+            "added": len(body.items),
+            "items": [serialize_structure_item(item) for item in items],
+        }
+    }
+
+
+@router.patch("/structures/{structure_id}/items/{item_id}")
+async def patch_structure_item(
+    structure_id: uuid.UUID,
+    item_id: uuid.UUID,
+    body: UpdateFeeStructureItemBody,
+    ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, user = ctx
+    _require_permission(user, "manageFees")
+
+    await _ensure_structure_mutable(conn, school_id, structure_id)
+
+    existing = await conn.fetchrow(
+        """
+        SELECT id FROM fee_structure_items
+        WHERE id = $1 AND fee_structure_id = $2 AND school_id = $3
+        LIMIT 1
+        """,
+        item_id,
+        structure_id,
+        school_id,
+    )
+    if not existing:
+        raise _error(status.HTTP_404_NOT_FOUND, "Fee structure item not found.", "NOT_FOUND")
+
+    account_id = None
+    clear_account = False
+    if body.account_id is not None:
+        if str(body.account_id).strip() == "":
+            clear_account = True
+        else:
+            account_id = _parse_optional_account_id(body.account_id)
+
+    description = body.description.strip() if body.description is not None else None
+    if body.description is not None and not description:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Description is required.",
+            "VALIDATION_ERROR",
+            {"description": "Description is required."},
+        )
+
+    async with conn.transaction():
+        if clear_account:
+            row = await conn.fetchrow(
+                """
+                UPDATE fee_structure_items
+                SET description = COALESCE($1, description),
+                    amount = COALESCE($2, amount),
+                    account_id = NULL,
+                    sort_order = COALESCE($3, sort_order),
+                    updated_at = NOW()
+                WHERE id = $4 AND fee_structure_id = $5 AND school_id = $6
+                RETURNING *
+                """,
+                description,
+                body.amount,
+                body.sort_order,
+                item_id,
+                structure_id,
+                school_id,
+            )
+        else:
+            row = await conn.fetchrow(
+                """
+                UPDATE fee_structure_items
+                SET description = COALESCE($1, description),
+                    amount = COALESCE($2, amount),
+                    account_id = COALESCE($3, account_id),
+                    sort_order = COALESCE($4, sort_order),
+                    updated_at = NOW()
+                WHERE id = $5 AND fee_structure_id = $6 AND school_id = $7
+                RETURNING *
+                """,
+                description,
+                body.amount,
+                account_id,
+                body.sort_order,
+                item_id,
+                structure_id,
+                school_id,
+            )
+        await recompute_structure_amount(conn, structure_id, school_id)
+
+    return {"data": serialize_structure_item(row)}
+
+
+@router.delete("/structures/{structure_id}/items/{item_id}")
+async def delete_structure_item(
+    structure_id: uuid.UUID,
+    item_id: uuid.UUID,
+    ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, user = ctx
+    _require_permission(user, "manageFees")
+
+    await _ensure_structure_mutable(conn, school_id, structure_id)
+
+    existing = await conn.fetchrow(
+        """
+        SELECT id FROM fee_structure_items
+        WHERE id = $1 AND fee_structure_id = $2 AND school_id = $3
+        LIMIT 1
+        """,
+        item_id,
+        structure_id,
+        school_id,
+    )
+    if not existing:
+        raise _error(status.HTTP_404_NOT_FOUND, "Fee structure item not found.", "NOT_FOUND")
+
+    count = await conn.fetchval(
+        """
+        SELECT COUNT(*)::int FROM fee_structure_items
+        WHERE fee_structure_id = $1 AND school_id = $2
+        """,
+        structure_id,
+        school_id,
+    )
+    if int(count or 0) <= 1:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Cannot delete the last fee item. A fee structure must have at least one item.",
+            "LAST_ITEM",
+        )
+
+    async with conn.transaction():
+        await conn.execute(
+            """
+            DELETE FROM fee_structure_items
+            WHERE id = $1 AND fee_structure_id = $2 AND school_id = $3
+            """,
+            item_id,
+            structure_id,
+            school_id,
+        )
+        await recompute_structure_amount(conn, structure_id, school_id)
+
+    return {"data": {"deleted": True}}
+
+
+@router.put("/structures/{structure_id}/items/reorder")
+async def reorder_structure_items(
+    structure_id: uuid.UUID,
+    body: ReorderFeeStructureItemsBody,
+    ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, user = ctx
+    _require_permission(user, "manageFees")
+
+    await _ensure_structure_mutable(conn, school_id, structure_id)
+
+    structure = await conn.fetchrow(
+        "SELECT id FROM fee_structures WHERE id = $1 AND school_id = $2 LIMIT 1",
+        structure_id,
+        school_id,
+    )
+    if not structure:
+        raise _error(status.HTTP_404_NOT_FOUND, "Fee structure not found.", "NOT_FOUND")
+
+    item_ids = [parse_uuid(item_id, "item_ids") for item_id in body.item_ids]
+    existing_ids = await conn.fetch(
+        """
+        SELECT id FROM fee_structure_items
+        WHERE fee_structure_id = $1 AND school_id = $2
+        """,
+        structure_id,
+        school_id,
+    )
+    existing_set = {row["id"] for row in existing_ids}
+    provided_set = set(item_ids)
+    if existing_set != provided_set:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "item_ids must include every item for this structure exactly once.",
+            "VALIDATION_ERROR",
+            {"item_ids": "item_ids must match all items on this structure."},
+        )
+
+    positions = list(range(len(item_ids)))
+    await conn.execute(
+        """
+        UPDATE fee_structure_items AS i
+        SET sort_order = r.pos, updated_at = NOW()
+        FROM unnest($1::uuid[], $2::int[]) AS r(id, pos)
+        WHERE i.id = r.id AND i.school_id = $3 AND i.fee_structure_id = $4
+        """,
+        item_ids,
+        positions,
+        school_id,
         structure_id,
     )
-    count = int(count_row["count"]) if count_row else 0
-    amount_changed = body.amount is not None and body.amount != int(existing["amount"])
-
-    payload: dict[str, Any] = {"fee_structure": dict(updated)}
-    if amount_changed and count > 0:
-        payload["warning"] = (
-            f"Amount updated. {count} existing student fee accounts still use the old amount. "
-            "Use 'Sync accounts' to update them."
-        )
-    return {"data": payload}
+    return {"data": {"reordered": True}}
 
 
 @router.post("/structures/{structure_id}/assign")
@@ -287,7 +781,7 @@ async def assign_structure(
 
     structure = await conn.fetchrow(
         """
-        SELECT class_id, amount, term_name, academic_year, description
+        SELECT class_id, amount, term_name, academic_year, description, deleted_at
         FROM fee_structures
         WHERE id = $1 AND school_id = $2
         LIMIT 1
@@ -297,6 +791,12 @@ async def assign_structure(
     )
     if not structure:
         raise _error(status.HTTP_404_NOT_FOUND, "Fee structure not found.", "NOT_FOUND")
+    if structure["deleted_at"] is not None:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "This fee structure has been deleted. Restore it before assigning.",
+            "STRUCTURE_DELETED",
+        )
 
     class_id = structure["class_id"]
     amount = int(structure["amount"])
@@ -323,40 +823,85 @@ async def assign_structure(
     from app.services.fees import invoices as invoice_service
 
     due_date = date.today() + timedelta(days=30)
-
-    async with conn.transaction():
-        inserted = await conn.fetch(
-            """
-            INSERT INTO student_fee_accounts (school_id, student_id, fee_structure_id, amount_owed, status)
-            SELECT $1, s.id, $2, $3, 'unpaid'
-            FROM students s
-            WHERE s.current_class_id = $4
-              AND s.school_id = $1
-              AND s.status = 'active'
-              AND NOT EXISTS (
-                SELECT 1 FROM student_fee_accounts sfa
-                WHERE sfa.student_id = s.id AND sfa.fee_structure_id = $2
-              )
-            RETURNING id
-            """,
-            school_id,
-            structure_id,
-            amount,
-            class_id,
+    item_rows = await conn.fetch(
+        """
+        SELECT description, account_id, amount, sort_order
+        FROM fee_structure_items
+        WHERE fee_structure_id = $1 AND school_id = $2
+        ORDER BY sort_order ASC, created_at ASC
+        """,
+        structure_id,
+        school_id,
+    )
+    items_list = [dict(r) for r in item_rows]
+    if not items_list and amount <= 0:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "This fee structure has no fee items to assign.",
+            "VALIDATION_ERROR",
+            {"items": "Add at least one fee item before assigning."},
         )
 
-        invoices_created = await invoice_service.create_invoices_for_fee_structure(
-            conn,
-            school_id,
-            fees_actor_id(user),
-            structure_id=structure_id,
-            class_id=class_id,
-            amount=amount,
-            term_name=structure["term_name"],
-            academic_year=int(structure["academic_year"]),
-            description=structure["description"],
-            due_date=due_date,
-        )
+    try:
+        async with conn.transaction():
+            inserted = await conn.fetch(
+                """
+                INSERT INTO student_fee_accounts (school_id, student_id, fee_structure_id, amount_owed, status)
+                SELECT $1, s.id, $2, $3, 'unpaid'
+                FROM students s
+                WHERE s.current_class_id = $4
+                  AND s.school_id = $1
+                  AND s.status = 'active'
+                ON CONFLICT (student_id, fee_structure_id) DO NOTHING
+                RETURNING id
+                """,
+                school_id,
+                structure_id,
+                amount,
+                class_id,
+                timeout=90.0,
+            )
+
+            invoices_created = await invoice_service.create_invoices_for_fee_structure(
+                conn,
+                school_id,
+                fees_actor_id(user),
+                structure_id=structure_id,
+                class_id=class_id,
+                amount=amount,
+                term_name=structure["term_name"],
+                academic_year=int(structure["academic_year"]),
+                description=structure["description"],
+                due_date=due_date,
+                items=items_list,
+            )
+
+            if invoices_created > 0:
+                await conn.execute(
+                    """
+                    UPDATE fee_structures
+                    SET locked_at = COALESCE(locked_at, NOW()),
+                        locked_reason = COALESCE(locked_reason, 'Invoices generated'),
+                        updated_at = NOW()
+                    WHERE id = $1 AND school_id = $2 AND deleted_at IS NULL
+                    """,
+                    structure_id,
+                    school_id,
+                )
+    except TimeoutError as exc:
+        logger.exception("Fee structure assign timed out for %s", structure_id)
+        raise _error(
+            status.HTTP_504_GATEWAY_TIMEOUT,
+            "Assigning this fee structure took too long. Try again — accounts already created will be skipped.",
+            "ASSIGN_TIMEOUT",
+        ) from exc
+    except asyncpg.PostgresError as exc:
+        logger.exception("Fee structure assign failed for %s", structure_id)
+        raise _error(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Could not assign fee structure. Please try again.",
+            "ASSIGN_FAILED",
+        ) from exc
 
     return {
         "data": {
@@ -368,8 +913,62 @@ async def assign_structure(
     }
 
 
-@router.post("/structures/{structure_id}/sync-accounts")
-async def sync_accounts(
+@router.delete("/structures/{structure_id}")
+async def soft_delete_structure(
+    structure_id: uuid.UUID,
+    ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """Soft-delete a fee structure. Historical invoices and accounts are preserved."""
+    school_id, user = ctx
+    _require_permission(user, "manageFees")
+
+    existing = await conn.fetchrow(
+        """
+        SELECT id, deleted_at FROM fee_structures
+        WHERE id = $1 AND school_id = $2
+        LIMIT 1
+        """,
+        structure_id,
+        school_id,
+    )
+    if not existing:
+        raise _error(status.HTTP_404_NOT_FOUND, "Fee structure not found.", "NOT_FOUND")
+    if existing["deleted_at"] is not None:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "This fee structure is already deleted.",
+            "ALREADY_DELETED",
+        )
+
+    actor_id = fees_actor_id(user)
+    updated = await conn.fetchrow(
+        """
+        UPDATE fee_structures
+        SET deleted_at = NOW(),
+            deleted_by = $3,
+            is_active = false,
+            updated_at = NOW()
+        WHERE id = $1 AND school_id = $2 AND deleted_at IS NULL
+        RETURNING id, deleted_at, is_active
+        """,
+        structure_id,
+        school_id,
+        actor_id,
+    )
+    return {
+        "data": {
+            "id": str(updated["id"]),
+            "deleted": True,
+            "deleted_at": updated["deleted_at"].isoformat()
+            if hasattr(updated["deleted_at"], "isoformat")
+            else updated["deleted_at"],
+        }
+    }
+
+
+@router.post("/structures/{structure_id}/restore")
+async def restore_structure(
     structure_id: uuid.UUID,
     ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
     conn: asyncpg.Connection = Depends(get_db),
@@ -377,13 +976,87 @@ async def sync_accounts(
     school_id, user = ctx
     _require_permission(user, "manageFees")
 
+    existing = await conn.fetchrow(
+        """
+        SELECT id, deleted_at, class_id, term_name, academic_year
+        FROM fee_structures
+        WHERE id = $1 AND school_id = $2
+        LIMIT 1
+        """,
+        structure_id,
+        school_id,
+    )
+    if not existing:
+        raise _error(status.HTTP_404_NOT_FOUND, "Fee structure not found.", "NOT_FOUND")
+    if existing["deleted_at"] is None:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "This fee structure is not deleted.",
+            "NOT_DELETED",
+        )
+
+    conflict = await conn.fetchrow(
+        """
+        SELECT id FROM fee_structures
+        WHERE school_id = $1 AND class_id = $2 AND term_name = $3 AND academic_year = $4
+          AND deleted_at IS NULL AND id <> $5
+        LIMIT 1
+        """,
+        school_id,
+        existing["class_id"],
+        existing["term_name"],
+        existing["academic_year"],
+        structure_id,
+    )
+    if conflict:
+        raise _error(
+            status.HTTP_409_CONFLICT,
+            "An active fee structure already exists for this class, term, and year. "
+            "Delete or edit that one before restoring.",
+            "CONFLICT",
+            existing_id=str(conflict["id"]),
+        )
+
+    updated = await conn.fetchrow(
+        """
+        UPDATE fee_structures
+        SET deleted_at = NULL,
+            deleted_by = NULL,
+            is_active = true,
+            updated_at = NOW()
+        WHERE id = $1 AND school_id = $2
+        RETURNING id
+        """,
+        structure_id,
+        school_id,
+    )
+    data = await load_structure_with_items(conn, school_id, updated["id"])
+    return {"data": data}
+
+
+@router.post("/structures/{structure_id}/sync-accounts")
+async def sync_accounts(
+    structure_id: uuid.UUID,
+    ctx: tuple[uuid.UUID, dict] = Depends(get_tenant_and_user),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    # Reads denormalized amount from fee_structures — kept in sync by item mutations.
+    school_id, user = ctx
+    _require_permission(user, "manageFees")
+
     structure = await conn.fetchrow(
-        "SELECT amount FROM fee_structures WHERE id = $1 AND school_id = $2 LIMIT 1",
+        "SELECT amount, deleted_at FROM fee_structures WHERE id = $1 AND school_id = $2 LIMIT 1",
         structure_id,
         school_id,
     )
     if not structure:
         raise _error(status.HTTP_404_NOT_FOUND, "Fee structure not found.", "NOT_FOUND")
+    if structure["deleted_at"] is not None:
+        raise _error(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "This fee structure has been deleted.",
+            "STRUCTURE_DELETED",
+        )
 
     amount = int(structure["amount"])
     updated = await conn.fetch(
@@ -549,6 +1222,12 @@ async def record_payment(
     actor_id = fees_actor_id(user)
     student_uuid = parse_uuid(body.student_id, "student_id")
     structure_uuid = parse_uuid(body.fee_structure_id, "fee_structure_id")
+    invoice_uuid = parse_uuid(body.invoice_id, "invoice_id") if body.invoice_id else None
+    allocations = (
+        [{"invoice_item_id": a.invoice_item_id, "amount": a.amount} for a in body.allocations]
+        if body.allocations
+        else None
+    )
 
     try:
         async with conn.transaction():
@@ -563,6 +1242,8 @@ async def record_payment(
                 payment_reference=body.payment_reference,
                 payment_date=payment_date,
                 notes=body.notes,
+                invoice_id=invoice_uuid,
+                allocations=allocations,
             )
     except HTTPException:
         raise
@@ -717,7 +1398,7 @@ async def void_payment(
         )
 
     payment = await conn.fetchrow(
-        "SELECT id, voided, fee_account_id FROM fee_payments WHERE id = $1 AND school_id = $2 LIMIT 1",
+        "SELECT id, voided, fee_account_id, invoice_id FROM fee_payments WHERE id = $1 AND school_id = $2 LIMIT 1",
         payment_id,
         school_id,
     )
@@ -734,11 +1415,15 @@ async def void_payment(
                 SET voided = true, voided_at = NOW(), voided_by = $1, void_reason = $2
                 WHERE id = $3
                 """,
-                uuid.UUID(str(user["sub"])),
+                fees_actor_id(user),
                 body.reason.strip(),
                 payment_id,
             )
             await _recalculate_fee_account(conn, payment["fee_account_id"])
+            if payment["invoice_id"]:
+                from app.services.fees.invoices import recalculate_invoice
+
+                await recalculate_invoice(conn, payment["invoice_id"], school_id)
             updated_payment = await conn.fetchrow("SELECT * FROM fee_payments WHERE id = $1", payment_id)
             updated_account = await conn.fetchrow(
                 "SELECT * FROM student_fee_accounts WHERE id = $1",

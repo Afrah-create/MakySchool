@@ -160,20 +160,38 @@ export function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                         <th>Description</th>
                         <th>Account</th>
                         <th className="text-right">Qty</th>
-                        <th className="text-right">Unit</th>
-                        <th className="text-right">Total</th>
+                        <th className="text-right">Billed</th>
+                        <th className="text-right">Paid</th>
+                        <th className="text-right">Balance</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {invoice.items.map((item) => (
-                        <tr key={item.id ?? item.description}>
-                          <td>{item.description}</td>
-                          <td className="font-mono text-sm">{item.account_code ?? "—"}</td>
-                          <td className="text-right tabular-nums">{item.quantity}</td>
-                          <td className="text-right tabular-nums">{formatUGX(item.unit_amount)}</td>
-                          <td className="text-right tabular-nums font-medium">{formatUGX(item.total_amount)}</td>
-                        </tr>
-                      ))}
+                      {invoice.items.map((item) => {
+                        const paid = item.amount_paid ?? 0;
+                        const balance =
+                          typeof item.balance === "number"
+                            ? item.balance
+                            : Math.max(item.total_amount - paid, 0);
+                        return (
+                          <tr key={item.id ?? item.description}>
+                            <td>{item.description}</td>
+                            <td className="font-mono text-sm">{item.account_code ?? "—"}</td>
+                            <td className="text-right tabular-nums">{item.quantity}</td>
+                            <td className="text-right tabular-nums">{formatUGX(item.total_amount)}</td>
+                            <td className="text-right tabular-nums text-theme-success-text">
+                              {formatUGX(paid)}
+                            </td>
+                            <td
+                              className={cn(
+                                "text-right tabular-nums font-medium",
+                                balance > 0 && "text-theme-danger",
+                              )}
+                            >
+                              {formatUGX(balance)}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -240,7 +258,6 @@ export function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
               onClose={() => setPayOpen(false)}
               onPaid={() => {
                 void mutate();
-                setPayOpen(false);
               }}
             />
 

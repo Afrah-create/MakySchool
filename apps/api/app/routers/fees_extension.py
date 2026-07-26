@@ -121,12 +121,18 @@ class CancelBody(BaseModel):
     reason: str
 
 
+class InvoicePayAllocationInput(BaseModel):
+    invoice_item_id: str
+    amount: int
+
+
 class InvoicePayBody(BaseModel):
     amount: int
     payment_method: str = "cash"
     payment_reference: str | None = None
     payment_date: str | None = None
     notes: str | None = None
+    allocations: list[InvoicePayAllocationInput] | None = None
 
 
 class BudgetCreate(BaseModel):
@@ -646,6 +652,11 @@ async def pay_invoice(
             payment_date=pay_date,
             notes=body.notes,
             recalculate_fee_account_fn=_recalculate_fee_account,
+            allocations=(
+                [{"invoice_item_id": a.invoice_item_id, "amount": a.amount} for a in body.allocations]
+                if body.allocations
+                else None
+            ),
         )
     except ValueError as exc:
         raise _error(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc), "VALIDATION_ERROR") from None

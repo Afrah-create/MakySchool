@@ -32,27 +32,9 @@ def _invoice_status(total: int, paid: int, current: str) -> str:
 
 
 async def _load_invoice_items(conn: asyncpg.Connection, school_id: uuid.UUID, invoice_id: uuid.UUID) -> list:
-    rows = await conn.fetch(
-        """
-        SELECT ii.id, ii.description, ii.quantity, ii.unit_amount, ii.total_amount, ii.account_id,
-               a.name AS account_name, a.code AS account_code
-        FROM invoice_items ii
-        LEFT JOIN accounts a ON a.id = ii.account_id
-        WHERE ii.invoice_id = $1 AND ii.school_id = $2
-        ORDER BY ii.created_at ASC
-        """,
-        invoice_id,
-        school_id,
-    )
-    return [
-        {
-            **dict(r),
-            "quantity": int(r["quantity"]),
-            "unit_amount": int(r["unit_amount"]),
-            "total_amount": int(r["total_amount"]),
-        }
-        for r in rows
-    ]
+    from app.services.fees.allocations import load_invoice_item_balances
+
+    return await load_invoice_item_balances(conn, school_id, invoice_id)
 
 
 async def get_invoice(conn: asyncpg.Connection, school_id: uuid.UUID, invoice_id: uuid.UUID) -> dict | None:
@@ -525,7 +507,13 @@ async def pay_invoice(
     payment_date: date,
     notes: str | None,
     recalculate_fee_account_fn,
+    allocations: list[dict[str, Any]] | None = None,
 ) -> dict:
+    from app.services.fees.allocations import (
+        insert_payment_allocations,
+        validate_and_normalize_allocations,
+    )
+
     inv = await get_invoice(conn, school_id, invoice_id)
     if not inv:
         raise ValueError("Invoice not found.")
@@ -537,6 +525,9 @@ async def pay_invoice(
 
     student_id = uuid.UUID(str(inv["student_id"]))
     fee_structure_id = inv.get("fee_structure_id")
+    normalized = await validate_and_normalize_allocations(
+        conn, school_id, invoice_id, amount, allocations
+    )
 
     async with conn.transaction():
         fee_account_id = None
@@ -559,6 +550,7 @@ async def pay_invoice(
                 SELECT fs.id FROM fee_structures fs
                 JOIN students s ON s.current_class_id = fs.class_id
                 WHERE s.id = $1 AND fs.school_id = $2 AND fs.term_name = $3 AND fs.academic_year = $4
+                  AND fs.deleted_at IS NULL
                 LIMIT 1
                 """,
                 student_id,
@@ -581,7 +573,7 @@ async def pay_invoice(
         if not fee_account_id:
             raise ValueError("No fee account linked to this invoice. Assign a fee structure first.")
 
-        receipt_number = await generate_receipt_number(conn, school_id)
+        receipt_number = await generate_receipt_number(school_id, conn)
         payment_id = uuid.uuid4()
         await conn.execute(
             """
@@ -603,15 +595,52 @@ async def pay_invoice(
             user_id,
             invoice_id,
         )
+        if normalized:
+            await insert_payment_allocations(
+                conn,
+                school_id=school_id,
+                payment_id=payment_id,
+                invoice_id=invoice_id,
+                allocations=normalized,
+            )
         await recalculate_fee_account_fn(conn, fee_account_id)
         await recalculate_invoice(conn, invoice_id, school_id)
 
     updated = await get_invoice(conn, school_id, invoice_id)
     return {
-        "payment_id": str(payment_id),
-        "receipt_number": receipt_number,
+        "payment": {
+            "id": str(payment_id),
+            "receipt_number": receipt_number,
+            "amount": amount,
+            "allocations": normalized,
+        },
         "invoice": updated,
     }
+
+
+async def _allocate_invoice_numbers(
+    conn: asyncpg.Connection, school_id: uuid.UUID, count: int
+) -> list[str]:
+    """Reserve `count` invoice numbers in one round-trip."""
+    if count <= 0:
+        return []
+    from datetime import datetime
+
+    year = datetime.now().year
+    row = await conn.fetchrow(
+        """
+        INSERT INTO invoice_number_sequences (school_id, year, next_seq)
+        VALUES ($1, $2, $3 + 1)
+        ON CONFLICT (school_id, year) DO UPDATE
+        SET next_seq = invoice_number_sequences.next_seq + $3
+        RETURNING (next_seq - $3) AS start_seq
+        """,
+        school_id,
+        year,
+        count,
+    )
+    start = int(row["start_seq"]) if row else 1
+    return [f"INV-{year}-{(start + i):04d}" for i in range(count)]
 
 
 async def create_invoices_for_fee_structure(
@@ -626,11 +655,38 @@ async def create_invoices_for_fee_structure(
     academic_year: int,
     description: str | None = None,
     due_date: date | None = None,
+    items: list[dict[str, Any]] | None = None,
 ) -> int:
     """Create one school-fees invoice per active student who has an account
     for this structure but no non-cancelled invoice yet.
+
+    Invoice line items are snapshotted from fee_structure_items (or a single
+    fallback line when items is empty).
     """
-    if amount <= 0:
+    import logging
+
+    log = logging.getLogger("makyschool")
+
+    line_items = list(items or [])
+    if not line_items:
+        log.warning(
+            "fee_structure %s has no items; falling back to single-line invoice",
+            structure_id,
+        )
+        if amount <= 0:
+            return 0
+        line_description = (description or "").strip() or f"School fees — {term_name} {academic_year}"
+        line_items = [
+            {
+                "description": line_description,
+                "account_id": None,
+                "amount": amount,
+                "sort_order": 0,
+            }
+        ]
+
+    total = sum(int(item["amount"]) for item in line_items)
+    if total <= 0:
         return 0
 
     needing = await conn.fetch(
@@ -654,34 +710,109 @@ async def create_invoices_for_fee_structure(
         school_id,
         structure_id,
         class_id,
+        timeout=60.0,
+    )
+    if not needing:
+        return 0
+
+    eligible: list[uuid.UUID] = []
+    for row in needing:
+        student_id = row["student_id"]
+        existing_number = await _find_duplicate_invoice(
+            conn,
+            school_id,
+            student_id=student_id,
+            fee_structure_id=structure_id,
+            term_name=term_name,
+            academic_year=academic_year,
+            total=total,
+        )
+        if existing_number:
+            continue
+        eligible.append(student_id)
+
+    if not eligible:
+        return 0
+
+    invoice_ids = [uuid.uuid4() for _ in eligible]
+    invoice_numbers = await _allocate_invoice_numbers(conn, school_id, len(eligible))
+    student_ids = eligible
+    due_dates = [due_date] * len(invoice_ids)
+    totals = [total] * len(invoice_ids)
+    term_names = [term_name] * len(invoice_ids)
+    years = [academic_year] * len(invoice_ids)
+    structure_ids = [structure_id] * len(invoice_ids)
+    user_ids = [user_id] * len(invoice_ids)
+    school_ids = [school_id] * len(invoice_ids)
+
+    await conn.execute(
+        """
+        INSERT INTO invoices (
+          id, school_id, student_id, fee_structure_id, invoice_number, due_date,
+          term_name, academic_year, total_amount, notes, created_by
+        )
+        SELECT
+          id, school_id, student_id, fee_structure_id, invoice_number, due_date,
+          term_name, academic_year, total_amount, NULL, created_by
+        FROM unnest(
+          $1::uuid[], $2::uuid[], $3::uuid[], $4::uuid[], $5::text[],
+          $6::date[], $7::text[], $8::int[], $9::bigint[], $10::uuid[]
+        ) AS t(
+          id, school_id, student_id, fee_structure_id, invoice_number,
+          due_date, term_name, academic_year, total_amount, created_by
+        )
+        """,
+        invoice_ids,
+        school_ids,
+        student_ids,
+        structure_ids,
+        invoice_numbers,
+        due_dates,
+        term_names,
+        years,
+        totals,
+        user_ids,
+        timeout=90.0,
     )
 
-    line_description = (description or "").strip() or f"School fees — {term_name} {academic_year}"
-    created = 0
-    for row in needing:
-        try:
-            await _insert_invoice(
-                conn,
-                school_id,
-                user_id,
-                student_id=row["student_id"],
-                fee_structure_id=structure_id,
-                due_date=due_date,
-                term_name=term_name,
-                academic_year=academic_year,
-                notes=None,
-                items=[
-                    {
-                        "description": line_description,
-                        "quantity": 1,
-                        "unit_amount": amount,
-                    }
-                ],
-            )
-        except DuplicateInvoiceError:
-            continue
-        created += 1
-    return created
+    item_invoice_ids: list[uuid.UUID] = []
+    item_school_ids: list[uuid.UUID] = []
+    item_account_ids: list[str | None] = []
+    item_descriptions: list[str] = []
+    item_quantities: list[int] = []
+    item_unit_amounts: list[int] = []
+
+    for invoice_id in invoice_ids:
+        for item in line_items:
+            item_invoice_ids.append(invoice_id)
+            item_school_ids.append(school_id)
+            account = item.get("account_id")
+            item_account_ids.append(str(account) if account else None)
+            item_descriptions.append(str(item["description"]).strip())
+            item_quantities.append(1)
+            item_unit_amounts.append(int(item["amount"]))
+
+    # Cast via text[] so all-null account_id arrays type-check in asyncpg.
+    await conn.execute(
+        """
+        INSERT INTO invoice_items
+          (id, school_id, invoice_id, account_id, description, quantity, unit_amount)
+        SELECT
+          gen_random_uuid(), school_id, invoice_id, account_id::uuid, description, quantity, unit_amount
+        FROM unnest(
+          $1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::int[], $6::bigint[]
+        ) AS t(school_id, invoice_id, account_id, description, quantity, unit_amount)
+        """,
+        item_school_ids,
+        item_invoice_ids,
+        item_account_ids,
+        item_descriptions,
+        item_quantities,
+        item_unit_amounts,
+        timeout=90.0,
+    )
+
+    return len(invoice_ids)
 
 
 async def list_student_invoices(

@@ -7,6 +7,7 @@ import { cn } from "@makyschool/ui/lib/cn";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useApiSWR } from "@/hooks/useApiSWR";
 import { apiClient } from "@/lib/api/client";
+import { getFeeStructure } from "@/lib/api/fees";
 import { fetchActiveStudentIdsForClass } from "@/lib/fees/classStudents";
 import { formatUGX, formatUGXInput, parseUGXInput } from "@/lib/formatCurrency";
 import type { FeeStructure, InvoiceBulkResult, InvoiceDetail } from "@/lib/fees/types";
@@ -94,14 +95,33 @@ export function AddInvoicePanel({
     setSelectedStudents(new Set());
     setTermName(structure.term_name);
     setAcademicYear(structure.academic_year);
-    setItems([
-      {
-        description: structure.description?.trim() || `Fees — ${structure.class_name}`,
-        account_id: "",
-        quantity: 1,
-        unit_amount: Number(structure.amount),
-      },
-    ]);
+
+    void (async () => {
+      try {
+        const detail = await getFeeStructure(structureId);
+        if (detail.items?.length) {
+          setItems(
+            detail.items.map((item) => ({
+              description: item.description,
+              account_id: item.account_id ?? "",
+              quantity: 1,
+              unit_amount: Number(item.amount),
+            })),
+          );
+          return;
+        }
+      } catch {
+        toast.info("Could not load structure items; using total amount instead.");
+      }
+      setItems([
+        {
+          description: structure.description?.trim() || `Fees — ${structure.class_name}`,
+          account_id: "",
+          quantity: 1,
+          unit_amount: Number(structure.amount),
+        },
+      ]);
+    })();
   }
 
   function requestClose() {
