@@ -15,43 +15,65 @@ export function DashboardHero({ school }: { school: SchoolRecord | null }) {
   const { state } = useAuth();
   const firstName = state.user?.name?.split(" ")[0] ?? "there";
   const greeting = greetingForHour(new Date().getHours());
+  const schoolName = school?.name ?? "Your school";
 
   return (
-    <div className="ms-hero relative overflow-hidden p-6 sm:p-8">
-      <div
-        className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-white/10"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute bottom-0 right-16 h-24 w-24 rounded-full bg-white/5"
-        aria-hidden
-      />
-
-      <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-        <div className="max-w-xl">
-          <p className="text-sm font-medium text-white/80">{school?.name ?? "Your school"}</p>
-          <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">
+    <>
+      <div className="flex items-center gap-3 rounded-2xl border border-theme bg-theme-surface p-3.5 sm:hidden">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-theme-accent-muted text-theme-accent">
+          <GraduationCap className="h-6 w-6" strokeWidth={1.75} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs text-theme-muted">{schoolName}</p>
+          <h1 className="truncate text-lg font-semibold text-theme-primary">
             {greeting}, {firstName}
           </h1>
-          <p className="mt-2 text-sm leading-relaxed text-white/85">
-            Manage classes, subjects, and academic structure for your school. Review your setup and
-            keep class assignments up to date.
-          </p>
           <Link
             href="/dashboard/classes"
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-theme-accent shadow-theme-soft transition hover:bg-white/95"
+            className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-theme-accent"
           >
             Manage classes
-            <ArrowRight className="h-4 w-4" />
+            <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
+      </div>
 
-        <div className="hidden shrink-0 sm:flex">
-          <div className="flex h-28 w-28 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-sm">
-            <GraduationCap className="h-14 w-14 text-white/90" strokeWidth={1.5} />
+      <div className="ms-hero relative hidden overflow-hidden p-6 sm:block sm:p-8">
+        <div
+          className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-white/10"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute bottom-0 right-16 h-24 w-24 rounded-full bg-white/5"
+          aria-hidden
+        />
+
+        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="max-w-xl">
+            <p className="text-sm font-medium text-white/80">{schoolName}</p>
+            <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">
+              {greeting}, {firstName}
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed text-white/85">
+              Manage classes, subjects, and academic structure for your school. Review your setup and
+              keep class assignments up to date.
+            </p>
+            <Link
+              href="/dashboard/classes"
+              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-theme-accent shadow-theme-soft transition hover:bg-white/95"
+            >
+              Manage classes
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          <div className="hidden shrink-0 sm:flex">
+            <div className="flex h-28 w-28 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-sm">
+              <GraduationCap className="h-14 w-14 text-white/90" strokeWidth={1.5} />
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

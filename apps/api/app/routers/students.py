@@ -977,18 +977,6 @@ async def update_student(
 ):
     school_id, actor = ctx
 
-    raw_body = await request.json()
-    if "class_id" in raw_body:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "error": "Use the class transfer endpoint to move a student to a different class.",
-                "code": "VALIDATION_ERROR",
-            },
-        )
-
-    body = UpdateStudentBody(**raw_body)
-
     if not can(actor["role"], "manageStaff"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -997,6 +985,80 @@ async def update_student(
                 "code": "FORBIDDEN",
             },
         )
+
+    content_type = (request.headers.get("content-type") or "").lower()
+    photo_buffer: bytes | None = None
+    photo_mimetype: str | None = None
+    raw_body: dict[str, Any]
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        if "class_id" in form:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "Use the class transfer endpoint to move a student to a different class.",
+                    "code": "VALIDATION_ERROR",
+                },
+            )
+
+        def _form_str(key: str) -> str | None:
+            value = form.get(key)
+            if value is None or isinstance(value, UploadFile):
+                return None
+            text = str(value).strip()
+            return text if text else None
+
+        raw_body = {}
+        if "full_name" in form:
+            raw_body["full_name"] = _form_str("full_name")
+        if "date_of_birth" in form:
+            raw_body["date_of_birth"] = _form_str("date_of_birth")
+        if "gender" in form:
+            raw_body["gender"] = _form_str("gender")
+        if "guardian_name" in form:
+            raw_body["guardian_name"] = _form_str("guardian_name")
+        if "guardian_phone" in form:
+            raw_body["guardian_phone"] = _form_str("guardian_phone")
+        if "guardian_email" in form:
+            raw_body["guardian_email"] = _form_str("guardian_email")
+        if "guardian_relationship" in form:
+            raw_body["guardian_relationship"] = _form_str("guardian_relationship")
+
+        photo_field = form.get("photo")
+        if isinstance(photo_field, UploadFile) and photo_field.filename:
+            photo_mimetype = photo_field.content_type or ""
+            if photo_mimetype not in ALLOWED_STUDENT_PHOTO_TYPES:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "error": "Please fix the highlighted fields and try again.",
+                        "code": "VALIDATION_ERROR",
+                        "fields": {"photo": "Photo must be a JPEG, PNG, or WebP image."},
+                    },
+                )
+            photo_buffer = await photo_field.read()
+            if len(photo_buffer) > 2 * 1024 * 1024:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "error": "Please fix the highlighted fields and try again.",
+                        "code": "VALIDATION_ERROR",
+                        "fields": {"photo": "Photo must be under 2 MB."},
+                    },
+                )
+    else:
+        raw_body = await request.json()
+        if "class_id" in raw_body:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "Use the class transfer endpoint to move a student to a different class.",
+                    "code": "VALIDATION_ERROR",
+                },
+            )
+
+    body = UpdateStudentBody(**raw_body)
 
     fields = await _validate_student_fields(
         conn,
@@ -1039,6 +1101,17 @@ async def update_student(
     if body.gender is not None:
         updates.append(f"gender = ${index}")
         params.append(body.gender or None)
+        index += 1
+
+    if photo_buffer and photo_mimetype:
+        photo_url = await save_student_photo(
+            school_id,
+            student_id,
+            photo_buffer,
+            photo_mimetype,
+        )
+        updates.append(f"photo_url = ${index}")
+        params.append(photo_url)
         index += 1
 
     if updates:

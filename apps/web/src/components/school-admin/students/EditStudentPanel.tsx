@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Camera } from "lucide-react";
 import { Modal } from "@makyschool/ui/components/ui/Modal";
 import { apiClient } from "@/lib/api/client";
 import type { StudentDetail } from "@/lib/students/types";
-import { validateStudentForm } from "@/lib/validation/students";
+import { studentInitials, validateStudentForm } from "@/lib/validation/students";
 import { useToast } from "@/providers/ToastProvider";
+
+const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
+const ACCEPTED_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 export function EditStudentPanel({
   student,
@@ -25,6 +28,8 @@ export function EditStudentPanel({
   const [guardianRelationship, setGuardianRelationship] = useState("parent");
   const [guardianPhone, setGuardianPhone] = useState("");
   const [guardianEmail, setGuardianEmail] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -35,6 +40,8 @@ export function EditStudentPanel({
     [student?.class_name],
   );
 
+  const displayPhoto = photoPreview ?? student?.photo_url ?? null;
+
   useEffect(() => {
     if (!student) return;
     setFullName(student.full_name);
@@ -44,10 +51,18 @@ export function EditStudentPanel({
     setGuardianRelationship(student.guardian?.relationship ?? "parent");
     setGuardianPhone(student.guardian?.phone ?? "");
     setGuardianEmail(student.guardian?.email ?? "");
+    setPhoto(null);
+    setPhotoPreview(null);
     setErrors({});
     setBannerError(null);
     setDirty(false);
   }, [student]);
+
+  useEffect(() => {
+    return () => {
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+    };
+  }, [photoPreview]);
 
   if (!student) return null;
 
@@ -56,6 +71,42 @@ export function EditStudentPanel({
       return;
     }
     onClose();
+  }
+
+  function handlePhotoSelect(file: File | null) {
+    if (!file) {
+      setPhoto(null);
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+      setPhotoPreview(null);
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.photo;
+        return next;
+      });
+      return;
+    }
+
+    if (!ACCEPTED_PHOTO_TYPES.includes(file.type)) {
+      setErrors((prev) => ({ ...prev, photo: "Photo must be a JPEG, PNG, or WebP image." }));
+      toast.error("Photo must be a JPEG, PNG, or WebP image.");
+      return;
+    }
+
+    if (file.size > MAX_PHOTO_BYTES) {
+      setErrors((prev) => ({ ...prev, photo: "Photo must be under 2 MB." }));
+      toast.error("Photo must be under 2 MB.");
+      return;
+    }
+
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.photo;
+      return next;
+    });
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setPhoto(file);
+    setPhotoPreview(URL.createObjectURL(file));
+    setDirty(true);
   }
 
   async function handleSubmit(event: React.FormEvent) {
@@ -75,25 +126,44 @@ export function EditStudentPanel({
     setBannerError(null);
 
     try {
-      await apiClient(`/schools/students/${student!.id}`, {
-        method: "PATCH",
-        body: {
-          full_name: fullName.trim(),
-          date_of_birth: dateOfBirth || null,
-          gender: gender || null,
-          guardian_name: guardianName.trim(),
-          guardian_relationship: guardianRelationship,
-          guardian_phone: guardianPhone.trim() || null,
-          guardian_email: guardianEmail.trim() || null,
-        },
-      });
-      toast.success(`Changes saved for ${fullName.trim()}.`);
+      if (photo) {
+        const formData = new FormData();
+        formData.append("full_name", fullName.trim());
+        formData.append("date_of_birth", dateOfBirth || "");
+        formData.append("gender", gender || "");
+        formData.append("guardian_name", guardianName.trim());
+        formData.append("guardian_relationship", guardianRelationship);
+        formData.append("guardian_phone", guardianPhone.trim());
+        formData.append("guardian_email", guardianEmail.trim());
+        formData.append("photo", photo);
+
+        await apiClient(`/schools/students/${student!.id}`, {
+          method: "PATCH",
+          body: formData,
+        });
+        toast.success(`Profile photo and details updated for ${fullName.trim()}.`);
+      } else {
+        await apiClient(`/schools/students/${student!.id}`, {
+          method: "PATCH",
+          body: {
+            full_name: fullName.trim(),
+            date_of_birth: dateOfBirth || null,
+            gender: gender || null,
+            guardian_name: guardianName.trim(),
+            guardian_relationship: guardianRelationship,
+            guardian_phone: guardianPhone.trim() || null,
+            guardian_email: guardianEmail.trim() || null,
+          },
+        });
+        toast.success(`Changes saved for ${fullName.trim()}.`);
+      }
       onSaved();
       onClose();
     } catch (error) {
       const err = error as Error & { fields?: Record<string, string> };
       if (err.fields) setErrors(err.fields);
       setBannerError(err.message);
+      toast.error(err.message || "Could not save student changes.");
     } finally {
       setLoading(false);
     }
@@ -109,7 +179,53 @@ export function EditStudentPanel({
     >
       <form onSubmit={(event) => void handleSubmit(event)} className="space-y-6">
         <div>
-          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-theme-muted">Student details</p>
+          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-theme-muted">
+            Profile photo
+          </p>
+          <div className="flex items-center gap-4">
+            {displayPhoto ? (
+              <img
+                src={displayPhoto}
+                alt=""
+                className="h-16 w-16 rounded-2xl object-cover ring-1 ring-theme-subtle"
+              />
+            ) : (
+              <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-theme-accent-muted text-sm font-semibold text-theme-accent">
+                {studentInitials(fullName || student.full_name)}
+              </span>
+            )}
+            <div className="min-w-0 flex-1">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-theme bg-theme-surface px-3 py-2 text-sm font-medium text-theme-primary transition hover:border-accent-soft">
+                <Camera className="h-4 w-4 text-theme-muted" />
+                {photo || student.photo_url ? "Change photo" : "Upload photo"}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="sr-only"
+                  onChange={(e) => handlePhotoSelect(e.target.files?.[0] ?? null)}
+                />
+              </label>
+              <p className="mt-1.5 text-xs text-theme-muted">JPEG, PNG, or WebP. Max 2 MB.</p>
+              {photo ? (
+                <button
+                  type="button"
+                  className="mt-1 text-xs font-medium text-theme-accent hover:underline"
+                  onClick={() => handlePhotoSelect(null)}
+                >
+                  Remove selected photo
+                </button>
+              ) : null}
+              {errors.photo ? (
+                <p className="mt-1 text-xs text-theme-danger">{errors.photo}</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-theme-muted">
+            Student details
+          </p>
           <div className="space-y-4">
             <div>
               <p className="text-xs text-theme-muted">Learner ID</p>
@@ -184,7 +300,9 @@ export function EditStudentPanel({
         </div>
 
         <div>
-          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-theme-muted">Parent / Guardian</p>
+          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-theme-muted">
+            Parent / Guardian
+          </p>
           <div className="space-y-4">
             <label className="block">
               <span className="mb-1 block text-xs text-theme-muted">Guardian name *</span>

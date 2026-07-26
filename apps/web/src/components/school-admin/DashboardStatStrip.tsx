@@ -84,14 +84,14 @@ export function DashboardStatStrip() {
               View all
             </Link>
           </div>
-          <div className="mt-4 flex gap-4 overflow-x-auto pb-1">
+          <div className="mt-4 -mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:gap-4 sm:px-0 [&::-webkit-scrollbar]:hidden">
             {cards.map((card) => {
               const Icon = card.icon;
               return (
                 <Link
                   key={card.key}
                   href={card.href}
-                  className="ms-card group flex w-56 shrink-0 flex-col justify-between p-5 transition hover:border-accent-soft"
+                  className="ms-card group flex w-44 shrink-0 flex-col justify-between p-4 transition hover:border-accent-soft sm:w-56 sm:p-5"
                 >
                   <div className="flex items-start justify-between">
                     <span

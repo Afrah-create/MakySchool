@@ -16,6 +16,7 @@ import { useApiSWR } from "@/hooks/useApiSWR";
 import { formatUGX } from "@/lib/formatCurrency";
 import { learnerFirstName, type LearnerMe } from "@/lib/learner/types";
 import { studentInitials } from "@/lib/validation/students";
+import { LearnerTodayTimetable } from "@/components/learner/LearnerTodayTimetable";
 
 function StatCard({
   label,
@@ -211,6 +212,8 @@ export function LearnerDashboardContent() {
                   hint={`${learner.fees.account_count} fee account${learner.fees.account_count === 1 ? "" : "s"}`}
                 />
               </div>
+
+              <LearnerTodayTimetable />
 
               <section className="space-y-3">
                 <div>

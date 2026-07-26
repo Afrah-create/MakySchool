@@ -100,26 +100,28 @@ export function TeacherStatsRow({ teacher }: { teacher: TeacherDetail }) {
   const classCount = buildTeacherClassMap(teacher.assignments).size;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <div className="rounded-xl border border-theme bg-theme-surface p-5">
+    <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 [&::-webkit-scrollbar]:hidden">
+      <div className="min-w-[10.5rem] flex-1 rounded-2xl border border-theme bg-theme-surface p-3.5 sm:min-w-0 sm:p-5">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-theme-accent-muted text-theme-accent">
-            <BookOpen className="h-5 w-5" />
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-theme-accent-muted text-theme-accent sm:h-10 sm:w-10">
+            <BookOpen className="h-4 w-4 sm:h-5 sm:w-5" />
           </span>
           <div>
-            <p className="text-xs text-theme-muted">Assigned classes</p>
-            <p className="text-2xl font-semibold tabular-nums text-theme-primary">{classCount}</p>
+            <p className="text-[11px] text-theme-muted sm:text-xs">Assigned classes</p>
+            <p className="text-xl font-semibold tabular-nums text-theme-primary sm:text-2xl">
+              {classCount}
+            </p>
           </div>
         </div>
       </div>
-      <div className="rounded-xl border border-theme bg-theme-surface p-5">
+      <div className="min-w-[10.5rem] flex-1 rounded-2xl border border-theme bg-theme-surface p-3.5 sm:min-w-0 sm:p-5">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-theme-icon text-theme-muted">
-            <Users className="h-5 w-5" />
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-theme-icon text-theme-muted sm:h-10 sm:w-10">
+            <Users className="h-4 w-4 sm:h-5 sm:w-5" />
           </span>
           <div>
-            <p className="text-xs text-theme-muted">My students</p>
-            <p className="text-2xl font-semibold tabular-nums text-theme-primary">
+            <p className="text-[11px] text-theme-muted sm:text-xs">My students</p>
+            <p className="text-xl font-semibold tabular-nums text-theme-primary sm:text-2xl">
               {teacher.total_students > 0 ? teacher.total_students : "—"}
             </p>
           </div>

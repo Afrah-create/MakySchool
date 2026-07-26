@@ -11,11 +11,11 @@ import { cn } from "@makyschool/ui/lib/cn";
 import { useSchoolSWR } from "@/hooks/useSchoolSWR";
 import {
   TIMETABLE_DAYS,
-  TRACK_TONE,
   dayLabelForValue,
   formatTimetableTime,
   todayDayOfWeek,
 } from "@/lib/timetable/utils";
+import { TimetableDayTimeline, TimetableLessonCard } from "@/components/timetable/TimetableDayView";
 
 function sortPeriods(periods: TimetablePeriod[]) {
   return [...periods].sort((a, b) => {
@@ -33,43 +33,18 @@ function PeriodLessonCard({
   compact?: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        "rounded-xl border border-theme bg-theme-surface transition hover:border-accent-soft",
-        compact ? "p-3" : "p-4",
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <span className="inline-flex rounded-full bg-theme-accent-muted px-2 py-0.5 text-[11px] font-semibold text-theme-accent">
-          P{period.period_number}
-        </span>
-        <span className="inline-flex items-center gap-1 text-[11px] text-theme-muted">
-          <Clock3 className="h-3 w-3" />
-          {formatTimetableTime(period.start_time)} – {formatTimetableTime(period.end_time)}
-        </span>
-      </div>
-      <p className={cn("mt-2 font-semibold text-theme-primary", compact ? "text-sm" : "text-base")}>
-        {period.subject_name}
-      </p>
-      <p className="mt-1 text-sm text-theme-muted">{period.class_name ?? "Class"}</p>
-      <span
-        className={cn(
-          "mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium capitalize",
-          TRACK_TONE[period.track],
-        )}
-      >
-        {period.track}
-      </span>
-    </div>
+    <TimetableLessonCard period={period} showClass compact={compact} />
   );
 }
 
 function TodaySchedule({
   periods,
   today,
+  compact = false,
 }: {
   periods: TimetablePeriod[];
   today: number;
+  compact?: boolean;
 }) {
   const todayPeriods = useMemo(
     () =>
@@ -78,6 +53,16 @@ function TodaySchedule({
       ),
     [periods, today],
   );
+
+  if (compact) {
+    return (
+      <TimetableDayTimeline
+        periods={todayPeriods}
+        emptyLabel="No lessons scheduled today"
+        showClass
+      />
+    );
+  }
 
   if (todayPeriods.length === 0) {
     return (
@@ -286,7 +271,7 @@ export function TeacherTimetableCard({ compact = false }: { compact?: boolean })
                   </span>
                 </div>
               ) : null}
-              <TodaySchedule periods={grid.periods} today={today} />
+              <TodaySchedule periods={grid.periods} today={today} compact={compact} />
             </div>
 
             {!compact ? (

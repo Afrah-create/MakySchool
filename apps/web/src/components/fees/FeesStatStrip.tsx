@@ -11,28 +11,21 @@ export function FeesStatStrip({
     tone?: "default" | "danger" | "success";
   }>;
 }) {
-  const cols =
-    items.length <= 2
-      ? "grid-cols-1 sm:grid-cols-2"
-      : items.length === 3
-        ? "grid-cols-1 sm:grid-cols-3"
-        : "grid-cols-2 lg:grid-cols-4";
-
   return (
-    <div className={cn("grid gap-3 sm:gap-4", cols)}>
+    <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4 [&::-webkit-scrollbar]:hidden">
       {items.map((item) => (
         <div
           key={item.label}
-          className="rounded-2xl border border-theme bg-theme-surface px-4 py-4 sm:px-5"
+          className="min-w-[9.75rem] flex-1 rounded-2xl border border-theme bg-theme-surface px-3.5 py-3.5 sm:min-w-0 sm:px-5 sm:py-4"
         >
           <p className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
             {item.label}
           </p>
           <p
             className={cn(
-              "mt-2 text-lg font-semibold tabular-nums tracking-tight sm:text-xl",
+              "mt-1.5 text-lg font-semibold tabular-nums tracking-tight sm:mt-2 sm:text-xl",
               item.tone === "danger" && "text-theme-danger",
-              item.tone === "success" && "text-theme-success-text",
+              item.tone === "success" && "text-theme-success",
               (!item.tone || item.tone === "default") && "text-theme-primary",
             )}
           >

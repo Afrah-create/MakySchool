@@ -99,19 +99,32 @@ export function FeesDashboardContent({ variant = "bursar" }: { variant?: "bursar
       }
     >
       {!isAdmin ? (
-        <div className="ms-hero relative overflow-hidden rounded-2xl p-5 sm:p-7">
-          <div className="relative max-w-xl">
-            <p className="text-sm font-medium text-white/80">Today&apos;s collections</p>
-            <h2 className="mt-1 text-2xl font-semibold sm:text-3xl">
+        <>
+          <div className="rounded-2xl border border-theme bg-theme-surface p-4 sm:hidden">
+            <p className="text-xs font-medium text-theme-muted">Today&apos;s collections</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-theme-primary">
               {data ? formatUGX(data.stats.total_collected) : "—"}
-            </h2>
-            <p className="mt-2 text-sm text-white/85">
+            </p>
+            <p className="mt-1 text-xs text-theme-muted">
               {data && data.stats.total_outstanding > 0
-                ? `${formatUGX(data.stats.total_outstanding)} still outstanding this term.`
-                : "Track payments and outstanding balances from one place."}
+                ? `${formatUGX(data.stats.total_outstanding)} still outstanding`
+                : "Track payments and balances"}
             </p>
           </div>
-        </div>
+          <div className="ms-hero relative hidden overflow-hidden rounded-2xl p-5 sm:block sm:p-7">
+            <div className="relative max-w-xl">
+              <p className="text-sm font-medium text-white/80">Today&apos;s collections</p>
+              <h2 className="mt-1 text-2xl font-semibold sm:text-3xl">
+                {data ? formatUGX(data.stats.total_collected) : "—"}
+              </h2>
+              <p className="mt-2 text-sm text-white/85">
+                {data && data.stats.total_outstanding > 0
+                  ? `${formatUGX(data.stats.total_outstanding)} still outstanding this term.`
+                  : "Track payments and outstanding balances from one place."}
+              </p>
+            </div>
+          </div>
+        </>
       ) : null}
 
       <QueryState

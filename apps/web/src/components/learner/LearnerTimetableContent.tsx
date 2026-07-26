@@ -9,9 +9,9 @@ import { QueryState } from "@makyschool/ui/components/ui/QueryState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { cn } from "@makyschool/ui/lib/cn";
 import { useApiSWR } from "@/hooks/useApiSWR";
+import { TimetableDayTimeline, TimetableLessonCard } from "@/components/timetable/TimetableDayView";
 import {
   TIMETABLE_DAYS,
-  TRACK_TONE,
   dayLabelForValue,
   formatTimetableTime,
   todayDayOfWeek,
@@ -30,34 +30,6 @@ function sortPeriods(periods: TimetablePeriod[]) {
     if (a.period_number !== b.period_number) return a.period_number - b.period_number;
     return a.start_time.localeCompare(b.start_time);
   });
-}
-
-function LessonCard({ period }: { period: TimetablePeriod }) {
-  return (
-    <div className="rounded-2xl border border-theme bg-theme-surface p-4 transition hover:border-accent-soft">
-      <div className="flex items-start justify-between gap-2">
-        <span className="inline-flex rounded-full bg-theme-accent-muted px-2.5 py-0.5 text-[11px] font-semibold text-theme-accent">
-          Period {period.period_number}
-        </span>
-        <span className="inline-flex items-center gap-1 text-[11px] text-theme-muted">
-          <Clock3 className="h-3 w-3" />
-          {formatTimetableTime(period.start_time)} – {formatTimetableTime(period.end_time)}
-        </span>
-      </div>
-      <p className="mt-2 text-base font-semibold text-theme-primary">{period.subject_name}</p>
-      {period.teacher_name ? (
-        <p className="mt-1 text-sm text-theme-muted">{period.teacher_name}</p>
-      ) : null}
-      <span
-        className={cn(
-          "mt-3 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium capitalize",
-          TRACK_TONE[period.track],
-        )}
-      >
-        {period.track}
-      </span>
-    </div>
-  );
 }
 
 function WeekGrid({ periods, today }: { periods: TimetablePeriod[]; today: number }) {
@@ -160,11 +132,11 @@ export function LearnerTimetableContent() {
         onRetry={() => void mutate()}
         loading={
           <div className="space-y-4">
-            <Skeleton className="h-28 w-full rounded-2xl" />
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Skeleton className="h-20 rounded-2xl" />
-              <Skeleton className="h-20 rounded-2xl" />
-              <Skeleton className="h-20 rounded-2xl" />
+            <Skeleton className="h-20 w-full rounded-2xl sm:h-28" />
+            <div className="flex gap-3 overflow-hidden sm:grid sm:grid-cols-3">
+              <Skeleton className="h-20 min-w-[9rem] flex-1 rounded-2xl" />
+              <Skeleton className="h-20 min-w-[9rem] flex-1 rounded-2xl" />
+              <Skeleton className="h-20 min-w-[9rem] flex-1 rounded-2xl" />
             </div>
             <Skeleton className="h-72 w-full rounded-2xl" />
           </div>
@@ -208,7 +180,19 @@ export function LearnerTimetableContent() {
 
           return (
             <div className="space-y-6 sm:space-y-8">
-              <div className="ms-hero relative overflow-hidden rounded-2xl p-5 sm:p-7">
+              <div className="rounded-2xl border border-theme bg-theme-surface p-4 sm:hidden">
+                <p className="text-xs font-medium text-theme-muted">Class timetable</p>
+                <h1 className="mt-0.5 text-lg font-semibold text-theme-primary">
+                  {timetable.className ?? "Your class"}
+                </h1>
+                <p className="mt-1 text-xs text-theme-muted">
+                  {todayPeriods.length > 0
+                    ? `${todayPeriods.length} lesson${todayPeriods.length === 1 ? "" : "s"} today`
+                    : `No lessons for ${dayLabelForValue(today)}`}
+                </p>
+              </div>
+
+              <div className="ms-hero relative hidden overflow-hidden rounded-2xl p-5 sm:block sm:p-7">
                 <div className="relative max-w-xl">
                   <p className="text-sm font-medium text-white/80">Class timetable</p>
                   <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">
@@ -222,7 +206,7 @@ export function LearnerTimetableContent() {
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0 [&::-webkit-scrollbar]:hidden">
                 {[
                   { label: "Lessons today", value: todayPeriods.length, icon: CalendarDays },
                   { label: "Lessons this week", value: periods.length, icon: BookOpen },
@@ -232,14 +216,14 @@ export function LearnerTimetableContent() {
                   return (
                     <div
                       key={stat.label}
-                      className="flex items-center gap-3 rounded-2xl border border-theme bg-theme-surface px-4 py-3"
+                      className="flex min-w-[9.5rem] flex-1 items-center gap-3 rounded-2xl border border-theme bg-theme-surface px-3.5 py-3 sm:min-w-0"
                     >
-                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-theme-accent-muted text-theme-accent">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-theme-accent-muted text-theme-accent">
                         <Icon className="h-4 w-4" />
                       </span>
                       <div>
-                        <p className="text-xs text-theme-muted">{stat.label}</p>
-                        <p className="text-xl font-semibold tabular-nums text-theme-primary">
+                        <p className="text-[11px] text-theme-muted sm:text-xs">{stat.label}</p>
+                        <p className="text-lg font-semibold tabular-nums text-theme-primary sm:text-xl">
                           {stat.value}
                         </p>
                       </div>
@@ -248,54 +232,68 @@ export function LearnerTimetableContent() {
                 })}
               </div>
 
-              {/* Mobile / tablet: day selector + cards */}
               <section className="space-y-4 lg:hidden">
                 <div>
                   <h2 className="text-sm font-semibold text-theme-primary">Daily view</h2>
                   <p className="text-xs text-theme-muted">Pick a day to see lessons</p>
                 </div>
-                <div className="flex gap-2 overflow-x-auto pb-1">
+                <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   {TIMETABLE_DAYS.map((day) => {
                     const count = periods.filter((p) => p.day_of_week === day.value).length;
                     const active = selectedDay === day.value;
+                    const isToday = day.value === today;
                     return (
                       <button
                         key={day.value}
                         type="button"
                         onClick={() => setSelectedDay(day.value)}
                         className={cn(
-                          "shrink-0 rounded-xl border px-3 py-2 text-left transition",
+                          "shrink-0 rounded-2xl border px-3.5 py-2.5 text-left transition",
                           active
-                            ? "border-theme-accent bg-theme-accent-muted text-theme-accent"
-                            : "border-theme bg-theme-surface text-theme-muted hover:border-accent-soft",
+                            ? "border-theme-accent bg-theme-accent text-on-accent shadow-theme-accent"
+                            : isToday
+                              ? "border-accent-soft bg-theme-accent-muted text-theme-accent"
+                              : "border-theme bg-theme-surface text-theme-muted hover:border-accent-soft",
                         )}
                       >
                         <p className="text-xs font-semibold">{day.label}</p>
-                        <p className="text-[10px] opacity-80">{count} lesson{count === 1 ? "" : "s"}</p>
+                        <p className={cn("text-[10px]", active ? "text-on-accent/80" : "opacity-80")}>
+                          {count} lesson{count === 1 ? "" : "s"}
+                        </p>
                       </button>
                     );
                   })}
                 </div>
-                {selectedPeriods.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-theme bg-theme-surface px-5 py-8 text-center">
-                    <p className="text-sm font-medium text-theme-primary">No lessons this day</p>
-                  </div>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {selectedPeriods.map((period) => (
-                      <LessonCard key={period.id} period={period} />
-                    ))}
-                  </div>
-                )}
+                <TimetableDayTimeline
+                  periods={selectedPeriods}
+                  emptyLabel="No lessons this day"
+                  showTeacher
+                />
               </section>
 
-              {/* Desktop week grid */}
               <section className="hidden space-y-4 lg:block">
                 <div>
                   <h2 className="text-sm font-semibold text-theme-primary">Weekly grid</h2>
                   <p className="text-xs text-theme-muted">Full class schedule for the current term</p>
                 </div>
                 <WeekGrid periods={periods} today={today} />
+              </section>
+
+              <section className="hidden space-y-3 lg:block">
+                <h2 className="text-sm font-semibold text-theme-primary">
+                  Today — {dayLabelForValue(today)}
+                </h2>
+                {todayPeriods.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-theme px-5 py-8 text-center text-sm text-theme-muted">
+                    No lessons scheduled today
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {todayPeriods.map((period) => (
+                      <TimetableLessonCard key={period.id} period={period} showTeacher />
+                    ))}
+                  </div>
+                )}
               </section>
             </div>
           );
