@@ -46,6 +46,13 @@ export const learnerMobileTabs: MobileTab[] = [
     exact: true,
   },
   {
+    id: "fees",
+    href: "/learner/fees",
+    label: "Fees",
+    icon: CircleDollarSign,
+    matchPrefixes: ["/learner/fees"],
+  },
+  {
     id: "timetable",
     href: "/learner/timetable",
     label: "Timetable",
@@ -53,11 +60,16 @@ export const learnerMobileTabs: MobileTab[] = [
     matchPrefixes: ["/learner/timetable"],
   },
   {
-    id: "profile",
-    href: "/learner/profile",
-    label: "Profile",
-    icon: User,
-    matchPrefixes: ["/learner/profile", "/learner/attendance", "/learner/fees", "/learner/report-cards"],
+    id: "more",
+    href: "/learner/menu",
+    label: "More",
+    icon: LayoutGrid,
+    matchPrefixes: [
+      "/learner/menu",
+      "/learner/profile",
+      "/learner/attendance",
+      "/learner/report-cards",
+    ],
   },
 ];
 

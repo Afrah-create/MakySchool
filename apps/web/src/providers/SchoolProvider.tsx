@@ -37,6 +37,10 @@ export function useSchool() {
   return context;
 }
 
+export function useOptionalSchool() {
+  return useContext(SchoolContext);
+}
+
 /** @deprecated Use useSchool */
 export const useTenantSchool = useSchool;
 

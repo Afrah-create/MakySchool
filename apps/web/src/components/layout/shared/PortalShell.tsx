@@ -1,13 +1,18 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useMemo } from "react";
 import type { UserRole } from "@makyschool/shared/types";
 import { MobileAppChrome } from "@/components/layout/mobile/MobileAppChrome";
 import { PortalSidebar } from "@/components/layout/shared/PortalNav";
 import { TenantDashboardShell } from "@/components/layout/TenantDashboardShell";
 import { bursarNavGroups, learnerNavGroups, teacherNavGroups } from "@/lib/roles";
 import { getPortalMobileTabs } from "@/lib/roles/mobile-tab-configs";
-import type { PortalNavGroup } from "@/lib/roles/portal-nav";
+import {
+  filterPortalNavGroupsByRole,
+  portalGroupsToGrouped,
+  type PortalNavGroup,
+} from "@/lib/roles/portal-nav";
 
 const navByPortal = {
   teacher: { groups: teacherNavGroups, storagePrefix: "portal-teacher" },
@@ -28,6 +33,10 @@ export function PortalShell({
 }) {
   const { groups, storagePrefix } = navByPortal[portal];
   const tabs = getPortalMobileTabs(portal);
+  const navGroups = useMemo(
+    () => portalGroupsToGrouped(filterPortalNavGroupsByRole(groups, role)),
+    [groups, role],
+  );
 
   return (
     <TenantDashboardShell
@@ -39,7 +48,7 @@ export function PortalShell({
           storagePrefix={storagePrefix}
         />
       }
-      mobileChrome={<MobileAppChrome schoolName={schoolName} tabs={tabs} />}
+      mobileChrome={<MobileAppChrome schoolName={schoolName} tabs={tabs} navGroups={navGroups} />}
     >
       {children}
     </TenantDashboardShell>

@@ -6,6 +6,7 @@ import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { DashboardNavProgress } from "@/components/layout/DashboardNavProgress";
 import { performLogout } from "@/lib/auth/logout";
 import { resolveMobilePageTitle } from "@/lib/roles/mobile-page-titles";
+import { useOptionalSchool } from "@/providers/SchoolProvider";
 
 export function MobileTopBar({
   schoolName,
@@ -14,25 +15,27 @@ export function MobileTopBar({
   schoolName?: string | null;
   pathname: string;
 }) {
+  const schoolCtx = useOptionalSchool();
   const title = resolveMobilePageTitle(pathname);
+  const resolvedSchoolName = schoolName?.trim() || schoolCtx?.school?.name || null;
 
   function handleLogout() {
     void performLogout("manual");
   }
 
   return (
-    <header className="sticky top-0 z-30 border-b border-theme bg-sidebar/95 backdrop-blur-md lg:hidden">
+    <header>
       <DashboardNavProgress />
-      <div className="flex h-12 items-center justify-between gap-3 px-4">
+      <div className="flex h-14 items-center justify-between gap-3 px-4">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <BrandLogo size={28} rounded="md" className="shrink-0" />
+          <BrandLogo size={30} rounded="md" className="shrink-0" />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold leading-tight text-theme-primary">
               {title}
             </p>
-            {schoolName ? (
-              <p className="truncate text-[11px] leading-tight text-theme-muted">{schoolName}</p>
-            ) : null}
+            <p className="truncate text-[11px] leading-tight text-theme-muted">
+              {resolvedSchoolName ?? "Your school"}
+            </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">

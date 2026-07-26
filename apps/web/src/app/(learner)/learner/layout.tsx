@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api/server";
 import { requirePortalSession } from "@/lib/roles";
 import { getServerTenantContext } from "@/lib/tenant/server";
 import { SchoolProvider } from "@/providers/SchoolProvider";
+import { PortalRoleProvider } from "@/providers/PortalRoleProvider";
 import type { SetupStatusResponse } from "@makyschool/shared/types";
 
 export default async function LearnerPortalLayout({
@@ -35,19 +36,21 @@ export default async function LearnerPortalLayout({
   }
 
   return (
-    <SchoolProvider
-      schoolSlug={tenant.schoolSlug}
-      school={status?.school ?? null}
-      setupStatus={status}
-    >
-      <PortalShell
-        schoolName={status?.school?.name}
-        role={session.role}
-        portal="learner"
+    <PortalRoleProvider role={session.role}>
+      <SchoolProvider
+        schoolSlug={tenant.schoolSlug}
+        school={status?.school ?? null}
+        setupStatus={status}
       >
-        <SessionManager />
-        {children}
-      </PortalShell>
-    </SchoolProvider>
+        <PortalShell
+          schoolName={status?.school?.name}
+          role={session.role}
+          portal="learner"
+        >
+          <SessionManager />
+          {children}
+        </PortalShell>
+      </SchoolProvider>
+    </PortalRoleProvider>
   );
 }

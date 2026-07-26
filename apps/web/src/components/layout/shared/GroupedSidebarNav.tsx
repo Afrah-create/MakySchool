@@ -48,6 +48,36 @@ export function flattenGroupedNavItems(items: GroupedNavItem[]): GroupedNavItem[
   return items.flatMap((item) => (item.children?.length ? item.children : [item]));
 }
 
+/** Child links for the expandable nav section that matches the current path. */
+export function findActiveSectionChildNav(
+  pathname: string,
+  groups: GroupedNavGroup[],
+): GroupedNavItem[] | null {
+  for (const group of groups) {
+    for (const item of group.items) {
+      if (!item.children?.length) continue;
+
+      const childActive = item.children.some((child) => isGroupedNavItemActive(pathname, child));
+      if (childActive) return item.children;
+
+      const parentSelf = item.exact
+        ? pathname === item.href
+        : pathname === item.href || pathname.startsWith(`${item.href}/`);
+      if (parentSelf) return item.children;
+    }
+  }
+
+  // Flat portal groups (e.g. learner): show sibling links for the active group.
+  for (const group of groups) {
+    const hasActive = group.items.some((item) => isGroupedNavItemActive(pathname, item));
+    if (!hasActive) continue;
+    const siblings = flattenGroupedNavItems(group.items);
+    if (siblings.length >= 2) return siblings;
+  }
+
+  return null;
+}
+
 function readStoredSet(key: string): Set<string> {
   if (typeof window === "undefined") {
     return new Set();
