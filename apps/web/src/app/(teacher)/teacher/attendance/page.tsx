@@ -6,12 +6,11 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import {
   CalendarDays,
   CheckCircle2,
-  Clock,
-  XCircle,
   Users,
   AlertCircle,
   Lock,
   Search,
+  Save,
 } from 'lucide-react';
 import { useDailyAttendance, useSaveAttendance, useTeacherTimetable } from '@/hooks/useAttendance';
 import type { TimetableSlot } from '@/hooks/useAttendance';
@@ -20,45 +19,16 @@ import type { AttendanceStatus, BulkAttendanceEntry } from '@makyschool/shared';
 import { useCurrentTerm } from '@/hooks/useCurrentTerm';
 import { TablePagination } from '@makyschool/ui/components/ui/TablePagination';
 import { useClientPagination } from '@/hooks/useClientPagination';
+import {
+  ATTENDANCE_STATUS_KEYS,
+  ATTENDANCE_STATUS_STYLE,
+  AttendanceStatusBadge,
+  AttendanceTallyPill,
+  studentInitials,
+} from '@/components/attendance/attendanceStatusStyles';
 
-type StatusConfig = {
-  label: string;
-  icon: React.ElementType;
-  bg: string;
-  border: string;
-  text: string;
-  dot: string;
-};
-
-const STATUS_CONFIG: { [K in AttendanceStatus]: StatusConfig } = {
-  present: {
-    label:  'Present',
-    icon:   CheckCircle2,
-    bg:     'bg-emerald-50 dark:bg-emerald-950/30',
-    border: 'border-emerald-500/50 dark:border-emerald-500/30',
-    text:   'text-emerald-700 dark:text-emerald-400',
-    dot:    'bg-emerald-500',
-  },
-  late: {
-    label:  'Late',
-    icon:   Clock,
-    bg:     'bg-amber-50 dark:bg-amber-950/30',
-    border: 'border-amber-500/50 dark:border-amber-500/30',
-    text:   'text-amber-700 dark:text-amber-400',
-    dot:    'bg-amber-500',
-  },
-  absent: {
-    label:  'Absent',
-    icon:   XCircle,
-    bg:     'bg-rose-50 dark:bg-rose-950/30',
-    border: 'border-rose-500/50 dark:border-rose-500/30',
-    text:   'text-rose-700 dark:text-rose-400',
-    dot:    'bg-rose-500',
-  },
-};
-
-const STATUS_KEYS = ['present', 'late', 'absent'] as AttendanceStatus[];
 const DRAFT_PREFIX = 'makyschool:attendance-draft:';
+const REGISTER_PAGE_SIZE = 50;
 
 type DraftState = {
   overrides: { [id: string]: AttendanceStatus };
@@ -94,14 +64,19 @@ function clearDraft(slotId: string, date: string) {
   localStorage.removeItem(draftKey(slotId, date));
 }
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();
-}
-
 function weekdayLabel(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00`);
-  return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function slotTimeLabel(slot: TimetableSlot): string {
+  if (slot.startTime && slot.endTime) return `${slot.startTime}–${slot.endTime}`;
+  return slot.timeLabel || '';
 }
 
 export default function AttendancePage() {
@@ -141,11 +116,18 @@ export default function AttendancePage() {
     if (match) setSelectedSlotId(match.timetableSlotId);
   }, [urlClassId, urlSlotId, selectedSlotId, slots]);
 
+  // Prefer first unmarked period when none selected.
+  useEffect(() => {
+    if (selectedSlotId || slots.length === 0) return;
+    const open = slots.find((s) => !s.alreadySubmitted) ?? slots[0];
+    setSelectedSlotId(open.timetableSlotId);
+  }, [slots, selectedSlotId]);
+
   const { data, isPending: isPendingAttendance, isError } = useDailyAttendance(
     activeSlotId,
     termId,
     selectedDate,
-    queryEnabled
+    queryEnabled,
   );
 
   const saveMutation = useSaveAttendance();
@@ -176,8 +158,11 @@ export default function AttendancePage() {
     if (!data) return [];
     return data.students.map((s) => ({
       ...s,
-      status: overrides[s.studentId] ?? s.status ?? (isInitialTake ? 'present' as AttendanceStatus : null),
-      notes:  notes[s.studentId] ?? s.notes ?? '',
+      status:
+        overrides[s.studentId] ??
+        s.status ??
+        (isInitialTake ? ('present' as AttendanceStatus) : null),
+      notes: notes[s.studentId] ?? s.notes ?? '',
     }));
   }, [data, overrides, notes, isInitialTake]);
 
@@ -200,11 +185,16 @@ export default function AttendancePage() {
     total: filteredTotal,
   } = useClientPagination({
     items: filteredRows,
+    initialPageSize: REGISTER_PAGE_SIZE,
     resetDeps: [activeSlotId, selectedDate, searchQuery],
   });
 
   const tally = useMemo(() => {
-    const counts: { [K in AttendanceStatus]: number } = { present: 0, late: 0, absent: 0 };
+    const counts: { [K in AttendanceStatus]: number } = {
+      present: 0,
+      late: 0,
+      absent: 0,
+    };
     let unset = 0;
     for (const r of rows) {
       if (r.status) counts[r.status as AttendanceStatus]++;
@@ -214,6 +204,11 @@ export default function AttendancePage() {
   }, [rows]);
 
   const selectedCount = Object.values(selectedIds).filter(Boolean).length;
+  const pageAllSelected =
+    pagedRows.length > 0 && pagedRows.every((r) => selectedIds[r.studentId]);
+  const filteredAllSelected =
+    filteredRows.length > 0 &&
+    filteredRows.every((r) => selectedIds[r.studentId]);
 
   function setStatus(studentId: string, st: AttendanceStatus) {
     if (alreadySubmitted) return;
@@ -230,12 +225,19 @@ export default function AttendancePage() {
   }
 
   function toggleSelectAllOnPage() {
-    const allSelected = pagedRows.every((r) => selectedIds[r.studentId]);
+    const nextValue = !pageAllSelected;
     setSelectedIds((prev) => {
       const next = { ...prev };
-      for (const r of pagedRows) {
-        next[r.studentId] = !allSelected;
-      }
+      for (const r of pagedRows) next[r.studentId] = nextValue;
+      return next;
+    });
+  }
+
+  function toggleSelectAllFiltered() {
+    const nextValue = !filteredAllSelected;
+    setSelectedIds((prev) => {
+      const next = { ...prev };
+      for (const r of filteredRows) next[r.studentId] = nextValue;
       return next;
     });
   }
@@ -245,7 +247,7 @@ export default function AttendancePage() {
     const targets =
       selectedCount > 0
         ? rows.filter((r) => selectedIds[r.studentId]).map((r) => r.studentId)
-        : rows.map((r) => r.studentId);
+        : filteredRows.map((r) => r.studentId);
     setOverrides((prev) => {
       const next = { ...prev };
       for (const id of targets) next[id] = st;
@@ -264,7 +266,6 @@ export default function AttendancePage() {
     if (!activeSlotId || !data || alreadySubmitted) return;
     setSaveError(null);
 
-    // Build entries in a single pass immediately before the API call.
     const entries: BulkAttendanceEntry[] = [];
     for (const s of data.students) {
       entries.push({
@@ -288,7 +289,9 @@ export default function AttendancePage() {
       setTimeout(() => setJustSaved(false), 3000);
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : 'Failed to save attendance. Please try again.';
+        err instanceof Error
+          ? err.message
+          : 'Failed to save attendance. Please try again.';
       setSaveError(message);
       const code = (err as { code?: string } | undefined)?.code;
       if (code === 'ALREADY_SUBMITTED') {
@@ -309,360 +312,489 @@ export default function AttendancePage() {
     setForceLocked(false);
   }
 
+  const bulkTargetLabel =
+    selectedCount > 0
+      ? `selected (${selectedCount})`
+      : searchQuery.trim()
+        ? `filtered (${filteredRows.length})`
+        : 'all';
+
   return (
-    <div className="space-y-6 p-4 sm:p-6 max-w-7xl mx-auto">
-      <div className="flex flex-col gap-4 border-b border-border pb-5">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-              <CalendarDays className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">Attendance</h1>
-              <p className="text-xs text-muted-foreground">
-                {weekdayLabel(selectedDate)}
-                {activeSlot ? ` · ${activeSlot.className} · ${activeSlot.subjectName}` : ''}
-              </p>
-            </div>
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 p-3 sm:gap-5 sm:p-5 lg:p-6">
+      {/* Compact page chrome */}
+      <header className="flex flex-col gap-3 border-b border-theme pb-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-bold tracking-tight text-theme-primary sm:text-2xl">
+              Attendance
+            </h1>
+            <nav className="flex gap-1 rounded-lg border border-theme bg-theme-raised/40 p-0.5">
+              <Link
+                href="/teacher/attendance"
+                className={[
+                  'rounded-md px-3 py-1.5 text-xs font-semibold transition sm:text-sm',
+                  pathname === '/teacher/attendance'
+                    ? 'bg-theme-accent text-on-accent shadow-sm'
+                    : 'text-theme-muted hover:text-theme-primary',
+                ].join(' ')}
+              >
+                Take
+              </Link>
+              <Link
+                href="/teacher/attendance/history"
+                className={[
+                  'rounded-md px-3 py-1.5 text-xs font-semibold transition sm:text-sm',
+                  pathname === '/teacher/attendance/history'
+                    ? 'bg-theme-accent text-on-accent shadow-sm'
+                    : 'text-theme-muted hover:text-theme-primary',
+                ].join(' ')}
+              >
+                History
+              </Link>
+            </nav>
           </div>
-
-          <div className="flex flex-col gap-1.5 sm:min-w-[170px]">
-            <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Date
-            </label>
-            <input
-              type="date"
-              max={todayEAT()}
-              value={selectedDate}
-              onChange={(e) => onDateChange(e.target.value)}
-              className="rounded-lg border border-border bg-background px-3.5 py-2 text-sm shadow-sm transition-colors hover:border-muted-foreground/30 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer text-foreground"
-            />
-          </div>
+          <p className="mt-1 truncate text-xs text-theme-muted sm:text-sm">
+            {weekdayLabel(selectedDate)}
+            {activeSlot
+              ? ` · ${activeSlot.className} · ${activeSlot.subjectName}`
+              : ' · Select a period'}
+          </p>
         </div>
 
-        <div className="flex gap-2">
-          <Link
-            href="/teacher/attendance"
-            className={[
-              'rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200',
-              pathname === '/teacher/attendance'
-                ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/20'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-            ].join(' ')}
-          >
-            Take Attendance
-          </Link>
-          <Link
-            href="/teacher/attendance/history"
-            className={[
-              'rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200',
-              pathname === '/teacher/attendance/history'
-                ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/20'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-            ].join(' ')}
-          >
-            Attendance History
-          </Link>
-        </div>
-      </div>
+        <label className="flex w-full flex-col gap-1 sm:w-auto sm:min-w-[11rem]">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+            Date
+          </span>
+          <input
+            type="date"
+            max={todayEAT()}
+            value={selectedDate}
+            onChange={(e) => onDateChange(e.target.value)}
+            className="ms-input cursor-pointer"
+          />
+        </label>
+      </header>
 
       {justSaved && (
-        <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/20 bg-emerald-50/50 dark:bg-emerald-950/10 px-5 py-3 text-sm font-medium text-emerald-800 dark:text-emerald-300 shadow-sm">
+        <div className="alert-success flex items-center gap-2.5 rounded-xl px-4 py-3 text-sm font-medium">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Attendance submitted and locked for {activeSlot?.className} — {activeSlot?.subjectName}.
+          Register submitted for {activeSlot?.className} — {activeSlot?.subjectName}.
         </div>
       )}
-
       {draftSaved && (
-        <div className="flex items-center gap-2.5 rounded-xl border border-border bg-muted/30 px-5 py-3 text-sm font-medium text-foreground shadow-sm">
+        <div className="alert-info flex items-center gap-2.5 rounded-xl px-4 py-3 text-sm font-medium">
           Draft saved on this device. Submit when ready to lock the register.
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-4 lg:gap-6">
-        {/* Left: period list */}
-        <aside className="space-y-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1">
+      {/* Period strip — full width */}
+      <section className="rounded-xl border border-theme bg-theme-surface">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-theme px-3 py-2 sm:px-4">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
             Periods
           </h2>
-          {isPendingSlots ? (
-            <PeriodSkeletonList />
-          ) : slots.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border p-8 text-center bg-muted/10">
-              <CalendarDays className="h-10 w-10 text-muted-foreground/30" />
-              <p className="text-sm font-semibold text-foreground">No timetable periods assigned for this date.</p>
-              <p className="text-xs text-muted-foreground">
-                Select another date or verify assignments with your school administrator.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {slots.map((slot) => (
-                <PeriodCard
-                  key={slot.timetableSlotId}
-                  slot={slot}
-                  selected={slot.timetableSlotId === activeSlotId}
-                  onSelect={() => setSelectedSlotId(slot.timetableSlotId)}
-                />
-              ))}
-            </div>
-          )}
-        </aside>
+          {slots.length > 0 ? (
+            <p className="text-xs text-theme-muted">
+              {slots.filter((s) => s.alreadySubmitted).length}/{slots.length}{' '}
+              submitted
+            </p>
+          ) : null}
+        </div>
 
-        {/* Right: register */}
-        <section className="min-w-0">
-          {!activeSlotId ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border p-14 text-center bg-muted/10 min-h-[320px]">
-              <Users className="h-10 w-10 text-muted-foreground/30" />
-              <p className="text-sm font-semibold text-foreground">Select a period</p>
-              <p className="text-xs text-muted-foreground max-w-sm">
-                Choose a timetable period from the left to load the class register.
+        <div className="p-3 sm:p-4">
+          {/* Mobile: select */}
+          <div className="sm:hidden">
+            {isPendingSlots ? (
+              <div className="h-10 animate-pulse rounded-lg bg-theme-raised" />
+            ) : slots.length === 0 ? (
+              <p className="text-sm text-theme-muted">
+                No timetable periods for this date.
               </p>
-            </div>
-          ) : isPendingAttendance ? (
-            <RegisterSkeleton />
-          ) : isError ? (
-            <div className="flex flex-col items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/10 p-8 text-center text-sm text-rose-700 dark:text-rose-400 font-medium shadow-sm">
-              <AlertCircle className="h-6 w-6" />
-              Failed to load students for this period. Please try again.
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border p-12 text-center bg-background shadow-sm">
-              <Users className="h-10 w-10 text-muted-foreground/30" />
-              <p className="text-sm font-semibold text-foreground">No students found in this class</p>
-              <p className="text-xs text-muted-foreground">
-                Ensure active students are enrolled and assigned to this class.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {alreadySubmitted && (
-                <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/20 bg-emerald-50/50 dark:bg-emerald-950/10 px-5 py-3.5 shadow-sm">
-                  <Lock className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                  <span className="text-sm text-emerald-800 dark:text-emerald-300 font-medium">
-                    Attendance submitted and locked for {activeSlot?.className} — {activeSlot?.subjectName}.
-                    <span className="font-normal text-emerald-700/80 dark:text-emerald-400/80">
-                      {' '}Contact an administrator if a correction is needed.
-                    </span>
+            ) : (
+              <select
+                className="ms-input w-full"
+                value={activeSlotId}
+                onChange={(e) => setSelectedSlotId(e.target.value)}
+              >
+                {slots.map((slot) => (
+                  <option key={slot.timetableSlotId} value={slot.timetableSlotId}>
+                    {slot.periodNumber != null ? `P${slot.periodNumber} · ` : ''}
+                    {slot.subjectName} · {slot.className}
+                    {slot.alreadySubmitted ? ' (done)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Desktop/tablet: horizontal chips */}
+          <div className="hidden sm:block">
+            {isPendingSlots ? (
+              <div className="flex gap-2 overflow-hidden">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="h-16 w-44 shrink-0 animate-pulse rounded-xl bg-theme-raised"
+                  />
+                ))}
+              </div>
+            ) : slots.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-theme bg-theme-raised/30 px-6 py-8 text-center">
+                <CalendarDays className="h-8 w-8 text-theme-faint" />
+                <p className="text-sm font-semibold text-theme-primary">
+                  No timetable periods assigned for this date
+                </p>
+                <p className="text-xs text-theme-muted">
+                  Pick another date or check your teaching assignments.
+                </p>
+              </div>
+            ) : (
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                {slots.map((slot) => {
+                  const selected = slot.timetableSlotId === activeSlotId;
+                  return (
+                    <button
+                      key={slot.timetableSlotId}
+                      type="button"
+                      onClick={() => setSelectedSlotId(slot.timetableSlotId)}
+                      className={[
+                        'min-w-[11.5rem] max-w-[16rem] shrink-0 rounded-xl border px-3 py-2.5 text-left transition',
+                        selected
+                          ? 'border-[var(--color-accent)] bg-theme-accent-muted ring-1 ring-theme-accent'
+                          : 'border-theme bg-theme-raised/30 hover:bg-theme-raised/60',
+                      ].join(' ')}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-[10px] font-medium text-theme-muted">
+                          {slotTimeLabel(slot)}
+                        </p>
+                        <span
+                          className={[
+                            'rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide',
+                            slot.alreadySubmitted
+                              ? 'badge-success'
+                              : 'bg-theme-surface text-theme-muted',
+                          ].join(' ')}
+                        >
+                          {slot.alreadySubmitted ? 'Done' : 'Open'}
+                        </span>
+                      </div>
+                      <p className="mt-1 truncate text-sm font-semibold text-theme-primary">
+                        {slot.periodNumber != null ? `P${slot.periodNumber} · ` : ''}
+                        {slot.subjectName}
+                      </p>
+                      <p className="truncate text-xs text-theme-muted">
+                        {slot.className}
+                        {slot.studentCount != null
+                          ? ` · ${slot.studentCount}`
+                          : ''}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Register — full content width */}
+      <section className="min-w-0 flex-1">
+        {!activeSlotId && !isPendingSlots ? (
+          <div className="flex min-h-[280px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-theme bg-theme-raised/20 p-10 text-center">
+            <Users className="h-10 w-10 text-theme-faint" />
+            <p className="text-sm font-semibold text-theme-primary">
+              Select a period to open the register
+            </p>
+          </div>
+        ) : isPendingAttendance || (activeSlotId && isPendingSlots) ? (
+          <RegisterSkeleton />
+        ) : isError ? (
+          <div className="alert-error flex flex-col items-center gap-2 rounded-xl p-8 text-center text-sm font-medium">
+            <AlertCircle className="h-6 w-6" />
+            Failed to load students for this period. Please try again.
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-theme bg-theme-surface p-12 text-center">
+            <Users className="h-10 w-10 text-theme-faint" />
+            <p className="text-sm font-semibold text-theme-primary">
+              No students found in this class
+            </p>
+            <p className="text-xs text-theme-muted">
+              Ensure active students are enrolled and assigned to this class.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+            {alreadySubmitted && (
+              <div className="alert-success flex items-start gap-2.5 border-b border-theme px-4 py-3 text-sm">
+                <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  <span className="font-medium">
+                    Locked — {activeSlot?.className} · {activeSlot?.subjectName}.
+                  </span>{' '}
+                  <span className="opacity-80">
+                    Contact an administrator if a correction is needed.
                   </span>
-                </div>
-              )}
+                </span>
+              </div>
+            )}
 
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/20 px-4 py-3.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <TallyPill label="Present" count={tally.present} cfg={STATUS_CONFIG.present} />
-                  <TallyPill label="Late" count={tally.late} cfg={STATUS_CONFIG.late} />
-                  <TallyPill label="Absent" count={tally.absent} cfg={STATUS_CONFIG.absent} />
+            {/* Sticky toolbar */}
+            <div className="sticky top-0 z-20 space-y-3 border-b border-theme bg-theme-surface/95 px-3 py-3 backdrop-blur-sm sm:px-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                  <AttendanceTallyPill status="present" count={tally.present} />
+                  <AttendanceTallyPill status="late" count={tally.late} />
+                  <AttendanceTallyPill status="absent" count={tally.absent} />
                   {tally.unset > 0 && (
-                    <span className="inline-flex items-center rounded-full border border-border px-3 py-1 text-xs font-semibold text-muted-foreground">
+                    <span className="inline-flex items-center rounded-full border border-theme px-2.5 py-1 text-xs font-semibold text-theme-muted">
                       {tally.unset} unmarked
                     </span>
                   )}
-                  <span className="text-xs text-muted-foreground">of {tally.total} students</span>
+                  <span className="text-xs tabular-nums text-theme-muted">
+                    {tally.total} students
+                  </span>
+                </div>
+
+                <div className="relative w-full lg:max-w-xs">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-theme-faint" />
+                  <input
+                    type="search"
+                    placeholder="Filter name or ID…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="ms-input ms-input-compact w-full pl-9"
+                    aria-label="Filter students"
+                  />
                 </div>
               </div>
 
               {!alreadySubmitted && (
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => markBulk('present')}
-                    className="rounded-lg border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50"
-                  >
-                    Mark all present{selectedCount > 0 ? ` (${selectedCount})` : ''}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => markBulk('absent')}
-                    className="rounded-lg border border-rose-500/30 bg-rose-50/50 dark:bg-rose-950/20 px-3 py-1.5 text-xs font-semibold text-rose-700 dark:text-rose-400 hover:bg-rose-50"
-                  >
-                    Mark all absent{selectedCount > 0 ? ` (${selectedCount})` : ''}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => markBulk('late')}
-                    className="rounded-lg border border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400 hover:bg-amber-50"
-                  >
-                    Mark all late{selectedCount > 0 ? ` (${selectedCount})` : ''}
-                  </button>
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+                      Mark {bulkTargetLabel}
+                    </span>
+                    {ATTENDANCE_STATUS_KEYS.map((s) => {
+                      const cfg = ATTENDANCE_STATUS_STYLE[s];
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => markBulk(s)}
+                          className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${cfg.badge}`}
+                        >
+                          {cfg.label}
+                        </button>
+                      );
+                    })}
+                    {selectedCount > 0 || searchQuery.trim() ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedIds({});
+                          setSearchQuery('');
+                        }}
+                        className="text-xs font-medium text-theme-muted hover:text-theme-primary"
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!filteredAllSelected && filteredRows.length > pageSize ? (
+                      <button
+                        type="button"
+                        onClick={toggleSelectAllFiltered}
+                        className="text-xs font-medium text-theme-accent hover:underline"
+                      >
+                        Select all {filteredRows.length} shown
+                      </button>
+                    ) : null}
+                    <div className="hidden items-center gap-2 sm:flex">
+                      <button
+                        type="button"
+                        onClick={handleSaveDraft}
+                        className="ms-btn-ghost !px-3 !py-1.5 text-xs"
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                        Draft
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleSubmit()}
+                        disabled={saveMutation.isPending}
+                        className="ms-btn-primary !px-3 !py-1.5 text-xs"
+                      >
+                        {saveMutation.isPending ? (
+                          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        ) : null}
+                        Submit register
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
+            </div>
 
-              <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground/60" />
-                <input
-                  type="text"
-                  placeholder="Search by name or learner ID…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  disabled={alreadySubmitted}
-                  className="w-full rounded-lg border border-border bg-background pl-9 pr-4 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 text-foreground disabled:opacity-50"
-                />
-              </div>
-
-              <div className="hidden md:block overflow-hidden rounded-xl border border-border bg-background shadow-sm">
-                <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur border-b border-border text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      <tr>
-                        <th className="px-4 py-3.5 w-10">
-                          {!alreadySubmitted && (
-                            <input
-                              type="checkbox"
-                              checked={pagedRows.length > 0 && pagedRows.every((r) => selectedIds[r.studentId])}
-                              onChange={toggleSelectAllOnPage}
-                              className="rounded border-border"
-                              aria-label="Select all on page"
-                            />
-                          )}
-                        </th>
-                        <th className="px-4 py-3.5 w-12">#</th>
-                        <th className="px-4 py-3.5">Student</th>
-                        <th className="px-4 py-3.5 w-72">Status</th>
-                        <th className="px-4 py-3.5 min-w-[160px]">Notes</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {pagedRows.map((student, idx) => (
-                        <tr key={student.studentId} className="bg-background hover:bg-muted/10 transition-colors duration-150">
-                          <td className="px-4 py-3">
-                            {!alreadySubmitted && (
-                              <input
-                                type="checkbox"
-                                checked={!!selectedIds[student.studentId]}
-                                onChange={() => toggleSelect(student.studentId)}
-                                className="rounded border-border"
-                                aria-label={`Select ${student.studentName}`}
-                              />
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground font-medium">
-                            {(page - 1) * pageSize + idx + 1}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
-                                {initials(student.studentName)}
-                              </span>
-                              <div className="min-w-0">
-                                <span className="font-semibold text-foreground block truncate">{student.studentName}</span>
-                                <span className="font-mono text-[11px] text-muted-foreground/80">{student.learnerId}</span>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            {alreadySubmitted ? (
-                              <StatusBadge status={student.status as AttendanceStatus} />
-                            ) : (
-                              <div className="flex gap-1.5">
-                                {STATUS_KEYS.map((s) => {
-                                  const cfg = STATUS_CONFIG[s];
-                                  const active = student.status === s;
-                                  return (
-                                    <button
-                                      key={s}
-                                      type="button"
-                                      onClick={() => setStatus(student.studentId, s)}
-                                      className={[
-                                        'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all duration-200 active:scale-95 shadow-sm',
-                                        active
-                                          ? `${cfg.bg} ${cfg.border} ${cfg.text} ring-1 ring-inset ring-current/10`
-                                          : 'border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground',
-                                      ].join(' ')}
-                                    >
-                                      <cfg.icon className="h-3.5 w-3.5" />
-                                      {cfg.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            {alreadySubmitted ? (
-                              <span className="text-muted-foreground italic text-xs">{student.notes || '—'}</span>
-                            ) : (
-                              <input
-                                type="text"
-                                placeholder="Optional note…"
-                                value={notes[student.studentId] ?? student.notes ?? ''}
-                                onChange={(e) => setNote(student.studentId, e.target.value)}
-                                className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs placeholder:text-muted-foreground/45 transition-colors focus:border-primary focus:outline-none text-foreground"
-                              />
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="md:hidden space-y-2.5">
-                {pagedRows.map((student, idx) => (
-                  <div
-                    key={student.studentId}
-                    className="rounded-xl border border-border bg-background p-4 shadow-sm space-y-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      {!alreadySubmitted && (
+            {/* Desktop / tablet table */}
+            <div className="hidden max-h-[min(70vh,720px)] overflow-auto md:block">
+              <table className="ms-table ms-table-compact w-full min-w-[40rem]">
+                <thead className="sticky top-0 z-10">
+                  <tr>
+                    <th className="w-10 !px-3">
+                      {!alreadySubmitted ? (
                         <input
                           type="checkbox"
-                          checked={!!selectedIds[student.studentId]}
-                          onChange={() => toggleSelect(student.studentId)}
-                          className="rounded border-border"
+                          checked={pageAllSelected}
+                          onChange={toggleSelectAllOnPage}
+                          className="rounded border-theme"
+                          aria-label="Select all on page"
                         />
-                      )}
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                        {initials(student.studentName)}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-foreground truncate">
-                          {(page - 1) * pageSize + idx + 1}. {student.studentName}
-                        </p>
-                        <p className="font-mono text-[11px] text-muted-foreground/80">{student.learnerId}</p>
-                      </div>
-                    </div>
-
-                    {alreadySubmitted ? (
-                      <StatusBadge status={student.status as AttendanceStatus} />
-                    ) : (
-                      <>
-                        <div className="flex gap-1.5">
-                          {STATUS_KEYS.map((s) => {
-                            const cfg = STATUS_CONFIG[s];
-                            const active = student.status === s;
-                            return (
-                              <button
-                                key={s}
-                                type="button"
-                                onClick={() => setStatus(student.studentId, s)}
-                                className={[
-                                  'flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-xs font-semibold transition-all duration-200 active:scale-95',
-                                  active
-                                    ? `${cfg.bg} ${cfg.border} ${cfg.text}`
-                                    : 'border-border bg-background text-muted-foreground',
-                                ].join(' ')}
-                              >
-                                <cfg.icon className="h-3.5 w-3.5" />
-                                {cfg.label}
-                              </button>
-                            );
-                          })}
+                      ) : null}
+                    </th>
+                    <th className="w-12 !px-2">#</th>
+                    <th>Student</th>
+                    <th className="w-[14rem] sm:w-[16rem] lg:w-[18rem]">
+                      Status
+                    </th>
+                    <th className="min-w-[10rem]">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedRows.map((student, idx) => (
+                    <tr key={student.studentId}>
+                      <td className="!px-3">
+                        {!alreadySubmitted ? (
+                          <input
+                            type="checkbox"
+                            checked={!!selectedIds[student.studentId]}
+                            onChange={() => toggleSelect(student.studentId)}
+                            className="rounded border-theme"
+                            aria-label={`Select ${student.studentName}`}
+                          />
+                        ) : null}
+                      </td>
+                      <td className="!px-2 tabular-nums text-theme-muted">
+                        {(page - 1) * pageSize + idx + 1}
+                      </td>
+                      <td>
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-theme-accent-muted text-[10px] font-bold text-theme-accent">
+                            {studentInitials(student.studentName)}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-theme-primary">
+                              {student.studentName}
+                            </p>
+                            <p className="font-mono text-[11px] text-theme-muted">
+                              {student.learnerId}
+                            </p>
+                          </div>
                         </div>
-                        <input
-                          type="text"
-                          placeholder="Optional note…"
-                          value={notes[student.studentId] ?? student.notes ?? ''}
-                          onChange={(e) => setNote(student.studentId, e.target.value)}
-                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs focus:border-primary focus:outline-none text-foreground"
-                        />
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
+                      </td>
+                      <td>
+                        {alreadySubmitted ? (
+                          <AttendanceStatusBadge
+                            status={student.status as AttendanceStatus}
+                          />
+                        ) : (
+                          <StatusSegment
+                            value={student.status as AttendanceStatus | null}
+                            onChange={(st) => setStatus(student.studentId, st)}
+                          />
+                        )}
+                      </td>
+                      <td>
+                        {alreadySubmitted ? (
+                          <span className="line-clamp-2 text-xs italic text-theme-muted">
+                            {student.notes || '—'}
+                          </span>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="Note…"
+                            value={notes[student.studentId] ?? student.notes ?? ''}
+                            onChange={(e) =>
+                              setNote(student.studentId, e.target.value)
+                            }
+                            className="ms-input ms-input-compact w-full max-w-xs text-xs"
+                          />
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
+            {/* Mobile dense list */}
+            <ul className="divide-y divide-[var(--color-border)] md:hidden">
+              {pagedRows.map((student, idx) => (
+                <li key={student.studentId} className="px-3 py-3">
+                  <div className="flex items-start gap-2.5">
+                    {!alreadySubmitted ? (
+                      <input
+                        type="checkbox"
+                        checked={!!selectedIds[student.studentId]}
+                        onChange={() => toggleSelect(student.studentId)}
+                        className="mt-1 rounded border-theme"
+                      />
+                    ) : null}
+                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-theme-accent-muted text-[10px] font-bold text-theme-accent">
+                      {studentInitials(student.studentName)}
+                    </span>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-theme-primary">
+                            <span className="mr-1.5 tabular-nums text-theme-muted">
+                              {(page - 1) * pageSize + idx + 1}.
+                            </span>
+                            {student.studentName}
+                          </p>
+                          <p className="font-mono text-[11px] text-theme-muted">
+                            {student.learnerId}
+                          </p>
+                        </div>
+                        {alreadySubmitted ? (
+                          <AttendanceStatusBadge
+                            status={student.status as AttendanceStatus}
+                            className="shrink-0"
+                          />
+                        ) : null}
+                      </div>
+                      {!alreadySubmitted ? (
+                        <>
+                          <StatusSegment
+                            value={student.status as AttendanceStatus | null}
+                            onChange={(st) => setStatus(student.studentId, st)}
+                            stretch
+                          />
+                          <input
+                            type="text"
+                            placeholder="Optional note…"
+                            value={notes[student.studentId] ?? student.notes ?? ''}
+                            onChange={(e) =>
+                              setNote(student.studentId, e.target.value)
+                            }
+                            className="ms-input ms-input-compact w-full text-xs"
+                          />
+                        </>
+                      ) : student.notes ? (
+                        <p className="text-xs italic text-theme-muted">
+                          {student.notes}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <div className="border-t border-theme px-3 py-3 sm:px-4">
               <TablePagination
                 page={page}
                 pageSize={pageSize}
@@ -671,159 +803,106 @@ export default function AttendancePage() {
                 onPageSizeChange={setPageSize}
                 noun="students"
               />
-
-              {saveError && (
-                <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/10 px-5 py-3 text-sm font-medium text-rose-700 dark:text-rose-400 shadow-sm">
-                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                  {saveError}
-                </div>
-              )}
-
-              {!alreadySubmitted && (
-                <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={handleSaveDraft}
-                    className="rounded-xl border border-border bg-background px-5 py-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors"
-                  >
-                    Save draft
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={saveMutation.isPending}
-                    className="flex items-center justify-center gap-2.5 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground shadow-md shadow-primary/10 transition-all duration-200 hover:bg-primary/95 active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none"
-                  >
-                    {saveMutation.isPending && (
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                    )}
-                    Submit register
-                  </button>
-                </div>
-              )}
             </div>
-          )}
-        </section>
-      </div>
+
+            {saveError && (
+              <div className="alert-error mx-3 mb-3 flex items-start gap-2.5 rounded-xl px-4 py-3 text-sm font-medium sm:mx-4">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                {saveError}
+              </div>
+            )}
+
+            {/* Mobile sticky actions */}
+            {!alreadySubmitted ? (
+              <div className="sticky bottom-0 z-20 flex gap-2 border-t border-theme bg-theme-surface/95 p-3 backdrop-blur-sm sm:hidden">
+                <button
+                  type="button"
+                  onClick={handleSaveDraft}
+                  className="ms-btn-ghost flex-1"
+                >
+                  Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSubmit()}
+                  disabled={saveMutation.isPending}
+                  className="ms-btn-primary flex-[2]"
+                >
+                  {saveMutation.isPending ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : null}
+                  Submit
+                </button>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
-function PeriodCard({
-  slot,
-  selected,
-  onSelect,
+function StatusSegment({
+  value,
+  onChange,
+  stretch = false,
 }: {
-  slot: TimetableSlot;
-  selected: boolean;
-  onSelect: () => void;
+  value: AttendanceStatus | null;
+  onChange: (st: AttendanceStatus) => void;
+  stretch?: boolean;
 }) {
-  const timeRange =
-    slot.startTime && slot.endTime
-      ? `${slot.startTime} – ${slot.endTime}`
-      : slot.timeLabel;
-
   return (
-    <button
-      type="button"
-      onClick={onSelect}
+    <div
       className={[
-        'w-full text-left rounded-xl border p-3.5 transition-all duration-200 shadow-sm',
-        selected
-          ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
-          : 'border-border bg-background hover:border-muted-foreground/30 hover:bg-muted/20',
+        'inline-flex rounded-lg border border-theme bg-theme-raised/40 p-0.5',
+        stretch ? 'w-full' : '',
       ].join(' ')}
+      role="group"
+      aria-label="Attendance status"
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[11px] font-medium text-muted-foreground">{timeRange}</p>
-          <p className="text-sm font-semibold text-foreground mt-0.5 truncate">
-            {slot.periodNumber != null ? `Period ${slot.periodNumber} · ` : ''}
-            {slot.subjectName}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5 truncate">{slot.className}</p>
-          <p className="text-[11px] text-muted-foreground/80 mt-1">
-            {slot.studentCount ?? '—'} students
-          </p>
-        </div>
-        <span
-          className={[
-            'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-            slot.alreadySubmitted
-              ? 'border-emerald-500/30 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
-              : 'border-border bg-muted/40 text-muted-foreground',
-          ].join(' ')}
-        >
-          {slot.alreadySubmitted ? 'Submitted' : 'Not marked'}
-        </span>
-      </div>
-    </button>
-  );
-}
-
-function TallyPill({ label, count, cfg }: { label: string; count: number; cfg: StatusConfig }) {
-  return (
-    <span
-      className={[
-        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold',
-        cfg.bg, cfg.border, cfg.text,
-      ].join(' ')}
-    >
-      <cfg.icon className="h-3.5 w-3.5" />
-      {count} {label}
-    </span>
-  );
-}
-
-function StatusBadge({ status }: { status: AttendanceStatus | null }) {
-  if (!status) return <span className="text-muted-foreground text-xs">—</span>;
-  const cfg = STATUS_CONFIG[status];
-  return (
-    <span
-      className={[
-        'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium',
-        cfg.bg, cfg.border, cfg.text,
-      ].join(' ')}
-    >
-      <cfg.icon className="h-3 w-3" />
-      {cfg.label}
-    </span>
-  );
-}
-
-function PeriodSkeletonList() {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="rounded-xl border border-border p-3.5 space-y-2">
-          <div className="h-3 w-24 animate-pulse rounded bg-muted/60" />
-          <div className="h-4 w-40 animate-pulse rounded bg-muted/80" />
-          <div className="h-3 w-28 animate-pulse rounded bg-muted/40" />
-        </div>
-      ))}
+      {ATTENDANCE_STATUS_KEYS.map((s) => {
+        const cfg = ATTENDANCE_STATUS_STYLE[s];
+        const active = value === s;
+        return (
+          <button
+            key={s}
+            type="button"
+            title={cfg.label}
+            onClick={() => onChange(s)}
+            className={[
+              'inline-flex items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold transition active:scale-[0.98]',
+              stretch ? 'flex-1' : 'min-w-[2.5rem] sm:min-w-[4.5rem]',
+              active
+                ? cfg.badge
+                : 'text-theme-muted hover:bg-theme-surface hover:text-theme-primary',
+            ].join(' ')}
+          >
+            <cfg.icon className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">{cfg.label}</span>
+            <span className="sm:hidden">{cfg.label.charAt(0)}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 function RegisterSkeleton() {
   return (
-    <div className="overflow-hidden rounded-xl border border-border">
-      <div className="bg-muted/50 px-4 py-3 h-10" />
-      <div className="divide-y divide-border">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="flex items-center justify-between px-5 py-4">
-            <div className="flex items-center gap-4">
-              <div className="h-8 w-8 animate-pulse rounded-full bg-muted/60" />
-              <div className="space-y-1.5">
-                <div className="h-4 w-36 animate-pulse rounded bg-muted/80" />
-                <div className="h-3 w-20 animate-pulse rounded bg-muted/40" />
-              </div>
+    <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+      <div className="space-y-3 border-b border-theme px-4 py-3">
+        <div className="h-7 w-72 max-w-full animate-pulse rounded-lg bg-theme-raised" />
+        <div className="h-9 w-full animate-pulse rounded-lg bg-theme-raised/70" />
+      </div>
+      <div className="divide-y divide-[var(--color-border)]">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-3 px-4 py-3">
+            <div className="h-7 w-7 animate-pulse rounded-full bg-theme-raised" />
+            <div className="flex-1 space-y-1.5">
+              <div className="h-3.5 w-40 animate-pulse rounded bg-theme-raised" />
+              <div className="h-3 w-24 animate-pulse rounded bg-theme-raised/60" />
             </div>
-            <div className="flex gap-2">
-              <div className="h-8 w-20 animate-pulse rounded-lg bg-muted/50" />
-              <div className="h-8 w-20 animate-pulse rounded-lg bg-muted/50" />
-              <div className="h-8 w-20 animate-pulse rounded-lg bg-muted/50" />
-            </div>
+            <div className="h-8 w-36 animate-pulse rounded-lg bg-theme-raised" />
           </div>
         ))}
       </div>

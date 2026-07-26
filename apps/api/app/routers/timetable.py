@@ -29,6 +29,16 @@ from app.middleware.teacher_scope import assert_class_access, get_allowed_class_
 
 router = APIRouter()
 
+DAY_LABELS = {
+    1: "Monday",
+    2: "Tuesday",
+    3: "Wednesday",
+    4: "Thursday",
+    5: "Friday",
+    6: "Saturday",
+    7: "Sunday",
+}
+
 Ctx = Annotated[tuple[uuid.UUID, dict[str, Any]], Depends(require_tenant_with_subscription)]
 AllowedClassIds = Annotated[list[uuid.UUID] | None, Depends(get_allowed_class_ids)]
 
@@ -175,6 +185,37 @@ async def _resolve_term_id(
     return await get_current_term_id(conn, school_id)
 
 
+async def _delete_removed_periods(
+    conn: asyncpg.Connection,
+    stale: dict[uuid.UUID, tuple[int, int]],
+) -> None:
+    """Drop slots the editor removed, refusing ones already used by attendance."""
+    if not stale:
+        return
+
+    locked = await conn.fetch(
+        """
+        SELECT DISTINCT timetable_period_id AS id
+        FROM attendance
+        WHERE timetable_period_id = ANY($1::uuid[])
+        """,
+        list(stale.keys()),
+    )
+    if locked:
+        day, period_number = stale[locked[0]["id"]]
+        day_label = DAY_LABELS.get(day, f"day {day}")
+        raise TimetableValidationError(
+            f"{day_label} period {period_number} already has attendance recorded, "
+            "so it cannot be removed. Change the subject or teacher instead.",
+            "PERIOD_HAS_ATTENDANCE",
+        )
+
+    await conn.execute(
+        "DELETE FROM timetable_periods WHERE id = ANY($1::uuid[])",
+        list(stale.keys()),
+    )
+
+
 async def _replace_class_timetable(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
@@ -183,9 +224,12 @@ async def _replace_class_timetable(
     periods: list[PeriodInput],
 ) -> list[asyncpg.Record]:
     await validate_bulk_replace(conn, school_id, class_id, term_id, periods)
-    await conn.execute(
+
+    # Reconcile slot-by-slot so rows referenced by attendance keep their identity.
+    existing = await conn.fetch(
         """
-        DELETE FROM timetable_periods
+        SELECT id, day_of_week, period_number
+        FROM timetable_periods
         WHERE school_id = $1 AND class_id = $2
           AND term_id IS NOT DISTINCT FROM $3::uuid
         """,
@@ -193,7 +237,43 @@ async def _replace_class_timetable(
         class_id,
         term_id,
     )
+    existing_ids = {
+        (row["day_of_week"], row["period_number"]): row["id"] for row in existing
+    }
+    incoming_slots = {(period.day_of_week, period.period_number) for period in periods}
+
+    await _delete_removed_periods(
+        conn,
+        {
+            period_id: slot
+            for slot, period_id in existing_ids.items()
+            if slot not in incoming_slots
+        },
+    )
+
     for period in periods:
+        period_id = existing_ids.get((period.day_of_week, period.period_number))
+        if period_id is not None:
+            await conn.execute(
+                """
+                UPDATE timetable_periods
+                SET start_time = $2,
+                    end_time = $3,
+                    subject_id = $4,
+                    teacher_id = $5,
+                    track = $6,
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+                period_id,
+                period.start_time,
+                period.end_time,
+                period.subject_id,
+                period.teacher_id,
+                period.track,
+            )
+            continue
+
         await conn.execute(
             """
             INSERT INTO timetable_periods (
@@ -212,6 +292,7 @@ async def _replace_class_timetable(
             period.teacher_id,
             period.track,
         )
+
     return await fetch_period_rows(
         conn,
         school_id,
@@ -465,9 +546,10 @@ async def clear_class_timetable(
         raise _error(status.HTTP_404_NOT_FOUND, "Class not found.", "NOT_FOUND")
 
     resolved_term = await _resolve_term_id(conn, school_id, term_id)
-    await conn.execute(
+    existing = await conn.fetch(
         """
-        DELETE FROM timetable_periods
+        SELECT id, day_of_week, period_number
+        FROM timetable_periods
         WHERE school_id = $1 AND class_id = $2
           AND term_id IS NOT DISTINCT FROM $3::uuid
         """,
@@ -475,4 +557,12 @@ async def clear_class_timetable(
         class_id,
         resolved_term,
     )
+    try:
+        await _delete_removed_periods(
+            conn,
+            {row["id"]: (row["day_of_week"], row["period_number"]) for row in existing},
+        )
+    except TimetableValidationError as exc:
+        raise _error(status.HTTP_400_BAD_REQUEST, exc.message, exc.code, exc.fields or None)
+
     return {"data": _serialize_grid(class_id, resolved_term, [])}

@@ -3,9 +3,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   CalendarDays,
-  CheckCircle2,
-  Clock,
-  XCircle,
   ShieldCheck,
   Search,
   Loader2,
@@ -14,9 +11,10 @@ import {
   BarChart3,
   ClipboardList,
 } from 'lucide-react';
+import { EmptyState } from '@makyschool/ui/components/ui/EmptyState';
+import { TablePagination } from '@makyschool/ui/components/ui/TablePagination';
 import { useDailyAttendanceByClass, useAttendanceAdminOverview } from '@/hooks/useAttendance';
 import { todayEAT } from '@/lib/api/attendance';
-import type { AttendanceStatus } from '@makyschool/shared';
 import { useCurrentTerm } from '@/hooks/useCurrentTerm';
 import {
   AttendanceAdminKpis,
@@ -26,40 +24,12 @@ import {
   AttendanceAdminCharts,
   AttendanceAdminChartsSkeleton,
 } from '@/components/school-admin/attendance/AttendanceAdminCharts';
-import { TablePagination } from '@makyschool/ui/components/ui/TablePagination';
+import {
+  AttendanceStatusBadge,
+  ATTENDANCE_STATUS_STYLE,
+  studentInitials,
+} from '@/components/attendance/attendanceStatusStyles';
 import { useClientPagination } from '@/hooks/useClientPagination';
-
-type StatusConfig = {
-  label: string;
-  icon: React.ElementType;
-  bg: string;
-  border: string;
-  text: string;
-};
-
-const STATUS_CONFIG: { [K in AttendanceStatus]: StatusConfig } = {
-  present: {
-    label:  'Present',
-    icon:   CheckCircle2,
-    bg:     'bg-emerald-50 dark:bg-emerald-950/30',
-    border: 'border-emerald-500/50 dark:border-emerald-500/30',
-    text:   'text-emerald-700 dark:text-emerald-400',
-  },
-  late: {
-    label:  'Late',
-    icon:   Clock,
-    bg:     'bg-amber-50 dark:bg-amber-950/30',
-    border: 'border-amber-500/50 dark:border-amber-500/30',
-    text:   'text-amber-700 dark:text-amber-400',
-  },
-  absent: {
-    label:  'Absent',
-    icon:   XCircle,
-    bg:     'bg-rose-50 dark:bg-rose-950/30',
-    border: 'border-rose-500/50 dark:border-rose-500/30',
-    text:   'text-rose-700 dark:text-rose-400',
-  },
-};
 
 interface SchoolClassStream {
   id: string;
@@ -68,11 +38,6 @@ interface SchoolClassStream {
 }
 
 type TabId = 'daily' | 'analytics';
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();
-}
 
 export default function SchoolAdminAttendancePage() {
   const { data: term } = useCurrentTerm();
@@ -116,7 +81,9 @@ export default function SchoolAdminAttendancePage() {
       }
     }
     fetchStreams();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -158,8 +125,16 @@ export default function SchoolAdminAttendancePage() {
   const isPending = isLoadingClasses || (queryEnabled && isPendingAttendance);
 
   const stats = useMemo(() => {
-    if (!data?.students) return { total: 0, present: 0, late: 0, absent: 0, unmarked: 0, rate: 0 };
-    const totals = { total: data.students.length, present: 0, late: 0, absent: 0, unmarked: 0 };
+    if (!data?.students) {
+      return { total: 0, present: 0, late: 0, absent: 0, unmarked: 0, rate: 0 };
+    }
+    const totals = {
+      total: data.students.length,
+      present: 0,
+      late: 0,
+      absent: 0,
+      unmarked: 0,
+    };
 
     data.students.forEach((s) => {
       if (s.status === 'present') totals.present++;
@@ -177,8 +152,10 @@ export default function SchoolAdminAttendancePage() {
     if (!data?.students) return [];
     const q = searchQuery.trim().toLowerCase();
     if (!q) return data.students;
-    return data.students.filter((s) =>
-      s.studentName.toLowerCase().includes(q) || s.learnerId.toLowerCase().includes(q)
+    return data.students.filter(
+      (s) =>
+        s.studentName.toLowerCase().includes(q) ||
+        s.learnerId.toLowerCase().includes(q),
     );
   }, [data, searchQuery]);
 
@@ -195,14 +172,14 @@ export default function SchoolAdminAttendancePage() {
   });
 
   return (
-    <div className="space-y-6 p-4 sm:p-6 max-w-7xl mx-auto">
-      <div className="flex flex-col gap-2 border-b border-border pb-5">
+    <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+      <div className="flex flex-col gap-2 border-b border-theme pb-5">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-theme-accent-muted">
             <ShieldCheck className="h-5 w-5 text-theme-accent" />
           </div>
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-theme-primary">
+            <h1 className="text-xl font-bold tracking-tight text-theme-primary sm:text-2xl">
               School Attendance Registry
             </h1>
             <p className="text-xs text-theme-muted">
@@ -211,7 +188,7 @@ export default function SchoolAdminAttendancePage() {
           </div>
         </div>
 
-        <div className="flex gap-2 mt-3">
+        <div className="mt-3 flex gap-2">
           <button
             type="button"
             onClick={() => setActiveTab('daily')}
@@ -243,7 +220,7 @@ export default function SchoolAdminAttendancePage() {
 
       {activeTab === 'analytics' ? (
         <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row flex-wrap gap-4 bg-theme-raised/40 p-4 rounded-xl border border-theme sm:items-end">
+          <div className="flex flex-col flex-wrap gap-4 rounded-xl border border-theme bg-theme-raised/40 p-4 sm:flex-row sm:items-end">
             <div className="flex flex-col gap-1.5 sm:min-w-[160px]">
               <label className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
                 From
@@ -292,7 +269,7 @@ export default function SchoolAdminAttendancePage() {
             <EmptyState
               icon={CalendarDays}
               title="No current term"
-              body="Set the current academic term before viewing attendance analytics."
+              description="Set the current academic term before viewing attendance analytics."
             />
           ) : isPendingOverview && !overview ? (
             <div className="space-y-6">
@@ -300,7 +277,7 @@ export default function SchoolAdminAttendancePage() {
               <AttendanceAdminChartsSkeleton />
             </div>
           ) : isOverviewError ? (
-            <div className="flex flex-col items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/10 p-8 text-center text-sm text-rose-700 dark:text-rose-400 font-medium shadow-sm">
+            <div className="alert-error flex flex-col items-center gap-2 rounded-xl p-8 text-center text-sm font-medium shadow-sm">
               <AlertCircle className="h-6 w-6" />
               Couldn&apos;t load attendance analytics. Try again.
             </div>
@@ -313,9 +290,9 @@ export default function SchoolAdminAttendancePage() {
         </div>
       ) : (
         <>
-          <div className="flex flex-col sm:flex-row flex-wrap gap-4 bg-muted/30 p-4 rounded-xl border border-border/60 sm:items-end">
+          <div className="flex flex-col flex-wrap gap-4 rounded-xl border border-theme bg-theme-raised/40 p-4 sm:flex-row sm:items-end">
             <div className="flex flex-col gap-1.5 sm:min-w-[170px]">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
                 Date
               </label>
               <input
@@ -323,16 +300,16 @@ export default function SchoolAdminAttendancePage() {
                 max={todayEAT()}
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="rounded-lg border border-border bg-background px-3.5 py-2 text-sm shadow-sm transition-colors focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-foreground cursor-pointer"
+                className="ms-input cursor-pointer"
               />
             </div>
 
             <div className="flex flex-col gap-1.5 sm:min-w-[220px]">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
                 Class Stream
               </label>
               <select
-                className="w-full rounded-lg border border-border bg-background px-3.5 py-2 text-sm shadow-sm transition-colors focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-foreground cursor-pointer disabled:opacity-50"
+                className="ms-input w-full cursor-pointer disabled:opacity-50"
                 value={selectedClassId}
                 onChange={(e) => setSelectedClassId(e.target.value)}
                 disabled={classes.length === 0 || isLoadingClasses}
@@ -353,41 +330,55 @@ export default function SchoolAdminAttendancePage() {
               </select>
             </div>
 
-            <div className="flex flex-col gap-1.5 flex-1 sm:min-w-[260px]">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="flex flex-1 flex-col gap-1.5 sm:min-w-[260px]">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
                 Search Student
               </label>
               <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground/60" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-theme-faint" />
                 <input
                   type="text"
                   placeholder="Search by name or learner ID…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background pl-9 pr-4 py-2 text-sm shadow-sm transition-colors focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-foreground"
+                  className="ms-input w-full pl-9"
                 />
               </div>
             </div>
           </div>
 
           {classesError && (
-            <div className="flex items-center gap-2.5 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/10 px-5 py-3 text-sm font-medium text-rose-700 dark:text-rose-400 shadow-sm">
+            <div className="alert-error flex items-center gap-2.5 rounded-xl px-5 py-3 text-sm font-medium shadow-sm">
               <AlertCircle className="h-4 w-4 shrink-0" />
               Couldn&apos;t load the list of class streams. Refresh to try again.
             </div>
           )}
 
           {data && !isPending && (
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
               <StatCard
                 label="Presence Rate"
                 value={`${stats.rate}%`}
-                valueClassName={stats.rate >= 90 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500'}
+                valueClassName={
+                  stats.rate >= 90 ? 'text-theme-success' : 'text-theme-warning'
+                }
               />
               <StatCard label="Total Students" value={stats.total} />
-              <StatCard label="Present" value={stats.present} valueClassName="text-emerald-600 dark:text-emerald-400" />
-              <StatCard label="Late" value={stats.late} valueClassName="text-amber-500" />
-              <StatCard label="Absent" value={stats.absent} valueClassName="text-rose-500" />
+              <StatCard
+                label="Present"
+                value={stats.present}
+                valueClassName="text-theme-success"
+              />
+              <StatCard
+                label="Late"
+                value={stats.late}
+                valueClassName="text-theme-warning"
+              />
+              <StatCard
+                label="Absent"
+                value={stats.absent}
+                valueClassName="text-theme-danger"
+              />
             </div>
           )}
 
@@ -395,15 +386,15 @@ export default function SchoolAdminAttendancePage() {
             <EmptyState
               icon={Inbox}
               title="No Class Streams Configured"
-              body="Set up class streams under School Setup before attendance can be reviewed here."
+              description="Set up class streams under School Setup before attendance can be reviewed here."
             />
           ) : isPending ? (
-            <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border bg-background p-14 shadow-sm">
-              <Loader2 className="h-7 w-7 text-indigo-500 animate-spin" />
-              <p className="text-sm text-muted-foreground">Loading attendance records…</p>
+            <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-theme bg-theme-surface p-14 shadow-sm">
+              <Loader2 className="h-7 w-7 animate-spin text-theme-accent" />
+              <p className="text-sm text-theme-muted">Loading attendance records…</p>
             </div>
           ) : isError ? (
-            <div className="flex flex-col items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/10 p-8 text-center text-sm text-rose-700 dark:text-rose-400 font-medium shadow-sm">
+            <div className="alert-error flex flex-col items-center gap-2 rounded-xl p-8 text-center text-sm font-medium shadow-sm">
               <AlertCircle className="h-6 w-6" />
               Couldn&apos;t load attendance for this class. Check your connection and try again.
             </div>
@@ -411,79 +402,83 @@ export default function SchoolAdminAttendancePage() {
             <EmptyState
               icon={CalendarDays}
               title="Attendance Not Yet Submitted"
-              body={`No teacher has submitted attendance for ${selectedClass ? `${selectedClass.level} ${selectedClass.stream}` : 'this class'} on ${new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.`}
+              description={`No teacher has submitted attendance for ${selectedClass ? `${selectedClass.level} ${selectedClass.stream}` : 'this class'} on ${new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.`}
             />
           ) : filteredTotal === 0 ? (
             <EmptyState
               icon={Search}
               title="No Matching Students"
-              body="Try a different name or learner ID."
+              description="Try a different name or learner ID."
             />
           ) : (
             <>
-              <div className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3.5">
-                <div className="flex items-center justify-between text-xs mb-2">
-                  <span className="font-semibold text-foreground">Attendance breakdown</span>
-                  <span className="text-muted-foreground">
+              <div className="rounded-xl border border-theme bg-theme-raised/40 px-4 py-3.5">
+                <div className="mb-2 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-theme-primary">
+                    Attendance breakdown
+                  </span>
+                  <span className="text-theme-muted">
                     {stats.present + stats.late} of {stats.total} attended
                   </span>
                 </div>
-                <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div className="flex h-2 w-full overflow-hidden rounded-full bg-theme-raised">
                   {stats.total > 0 && (
                     <>
-                      <div className="bg-emerald-500" style={{ width: `${(stats.present / stats.total) * 100}%` }} />
-                      <div className="bg-amber-500" style={{ width: `${(stats.late / stats.total) * 100}%` }} />
-                      <div className="bg-rose-500" style={{ width: `${(stats.absent / stats.total) * 100}%` }} />
+                      <div
+                        className={ATTENDANCE_STATUS_STYLE.present.bar}
+                        style={{ width: `${(stats.present / stats.total) * 100}%` }}
+                      />
+                      <div
+                        className={ATTENDANCE_STATUS_STYLE.late.bar}
+                        style={{ width: `${(stats.late / stats.total) * 100}%` }}
+                      />
+                      <div
+                        className={ATTENDANCE_STATUS_STYLE.absent.bar}
+                        style={{ width: `${(stats.absent / stats.total) * 100}%` }}
+                      />
                     </>
                   )}
                 </div>
               </div>
 
-              <div className="hidden md:block overflow-hidden rounded-xl border border-border bg-background shadow-sm">
-                <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur border-b border-border text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="hidden overflow-hidden rounded-xl border border-theme bg-theme-surface md:block">
+                <div className="max-h-[65vh] overflow-x-auto overflow-y-auto">
+                  <table className="ms-table w-full text-sm">
+                    <thead className="sticky top-0 z-10 bg-table-header text-left text-xs font-semibold uppercase tracking-wider text-theme-muted">
                       <tr>
-                        <th className="px-5 py-3.5 w-16">#</th>
+                        <th className="w-16 px-5 py-3.5">#</th>
                         <th className="px-5 py-3.5">Student</th>
-                        <th className="px-5 py-3.5 w-40">Learner ID</th>
-                        <th className="px-5 py-3.5 w-40">Status</th>
+                        <th className="w-40 px-5 py-3.5">Learner ID</th>
+                        <th className="w-40 px-5 py-3.5">Status</th>
                         <th className="px-5 py-3.5">Teacher Comments</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border">
+                    <tbody>
                       {pagedStudents.map((student, idx) => (
-                        <tr key={student.studentId} className="bg-background hover:bg-muted/10 transition-colors">
-                          <td className="px-5 py-4 text-muted-foreground font-medium">
+                        <tr key={student.studentId} className="border-t border-theme">
+                          <td className="px-5 py-4 font-medium text-theme-muted">
                             {(page - 1) * pageSize + idx + 1}
                           </td>
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-3">
-                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
-                                {initials(student.studentName)}
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-theme-accent-muted text-[11px] font-bold text-theme-accent">
+                                {studentInitials(student.studentName)}
                               </span>
-                              <span className="font-semibold text-foreground">{student.studentName}</span>
+                              <span className="font-semibold text-theme-primary">
+                                {student.studentName}
+                              </span>
                             </div>
                           </td>
-                          <td className="px-5 py-4 font-mono text-xs text-muted-foreground/80">{student.learnerId}</td>
-                          <td className="px-5 py-4">
-                            {student.status ? (
-                              <span
-                                className={[
-                                  'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold',
-                                  STATUS_CONFIG[student.status].bg,
-                                  STATUS_CONFIG[student.status].border,
-                                  STATUS_CONFIG[student.status].text,
-                                ].join(' ')}
-                              >
-                                {STATUS_CONFIG[student.status].label}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">— not marked</span>
-                            )}
+                          <td className="px-5 py-4 font-mono text-xs text-theme-muted">
+                            {student.learnerId}
                           </td>
-                          <td className="px-5 py-4 text-muted-foreground text-xs italic">
-                            {student.notes || <span className="text-muted-foreground/40">No remarks</span>}
+                          <td className="px-5 py-4">
+                            <AttendanceStatusBadge status={student.status} />
+                          </td>
+                          <td className="px-5 py-4 text-xs italic text-theme-muted">
+                            {student.notes || (
+                              <span className="text-theme-faint not-italic">No remarks</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -492,36 +487,33 @@ export default function SchoolAdminAttendancePage() {
                 </div>
               </div>
 
-              <div className="md:hidden space-y-2.5">
+              <div className="space-y-2.5 md:hidden">
                 {pagedStudents.map((student, idx) => (
-                  <div key={student.studentId} className="rounded-xl border border-border bg-background p-4 shadow-sm">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                        {initials(student.studentName)}
+                  <div
+                    key={student.studentId}
+                    className="rounded-xl border border-theme bg-theme-surface p-4"
+                  >
+                    <div className="mb-2 flex items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-theme-accent-muted text-xs font-bold text-theme-accent">
+                        {studentInitials(student.studentName)}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-foreground truncate">
+                        <p className="truncate font-semibold text-theme-primary">
                           {(page - 1) * pageSize + idx + 1}. {student.studentName}
                         </p>
-                        <p className="font-mono text-[11px] text-muted-foreground/80">{student.learnerId}</p>
+                        <p className="font-mono text-[11px] text-theme-muted">
+                          {student.learnerId}
+                        </p>
                       </div>
-                      {student.status ? (
-                        <span
-                          className={[
-                            'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold shrink-0',
-                            STATUS_CONFIG[student.status].bg,
-                            STATUS_CONFIG[student.status].border,
-                            STATUS_CONFIG[student.status].text,
-                          ].join(' ')}
-                        >
-                          {STATUS_CONFIG[student.status].label}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground text-xs shrink-0">—</span>
-                      )}
+                      <AttendanceStatusBadge
+                        status={student.status}
+                        className="shrink-0"
+                      />
                     </div>
                     {student.notes && (
-                      <p className="text-xs text-muted-foreground italic pl-12">{student.notes}</p>
+                      <p className="pl-12 text-xs italic text-theme-muted">
+                        {student.notes}
+                      </p>
                     )}
                   </div>
                 ))}
@@ -546,34 +538,20 @@ export default function SchoolAdminAttendancePage() {
 function StatCard({
   label,
   value,
-  valueClassName = 'text-foreground',
+  valueClassName = 'text-theme-primary',
 }: {
   label: string;
   value: string | number;
   valueClassName?: string;
 }) {
   return (
-    <div className="bg-background border border-border rounded-xl p-4 shadow-sm">
-      <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</div>
-      <div className={`text-2xl font-bold mt-1 ${valueClassName}`}>{value}</div>
-    </div>
-  );
-}
-
-function EmptyState({
-  icon: Icon,
-  title,
-  body,
-}: {
-  icon: React.ElementType;
-  title: string;
-  body: string;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border p-12 text-center bg-muted/10 shadow-sm">
-      <Icon className="h-10 w-10 text-muted-foreground/30" />
-      <h3 className="text-base font-semibold text-foreground">{title}</h3>
-      <p className="text-sm text-muted-foreground max-w-sm">{body}</p>
+    <div className="rounded-xl border border-theme bg-theme-surface p-4 shadow-sm">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+        {label}
+      </div>
+      <div className={`mt-1 text-2xl font-bold tabular-nums ${valueClassName}`}>
+        {value}
+      </div>
     </div>
   );
 }

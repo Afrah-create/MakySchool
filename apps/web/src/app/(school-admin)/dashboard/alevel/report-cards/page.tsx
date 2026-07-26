@@ -28,6 +28,12 @@ const RESULT_LABEL: Record<string, string> = {
   '6': 'Incomplete',
 };
 
+const RESULT_BADGE: Record<string, string> = {
+  '1': 'badge-success',
+  '2': 'badge-warning',
+  '6': 'bg-theme-raised text-theme-muted',
+};
+
 function ReportAvatar({
   photoUrl,
   initials,
@@ -44,15 +50,47 @@ function ReportAvatar({
       <img
         src={photoUrl}
         alt={name}
-        className="h-16 w-16 rounded-2xl object-cover shadow-sm"
+        className="h-14 w-14 shrink-0 rounded-xl object-cover sm:h-16 sm:w-16"
         onError={() => setFailed(true)}
       />
     );
   }
   return (
-    <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-theme-accent-muted text-lg font-semibold text-theme-accent">
+    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-theme-accent-muted text-base font-semibold text-theme-accent sm:h-16 sm:w-16 sm:text-lg">
       {initials || '?'}
     </span>
+  );
+}
+
+function MetaChip({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null | undefined;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] font-semibold uppercase tracking-wider text-theme-faint">
+        {label}
+      </dt>
+      <dd className="mt-0.5 truncate text-sm font-medium text-theme-primary">
+        {value || '—'}
+      </dd>
+    </div>
+  );
+}
+
+function KpiTile({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-xl border border-theme bg-theme-raised/40 px-3.5 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+        {label}
+      </p>
+      <p className="mt-1 text-lg font-semibold tabular-nums text-theme-primary">
+        {value}
+      </p>
+    </div>
   );
 }
 
@@ -240,7 +278,7 @@ function ReportCardsClient() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+    <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
       <PageHeader
         title="A-Level report cards"
         description="Preview exam reports, add comments (including bulk), approve for the learner portal, and download PDFs."
@@ -323,112 +361,153 @@ function ReportCardsClient() {
           description="Enroll students and enter grades first."
         />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
-          <aside className="max-h-[70vh] overflow-y-auto rounded-xl border border-theme bg-theme-surface">
-            <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-theme bg-theme-surface px-3 py-2">
-              <label className="flex items-center gap-2 text-xs text-theme-muted">
+        <div className="grid items-start gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+          {/* Student roster */}
+          <aside className="overflow-hidden rounded-xl border border-theme bg-theme-surface lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:flex lg:flex-col">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-theme bg-table-header px-3 py-2.5">
+              <label className="flex min-w-0 items-center gap-2 text-xs font-medium text-theme-muted">
                 <input
                   type="checkbox"
                   checked={allSelected}
                   onChange={toggleSelectAll}
                   className="rounded border-theme"
                 />
-                {selectedIds.size > 0
-                  ? `${selectedIds.size} selected`
-                  : 'Select'}
+                <span className="truncate">
+                  {selectedIds.size > 0
+                    ? `${selectedIds.size} selected`
+                    : `${students.length} students`}
+                </span>
               </label>
               {selectedIds.size > 0 ? (
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-theme-accent"
+                  className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-theme-accent hover:underline"
                   onClick={() => setBulkOpen(true)}
                 >
                   <Users className="h-3.5 w-3.5" />
-                  Bulk comment
+                  Bulk
                 </button>
               ) : null}
             </div>
-            <ul className="divide-y divide-theme">
-              {students.map((s) => (
-                <li key={s.studentId} className="flex items-stretch">
-                  <label className="flex items-center px-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(s.studentId)}
-                      onChange={() => toggleSelect(s.studentId)}
-                      className="rounded border-theme"
-                      aria-label={`Select ${s.studentName}`}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setStudentId(s.studentId)}
-                    className={`min-w-0 flex-1 px-2 py-2.5 text-left text-sm transition ${
-                      studentId === s.studentId
-                        ? 'bg-theme-accent-muted text-theme-accent'
-                        : 'hover:bg-theme-raised/50 text-theme-primary'
-                    }`}
+
+            {/* Mobile student select */}
+            <div className="border-b border-theme p-3 lg:hidden">
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+                  Student
+                </span>
+                <select
+                  className="ms-input w-full"
+                  value={studentId}
+                  onChange={(e) => setStudentId(e.target.value)}
+                >
+                  {students.map((s) => (
+                    <option key={s.studentId} value={s.studentId}>
+                      #{s.position} · {s.studentName} ({s.total_points} pts)
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <ul className="hidden min-h-0 flex-1 overflow-y-auto lg:block">
+              {students.map((s) => {
+                const active = studentId === s.studentId;
+                return (
+                  <li
+                    key={s.studentId}
+                    className={[
+                      'grid grid-cols-[1.75rem_minmax(0,1fr)] items-center border-b border-theme last:border-b-0',
+                      active
+                        ? 'bg-theme-accent-muted'
+                        : 'hover:bg-theme-raised/40',
+                    ].join(' ')}
                   >
-                    <span className="block truncate font-medium">
-                      {s.studentName}
-                    </span>
-                    <span className="block font-mono text-[11px] text-theme-muted">
-                      #{s.position} · {s.total_points} pts
-                    </span>
-                  </button>
-                </li>
-              ))}
+                    <div className="flex items-center justify-center self-stretch pl-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(s.studentId)}
+                        onChange={() => toggleSelect(s.studentId)}
+                        className="rounded border-theme"
+                        aria-label={`Select ${s.studentName}`}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setStudentId(s.studentId)}
+                      className={[
+                        'min-w-0 px-2 py-2.5 text-left transition',
+                        active
+                          ? 'border-l-2 border-[var(--color-accent)] text-theme-accent'
+                          : 'border-l-2 border-transparent text-theme-primary',
+                      ].join(' ')}
+                    >
+                      <span className="block truncate text-sm font-medium">
+                        {s.studentName}
+                      </span>
+                      <span className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-theme-muted">
+                        <span className="tabular-nums">#{s.position}</span>
+                        <span className="text-theme-faint">·</span>
+                        <span className="tabular-nums">{s.total_points} pts</span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </aside>
 
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             {bulkOpen && selectedIds.size > 0 ? (
-              <section className="space-y-3 rounded-xl border border-theme bg-theme-surface p-5">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <h2 className="text-base font-semibold text-theme-primary">
+              <section className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-theme px-4 py-3 sm:px-5">
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold text-theme-primary">
                       Bulk comments
                     </h2>
-                    <p className="text-sm text-theme-muted">
+                    <p className="mt-0.5 text-xs text-theme-muted">
                       Apply to {selectedIds.size} student
                       {selectedIds.size === 1 ? '' : 's'}
                       {selectedNames.length <= 3
                         ? `: ${selectedNames.join(', ')}`
                         : ` (e.g. ${selectedNames.slice(0, 2).join(', ')}…)`}
-                      . Already-approved reports are skipped unless you approve.
+                      . Approved reports are skipped unless you approve.
                     </p>
                   </div>
                   <button
                     type="button"
-                    className="text-sm text-theme-muted hover:text-theme-primary"
+                    className="ms-btn-ghost shrink-0 !px-3 !py-1.5 text-xs"
                     onClick={() => setBulkOpen(false)}
                   >
                     Close
                   </button>
                 </div>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-medium text-theme-muted">
-                    Class teacher comment
-                  </span>
-                  <textarea
-                    className="ms-input min-h-[80px] w-full"
-                    value={bulkClassComment}
-                    onChange={(e) => setBulkClassComment(e.target.value)}
-                    placeholder="Leave blank to keep each student’s existing comment"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-medium text-theme-muted">
-                    Head teacher comment
-                  </span>
-                  <textarea
-                    className="ms-input min-h-[80px] w-full"
-                    value={bulkHeadComment}
-                    onChange={(e) => setBulkHeadComment(e.target.value)}
-                    placeholder="Leave blank to keep each student’s existing comment"
-                  />
-                </label>
-                <div className="flex flex-wrap justify-end gap-2">
+                <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+                  <label className="block">
+                    <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+                      Class teacher comment
+                    </span>
+                    <textarea
+                      className="ms-input min-h-[88px] w-full"
+                      value={bulkClassComment}
+                      onChange={(e) => setBulkClassComment(e.target.value)}
+                      placeholder="Leave blank to keep existing"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+                      Head teacher comment
+                    </span>
+                    <textarea
+                      className="ms-input min-h-[88px] w-full"
+                      value={bulkHeadComment}
+                      onChange={(e) => setBulkHeadComment(e.target.value)}
+                      placeholder="Leave blank to keep existing"
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2 border-t border-theme px-4 py-3 sm:px-5">
                   <LoadingButton
                     variant="ghost"
                     loading={bulkSave.isPending}
@@ -461,119 +540,144 @@ function ReportCardsClient() {
               />
             ) : report ? (
               <>
-                <section className="rounded-2xl border border-theme bg-theme-surface p-5 shadow-sm">
-                  <div className="flex flex-wrap items-start gap-4">
-                    <ReportAvatar
-                      photoUrl={report.photoUrl}
-                      initials={report.studentInitials}
-                      name={report.studentName}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <h2 className="text-lg font-semibold text-theme-primary">
-                        {report.studentName}
-                      </h2>
-                      <p className="text-sm text-theme-muted">
-                        {report.learnerId} · {report.className} ·{' '}
-                        {report.combinationName}
-                      </p>
-                      <p className="mt-1 text-sm text-theme-muted">
-                        {report.examName}
-                        {report.examTypeName
-                          ? ` · ${report.examTypeName}`
-                          : ''}
-                        {report.termName ? ` · ${report.termName}` : ''}
-                        {report.position != null
-                          ? ` · Position ${report.position}${
-                              report.classSize
-                                ? ` of ${report.classSize}`
-                                : ''
-                            }`
-                          : ''}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-semibold text-theme-primary">
-                        {report.total_points}
-                        <span className="ml-1 text-sm font-normal text-theme-muted">
-                          pts
+                <section className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+                  {/* Identity header */}
+                  <div className="border-b border-theme px-4 py-4 sm:px-5">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-3.5">
+                        <ReportAvatar
+                          photoUrl={report.photoUrl}
+                          initials={report.studentInitials}
+                          name={report.studentName}
+                        />
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="truncate text-lg font-semibold text-theme-primary">
+                              {report.studentName}
+                            </h2>
+                            {approved ? (
+                              <span className="badge-success rounded-full px-2 py-0.5 text-[11px] font-medium">
+                                Approved
+                              </span>
+                            ) : (
+                              <span className="rounded-full bg-theme-raised px-2 py-0.5 text-[11px] font-medium text-theme-muted">
+                                Pending approval
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-0.5 font-mono text-xs text-theme-muted">
+                            {report.learnerId}
+                          </p>
+                          {approved && report.approvedByName ? (
+                            <p className="mt-1 text-xs text-theme-success">
+                              Approved by {report.approvedByName} · visible to
+                              learner
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-3 self-start rounded-xl border border-theme bg-theme-raised/40 px-4 py-2.5 sm:flex-col sm:items-end sm:gap-1 sm:self-auto">
+                        <p className="text-2xl font-semibold tabular-nums leading-none text-theme-primary">
+                          {report.total_points}
+                          <span className="ml-1 text-sm font-normal text-theme-muted">
+                            pts
+                          </span>
+                        </p>
+                        <span
+                          className={[
+                            'inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                            RESULT_BADGE[report.result_code] ??
+                              'bg-theme-raised text-theme-muted',
+                          ].join(' ')}
+                        >
+                          {RESULT_LABEL[report.result_code] ??
+                            report.result_code}
                         </span>
-                      </p>
-                      <p className="text-sm text-theme-accent">
-                        {RESULT_LABEL[report.result_code] ?? report.result_code}
-                      </p>
-                      {approved ? (
-                        <p className="mt-1 text-xs text-theme-success">
-                          Approved
-                          {report.approvedByName
-                            ? ` by ${report.approvedByName}`
-                            : ''}{' '}
-                          · visible to learner
-                        </p>
-                      ) : (
-                        <p className="mt-1 text-xs text-theme-muted">
-                          Pending approval
-                        </p>
-                      )}
+                      </div>
                     </div>
+
+                    <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-theme pt-4 sm:grid-cols-4">
+                      <MetaChip label="Class" value={report.className} />
+                      <MetaChip
+                        label="Combination"
+                        value={report.combinationName}
+                      />
+                      <MetaChip
+                        label="Exam"
+                        value={[
+                          report.examName,
+                          report.examTypeName,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      />
+                      <MetaChip
+                        label="Position"
+                        value={
+                          report.position != null
+                            ? `${report.position}${
+                                report.classSize
+                                  ? ` of ${report.classSize}`
+                                  : ''
+                              }`
+                            : '—'
+                        }
+                      />
+                    </dl>
                   </div>
 
-                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-xl border border-theme bg-theme-raised/40 px-3 py-2">
-                      <p className="text-[11px] uppercase tracking-wide text-theme-muted">
-                        Principal passes
-                      </p>
-                      <p className="text-lg font-semibold text-theme-primary">
-                        {report.principal_pass_count}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-theme bg-theme-raised/40 px-3 py-2">
-                      <p className="text-[11px] uppercase tracking-wide text-theme-muted">
-                        GP / Subsidiary
-                      </p>
-                      <p className="text-lg font-semibold text-theme-primary">
-                        {report.gp_points} / {report.subsidiary_points}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-theme bg-theme-raised/40 px-3 py-2">
-                      <p className="text-[11px] uppercase tracking-wide text-theme-muted">
-                        Best principals
-                      </p>
-                      <p className="text-lg font-semibold text-theme-primary">
-                        {report.best_principal_points}
-                      </p>
-                    </div>
+                  {/* KPIs */}
+                  <div className="grid grid-cols-3 gap-3 border-b border-theme px-4 py-4 sm:px-5">
+                    <KpiTile
+                      label="Principal passes"
+                      value={report.principal_pass_count}
+                    />
+                    <KpiTile
+                      label="GP / Subsidiary"
+                      value={`${report.gp_points} / ${report.subsidiary_points}`}
+                    />
+                    <KpiTile
+                      label="Best principals"
+                      value={report.best_principal_points}
+                    />
                   </div>
 
-                  <div className="mt-5 overflow-x-auto rounded-xl border border-theme">
-                    <table className="w-full border-collapse text-sm">
-                      <thead className="bg-theme-raised/50 text-xs uppercase tracking-wide text-theme-muted">
+                  {/* Subjects */}
+                  <div className="overflow-x-auto">
+                    <table className="ms-table ms-table-compact w-full min-w-[32rem]">
+                      <thead>
                         <tr>
-                          <th className="px-3 py-2.5 text-left">Subject</th>
-                          <th className="px-2 py-2.5 text-center">Score</th>
-                          <th className="px-2 py-2.5 text-center">Grade</th>
-                          <th className="px-2 py-2.5 text-center">Pts</th>
-                          <th className="px-3 py-2.5 text-left">Descriptor</th>
+                          <th>Subject</th>
+                          <th className="text-center">Score</th>
+                          <th className="text-center">Grade</th>
+                          <th className="text-center">Pts</th>
+                          <th>Descriptor</th>
                         </tr>
                       </thead>
                       <tbody>
                         {report.subjects.map((s) => (
-                          <tr key={s.subjectId} className="border-t border-theme">
-                            <td className="px-3 py-2.5 text-theme-primary">
-                              <span className="mr-1.5 font-mono text-xs text-theme-muted">
-                                {s.code}
-                              </span>
-                              {s.subjectName}
+                          <tr key={s.subjectId}>
+                            <td>
+                              <div className="flex items-baseline gap-2">
+                                <span className="shrink-0 font-mono text-xs text-theme-muted">
+                                  {s.code}
+                                </span>
+                                <span className="font-medium text-theme-primary">
+                                  {s.subjectName}
+                                </span>
+                              </div>
                             </td>
-                            <td className="px-2 py-2.5 text-center text-theme-muted">
+                            <td className="text-center tabular-nums text-theme-muted">
                               {s.rawScore ?? '—'}
                             </td>
-                            <td className="px-2 py-2.5 text-center font-semibold text-theme-accent">
+                            <td className="text-center font-semibold tabular-nums text-theme-accent">
                               {s.grade ?? '—'}
                             </td>
-                            <td className="px-2 py-2.5 text-center">
+                            <td className="text-center tabular-nums text-theme-primary">
                               {s.points ?? '—'}
                             </td>
-                            <td className="px-3 py-2.5 text-theme-muted">
+                            <td className="text-muted">
                               {s.descriptor || '—'}
                             </td>
                           </tr>
@@ -583,31 +687,43 @@ function ReportCardsClient() {
                   </div>
                 </section>
 
-                <section className="space-y-3 rounded-2xl border border-theme bg-theme-surface p-5">
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-medium text-theme-muted">
-                      Class teacher comment
-                    </span>
-                    <textarea
-                      className="ms-input min-h-[80px] w-full"
-                      value={classComment}
-                      disabled={approved}
-                      onChange={(e) => setClassComment(e.target.value)}
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-medium text-theme-muted">
-                      Head teacher comment
-                    </span>
-                    <textarea
-                      className="ms-input min-h-[80px] w-full"
-                      value={headComment}
-                      disabled={approved}
-                      onChange={(e) => setHeadComment(e.target.value)}
-                    />
-                  </label>
+                <section className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+                  <div className="border-b border-theme px-4 py-3 sm:px-5">
+                    <h3 className="text-sm font-semibold text-theme-primary">
+                      Comments
+                    </h3>
+                    <p className="text-xs text-theme-muted">
+                      {approved
+                        ? 'This report is approved and locked for editing.'
+                        : 'Add remarks before approving for the learner portal.'}
+                    </p>
+                  </div>
+                  <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+                    <label className="block">
+                      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+                        Class teacher
+                      </span>
+                      <textarea
+                        className="ms-input min-h-[96px] w-full"
+                        value={classComment}
+                        disabled={approved}
+                        onChange={(e) => setClassComment(e.target.value)}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+                        Head teacher
+                      </span>
+                      <textarea
+                        className="ms-input min-h-[96px] w-full"
+                        value={headComment}
+                        disabled={approved}
+                        onChange={(e) => setHeadComment(e.target.value)}
+                      />
+                    </label>
+                  </div>
                   {!approved ? (
-                    <div className="flex flex-wrap justify-end gap-2">
+                    <div className="flex flex-wrap justify-end gap-2 border-t border-theme px-4 py-3 sm:px-5">
                       <LoadingButton
                         variant="ghost"
                         loading={saveComment.isPending}
@@ -641,7 +757,7 @@ export default function ALevelReportCardsPage() {
   return (
     <Suspense
       fallback={
-        <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+        <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
           <Skeleton className="h-10 w-64" />
           <Skeleton className="h-72 w-full rounded-xl" />
         </div>

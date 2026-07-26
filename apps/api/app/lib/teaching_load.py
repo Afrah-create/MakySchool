@@ -31,7 +31,10 @@ async def fetch_teaching_load_matrix(
             sc.stream,
             s.id AS subject_id,
             s.name AS subject_name,
-            tca.teacher_id,
+            -- Only expose a teacher_id when the user is still a school teacher.
+            -- Orphaned assignment rows (role changed / wrong school) must not
+            -- look "assigned", or saves fail validating the stale previous holder.
+            teacher.id AS teacher_id,
             COALESCE(teacher.name, teacher.full_name) AS teacher_name
           FROM school_class_subjects cs
           JOIN school_classes sc ON sc.id = cs.class_id AND sc.school_id = cs.school_id
@@ -202,8 +205,12 @@ async def apply_slot_updates(
     # teacher's insert displaces their row.
     previous_holder_ids: list[str] = []
     new_assignee_ids: list[str] = []
+    updated_slot_pairs: list[tuple[uuid.UUID, uuid.UUID]] = []
     for update in updates:
-        key = _slot_key(str(update["class_id"]), str(update["subject_id"]))
+        class_id = uuid.UUID(str(update["class_id"]))
+        subject_id = uuid.UUID(str(update["subject_id"]))
+        updated_slot_pairs.append((class_id, subject_id))
+        key = _slot_key(str(class_id), str(subject_id))
         previous = matrix["slots"]
         prev_slot = next(
             (s for s in previous if _slot_key(s["class_id"], s["subject_id"]) == key),
@@ -218,12 +225,11 @@ async def apply_slot_updates(
             if assignee not in new_assignee_ids:
                 new_assignee_ids.append(assignee)
 
-    affected_teacher_ids: list[str] = previous_holder_ids + [
-        tid for tid in new_assignee_ids if tid not in previous_holder_ids
-    ]
-
     all_teacher_ids = {t["id"] for t in matrix["teachers"]}
-    for tid in affected_teacher_ids:
+
+    # Only the teachers being assigned must be valid. Stale previous holders
+    # (user no longer role=teacher, etc.) must not block a replacement.
+    for tid in new_assignee_ids:
         if tid not in all_teacher_ids:
             return {
                 "ok": False,
@@ -232,6 +238,41 @@ async def apply_slot_updates(
                 "fields": {"teacher_id": "Teacher not found in your school."},
             }
 
+    # Drop orphaned assignment rows for the slots being updated so a later
+    # UNIQUE(school, class, subject) insert is not blocked by a ghost holder.
+    if updated_slot_pairs:
+        await conn.execute(
+            """
+            DELETE FROM teacher_class_assignments tca
+            USING UNNEST($2::uuid[], $3::uuid[]) AS slot(class_id, subject_id)
+            WHERE tca.school_id = $1
+              AND tca.class_id = slot.class_id
+              AND tca.subject_id = slot.subject_id
+              AND NOT EXISTS (
+                SELECT 1
+                FROM users u
+                WHERE u.id = tca.teacher_id
+                  AND u.school_id = tca.school_id
+                  AND LOWER(u.role) = 'teacher'
+              )
+            """,
+            school_id,
+            [pair[0] for pair in updated_slot_pairs],
+            [pair[1] for pair in updated_slot_pairs],
+        )
+
+    affected_teacher_ids: list[str] = [
+        tid for tid in previous_holder_ids if tid in all_teacher_ids
+    ] + [tid for tid in new_assignee_ids if tid not in previous_holder_ids]
+    # Deduplicate while preserving previous-holder-first order.
+    seen: set[str] = set()
+    ordered_teacher_ids: list[str] = []
+    for tid in affected_teacher_ids:
+        if tid in seen:
+            continue
+        seen.add(tid)
+        ordered_teacher_ids.append(tid)
+
     combined_preview: dict[str, Any] = {
         "warnings": [],
         "blocks": [],
@@ -239,29 +280,29 @@ async def apply_slot_updates(
         "to_remove": [],
     }
 
-    for teacher_id_str in affected_teacher_ids:
-            teacher_id = uuid.UUID(teacher_id_str)
-            desired = _assignments_for_teacher(teacher_id_str, slot_map)
-            current = await _current_teacher_assignments(conn, school_id, teacher_id)
-            if _assignment_sets_equal(current, desired):
-                continue
+    for teacher_id_str in ordered_teacher_ids:
+        teacher_id = uuid.UUID(teacher_id_str)
+        desired = _assignments_for_teacher(teacher_id_str, slot_map)
+        current = await _current_teacher_assignments(conn, school_id, teacher_id)
+        if _assignment_sets_equal(current, desired):
+            continue
 
-            result = await sync_teacher_assignments(
-                conn,
-                school_id,
-                teacher_id,
-                actor_id,
-                desired,
-                acknowledge_warnings=acknowledge_warnings,
-            )
-            if not result["ok"]:
-                return result
+        result = await sync_teacher_assignments(
+            conn,
+            school_id,
+            teacher_id,
+            actor_id,
+            desired,
+            acknowledge_warnings=acknowledge_warnings,
+        )
+        if not result["ok"]:
+            return result
 
-            preview = result.get("preview") or {}
-            combined_preview["warnings"].extend(preview.get("warnings") or [])
-            combined_preview["blocks"].extend(preview.get("blocks") or [])
-            combined_preview["to_add"].extend(preview.get("to_add") or [])
-            combined_preview["to_remove"].extend(preview.get("to_remove") or [])
+        preview = result.get("preview") or {}
+        combined_preview["warnings"].extend(preview.get("warnings") or [])
+        combined_preview["blocks"].extend(preview.get("blocks") or [])
+        combined_preview["to_add"].extend(preview.get("to_add") or [])
+        combined_preview["to_remove"].extend(preview.get("to_remove") or [])
 
     return {"ok": True, "preview": combined_preview}
 

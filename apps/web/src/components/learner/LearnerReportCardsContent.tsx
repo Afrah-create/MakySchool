@@ -20,6 +20,12 @@ const RESULT_LABEL: Record<string, string> = {
   '6': 'Incomplete',
 };
 
+const RESULT_BADGE: Record<string, string> = {
+  '1': 'badge-success',
+  '2': 'badge-warning',
+  '6': 'bg-theme-raised text-theme-muted',
+};
+
 function ReportAvatar({
   photoUrl,
   initials,
@@ -36,15 +42,47 @@ function ReportAvatar({
       <img
         src={photoUrl}
         alt={name}
-        className="h-16 w-16 rounded-2xl object-cover"
+        className="h-14 w-14 shrink-0 rounded-xl object-cover sm:h-16 sm:w-16"
         onError={() => setFailed(true)}
       />
     );
   }
   return (
-    <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-theme-accent-muted text-lg font-semibold text-theme-accent">
+    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-theme-accent-muted text-base font-semibold text-theme-accent sm:h-16 sm:w-16 sm:text-lg">
       {initials || '?'}
     </span>
+  );
+}
+
+function MetaChip({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null | undefined;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] font-semibold uppercase tracking-wider text-theme-faint">
+        {label}
+      </dt>
+      <dd className="mt-0.5 truncate text-sm font-medium text-theme-primary">
+        {value || '—'}
+      </dd>
+    </div>
+  );
+}
+
+function KpiTile({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-xl border border-theme bg-theme-raised/40 px-3.5 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+        {label}
+      </p>
+      <p className="mt-1 text-lg font-semibold tabular-nums text-theme-primary">
+        {value}
+      </p>
+    </div>
   );
 }
 
@@ -88,7 +126,7 @@ export function LearnerReportCardsContent() {
   return (
     <DashboardPage
       embedded
-      maxWidth="5xl"
+      maxWidth="7xl"
       eyebrow="Learner portal"
       title="Report cards"
       description="View and download approved A-Level examination reports."
@@ -112,8 +150,8 @@ export function LearnerReportCardsContent() {
         onRetry={() => void refetchList()}
         loading={
           <div className="space-y-4">
-            <Skeleton className="h-24 w-full rounded-2xl" />
-            <Skeleton className="h-72 w-full rounded-2xl" />
+            <Skeleton className="h-24 w-full rounded-xl" />
+            <Skeleton className="h-72 w-full rounded-xl" />
           </div>
         }
         isEmpty={(items) => !items || items.length === 0}
@@ -126,40 +164,72 @@ export function LearnerReportCardsContent() {
         }
       >
         {(items) => (
-          <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
-            <aside className="max-h-[70vh] overflow-y-auto rounded-2xl border border-theme bg-theme-surface">
-              <ul className="divide-y divide-theme">
-                {items.map((item) => (
-                  <li key={item.examId}>
-                    <button
-                      type="button"
-                      onClick={() => setExamId(item.examId)}
-                      className={`w-full px-3 py-3 text-left text-sm transition ${
-                        selectedId === item.examId
-                          ? 'bg-theme-accent-muted text-theme-accent'
-                          : 'hover:bg-theme-raised/50 text-theme-primary'
-                      }`}
-                    >
-                      <span className="block font-medium">{item.examName}</span>
-                      <span className="mt-0.5 block text-xs text-theme-muted">
-                        {item.termName}
-                        {item.academicYearLabel
-                          ? ` · ${item.academicYearLabel}`
-                          : ''}
-                      </span>
-                      <span className="mt-1 block font-mono text-[11px] text-theme-muted">
-                        {item.total_points} pts ·{' '}
-                        {RESULT_LABEL[item.result_code] ?? item.result_code}
-                      </span>
-                    </button>
-                  </li>
-                ))}
+          <div className="grid items-start gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
+            <aside className="overflow-hidden rounded-xl border border-theme bg-theme-surface lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:flex lg:flex-col">
+              <div className="shrink-0 border-b border-theme bg-table-header px-3 py-2.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-theme-muted">
+                  Approved exams
+                </p>
+              </div>
+
+              <div className="border-b border-theme p-3 lg:hidden">
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+                    Exam
+                  </span>
+                  <select
+                    className="ms-input w-full"
+                    value={selectedId}
+                    onChange={(e) => setExamId(e.target.value)}
+                  >
+                    {items.map((item) => (
+                      <option key={item.examId} value={item.examId}>
+                        {item.examName}
+                        {item.termName ? ` · ${item.termName}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <ul className="hidden min-h-0 flex-1 overflow-y-auto lg:block">
+                {items.map((item) => {
+                  const active = selectedId === item.examId;
+                  return (
+                    <li key={item.examId} className="border-b border-theme last:border-b-0">
+                      <button
+                        type="button"
+                        onClick={() => setExamId(item.examId)}
+                        className={[
+                          'w-full px-3 py-3 text-left text-sm transition',
+                          active
+                            ? 'border-l-2 border-[var(--color-accent)] bg-theme-accent-muted text-theme-accent'
+                            : 'border-l-2 border-transparent hover:bg-theme-raised/40 text-theme-primary',
+                        ].join(' ')}
+                      >
+                        <span className="block truncate font-medium">
+                          {item.examName}
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-theme-muted">
+                          {item.termName}
+                          {item.academicYearLabel
+                            ? ` · ${item.academicYearLabel}`
+                            : ''}
+                        </span>
+                        <span className="mt-1 block font-mono text-[11px] tabular-nums text-theme-muted">
+                          {item.total_points} pts ·{' '}
+                          {RESULT_LABEL[item.result_code] ?? item.result_code}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </aside>
 
-            <div className="space-y-4">
+            <div className="min-w-0 space-y-4">
               {reportLoading ? (
-                <Skeleton className="h-96 w-full rounded-2xl" />
+                <Skeleton className="h-96 w-full rounded-xl" />
               ) : reportError ? (
                 <EmptyState
                   variant="error"
@@ -169,113 +239,123 @@ export function LearnerReportCardsContent() {
                 />
               ) : report ? (
                 <>
-                  <section className="rounded-2xl border border-theme bg-theme-surface p-5">
-                    <div className="flex flex-wrap items-start gap-4">
-                      <ReportAvatar
-                        photoUrl={report.photoUrl}
-                        initials={report.studentInitials}
-                        name={report.studentName}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <h2 className="text-lg font-semibold text-theme-primary">
-                          {report.studentName}
-                        </h2>
-                        <p className="text-sm text-theme-muted">
-                          {report.learnerId} · {report.className} ·{' '}
-                          {report.combinationName}
-                        </p>
-                        <p className="mt-1 text-sm text-theme-muted">
-                          {report.examName}
-                          {report.examTypeName
-                            ? ` · ${report.examTypeName}`
-                            : ''}
-                          {report.termName ? ` · ${report.termName}` : ''}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-2xl font-semibold text-theme-primary">
-                          {report.total_points}
-                          <span className="ml-1 text-sm font-normal text-theme-muted">
-                            pts
-                          </span>
-                        </p>
-                        <p className="text-sm text-theme-accent">
-                          {RESULT_LABEL[report.result_code] ??
-                            report.result_code}
-                        </p>
-                        {report.approvedAt ? (
-                          <p className="mt-1 text-xs text-theme-success">
-                            Approved
-                            {report.approvedByName
-                              ? ` by ${report.approvedByName}`
-                              : ''}
+                  <section className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+                    <div className="border-b border-theme px-4 py-4 sm:px-5">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex min-w-0 items-start gap-3.5">
+                          <ReportAvatar
+                            photoUrl={report.photoUrl}
+                            initials={report.studentInitials}
+                            name={report.studentName}
+                          />
+                          <div className="min-w-0">
+                            <h2 className="truncate text-lg font-semibold text-theme-primary">
+                              {report.studentName}
+                            </h2>
+                            <p className="mt-0.5 font-mono text-xs text-theme-muted">
+                              {report.learnerId}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-3 self-start rounded-xl border border-theme bg-theme-raised/40 px-4 py-2.5 sm:flex-col sm:items-end sm:gap-1">
+                          <p className="text-2xl font-semibold tabular-nums leading-none text-theme-primary">
+                            {report.total_points}
+                            <span className="ml-1 text-sm font-normal text-theme-muted">
+                              pts
+                            </span>
                           </p>
-                        ) : null}
+                          <span
+                            className={[
+                              'inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                              RESULT_BADGE[report.result_code] ??
+                                'bg-theme-raised text-theme-muted',
+                            ].join(' ')}
+                          >
+                            {RESULT_LABEL[report.result_code] ??
+                              report.result_code}
+                          </span>
+                        </div>
                       </div>
+
+                      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-theme pt-4 sm:grid-cols-4">
+                        <MetaChip label="Class" value={report.className} />
+                        <MetaChip
+                          label="Combination"
+                          value={report.combinationName}
+                        />
+                        <MetaChip
+                          label="Exam"
+                          value={
+                            selectedSummary?.examTypeName || report.examName
+                          }
+                        />
+                        <MetaChip
+                          label="Position"
+                          value={
+                            report.position != null && report.classSize
+                              ? `${report.position} of ${report.classSize}`
+                              : report.position != null
+                                ? String(report.position)
+                                : '—'
+                          }
+                        />
+                      </dl>
                     </div>
 
-                    <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-xl border border-theme bg-theme-raised/40 px-3 py-2">
-                        <p className="text-[11px] uppercase tracking-wide text-theme-muted">
-                          Principal passes
-                        </p>
-                        <p className="text-lg font-semibold text-theme-primary">
-                          {report.principal_pass_count}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-theme bg-theme-raised/40 px-3 py-2">
-                        <p className="text-[11px] uppercase tracking-wide text-theme-muted">
-                          Class rank
-                        </p>
-                        <p className="text-lg font-semibold text-theme-primary">
-                          {report.position != null && report.classSize
+                    <div className="grid grid-cols-3 gap-3 border-b border-theme px-4 py-4 sm:px-5">
+                      <KpiTile
+                        label="Principal passes"
+                        value={report.principal_pass_count}
+                      />
+                      <KpiTile
+                        label="Class rank"
+                        value={
+                          report.position != null && report.classSize
                             ? `${report.position} of ${report.classSize}`
-                            : '—'}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-theme bg-theme-raised/40 px-3 py-2">
-                        <p className="text-[11px] uppercase tracking-wide text-theme-muted">
-                          Exam
-                        </p>
-                        <p className="truncate text-sm font-semibold text-theme-primary">
-                          {selectedSummary?.examTypeName || report.examName}
-                        </p>
-                      </div>
+                            : '—'
+                        }
+                      />
+                      <KpiTile
+                        label="Term"
+                        value={report.termName || '—'}
+                      />
                     </div>
 
-                    <div className="mt-5 overflow-x-auto">
-                      <table className="w-full border-collapse text-sm">
-                        <thead className="text-xs uppercase tracking-wide text-theme-muted">
+                    <div className="overflow-x-auto">
+                      <table className="ms-table ms-table-compact w-full min-w-[32rem]">
+                        <thead>
                           <tr>
-                            <th className="py-2 text-left">Subject</th>
-                            <th className="px-2 py-2 text-center">Score</th>
-                            <th className="px-2 py-2 text-center">Grade</th>
-                            <th className="px-2 py-2 text-center">Pts</th>
-                            <th className="py-2 text-left">Descriptor</th>
+                            <th>Subject</th>
+                            <th className="text-center">Score</th>
+                            <th className="text-center">Grade</th>
+                            <th className="text-center">Pts</th>
+                            <th>Descriptor</th>
                           </tr>
                         </thead>
                         <tbody>
                           {report.subjects.map((s) => (
-                            <tr
-                              key={s.subjectId}
-                              className="border-t border-theme"
-                            >
-                              <td className="py-2 text-theme-primary">
-                                <span className="mr-1 font-mono text-xs text-theme-muted">
-                                  {s.code}
-                                </span>
-                                {s.subjectName}
+                            <tr key={s.subjectId}>
+                              <td>
+                                <div className="flex items-baseline gap-2">
+                                  <span className="shrink-0 font-mono text-xs text-theme-muted">
+                                    {s.code}
+                                  </span>
+                                  <span className="font-medium text-theme-primary">
+                                    {s.subjectName}
+                                  </span>
+                                </div>
                               </td>
-                              <td className="px-2 py-2 text-center text-theme-muted">
+                              <td className="text-center tabular-nums text-theme-muted">
                                 {s.rawScore ?? '—'}
                               </td>
-                              <td className="px-2 py-2 text-center font-medium">
+                              <td className="text-center font-semibold tabular-nums text-theme-accent">
                                 {s.grade ?? '—'}
                               </td>
-                              <td className="px-2 py-2 text-center">
+                              <td className="text-center tabular-nums text-theme-primary">
                                 {s.points ?? '—'}
                               </td>
-                              <td className="py-2 text-theme-muted">
+                              <td className="text-muted">
                                 {s.descriptor || '—'}
                               </td>
                             </tr>
@@ -286,19 +366,19 @@ export function LearnerReportCardsContent() {
                   </section>
 
                   <section className="grid gap-4 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-theme bg-theme-surface p-4">
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-theme-muted">
+                    <div className="rounded-xl border border-theme bg-theme-surface p-4 sm:p-5">
+                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
                         Class teacher comment
                       </h3>
-                      <p className="mt-2 text-sm text-theme-primary whitespace-pre-wrap">
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-theme-primary">
                         {report.classTeacherComment || '—'}
                       </p>
                     </div>
-                    <div className="rounded-2xl border border-theme bg-theme-surface p-4">
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-theme-muted">
+                    <div className="rounded-xl border border-theme bg-theme-surface p-4 sm:p-5">
+                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
                         Head teacher comment
                       </h3>
-                      <p className="mt-2 text-sm text-theme-primary whitespace-pre-wrap">
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-theme-primary">
                         {report.headTeacherComment || '—'}
                       </p>
                     </div>

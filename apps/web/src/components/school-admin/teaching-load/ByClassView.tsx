@@ -25,7 +25,9 @@ function TeacherSelect({
   onChange: (teacherId: string | null) => void;
   allowEmpty?: boolean;
 }) {
-  const active = teachers.filter((t) => t.is_active);
+  const options = teachers.filter(
+    (t) => t.is_active || t.id === value,
+  );
   return (
     <select
       className="ms-input w-full max-w-xs text-sm"
@@ -33,9 +35,10 @@ function TeacherSelect({
       onChange={(event) => onChange(event.target.value || null)}
     >
       {allowEmpty ? <option value="">Unassigned</option> : null}
-      {active.map((teacher) => (
+      {options.map((teacher) => (
         <option key={teacher.id} value={teacher.id}>
           {teacher.full_name}
+          {!teacher.is_active ? " (inactive)" : ""}
         </option>
       ))}
     </select>

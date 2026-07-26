@@ -45,18 +45,12 @@ function rowFieldErrors(fieldErrors: Record<string, string>, index: number) {
     .map(([key, message]) => ({ key, message }));
 }
 
-function PeriodScheduleStrip({
-  periods,
-  compact = false,
-}: {
-  periods: SchoolPeriodTemplate[];
-  compact?: boolean;
-}) {
+function PeriodScheduleStrip({ periods }: { periods: SchoolPeriodTemplate[] }) {
   if (periods.length === 0) return null;
 
   return (
     <div className="overflow-x-auto pb-1">
-      <div className={`flex min-w-max gap-2 ${compact ? "" : "sm:gap-3"}`}>
+      <div className="flex min-w-max gap-2 sm:gap-3">
         {periods.map((item, index) => (
           <div
             key={`${item.periodNumber}-${index}`}
@@ -64,23 +58,19 @@ function PeriodScheduleStrip({
               index < periods.length - 1 ? "pr-1" : ""
             }`}
           >
-            <div
-              className={`flex flex-col rounded-xl border border-theme bg-theme-surface shadow-sm ${
-                compact ? "min-w-[7.5rem] px-3 py-2" : "min-w-[9rem] px-3.5 py-3"
-              }`}
-            >
+            <div className="flex min-w-[9rem] flex-col rounded-xl border border-theme bg-theme-surface px-3.5 py-3 shadow-sm">
               <div className="flex items-center gap-2">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-theme-accent-muted text-[11px] font-semibold text-theme-accent">
                   {item.periodNumber}
                 </span>
-                <span className={`font-semibold text-theme-primary ${compact ? "text-xs" : "text-sm"}`}>
+                <span className="text-sm font-semibold text-theme-primary">
                   {item.startTime}–{item.endTime}
                 </span>
               </div>
-              <p className={`mt-1 truncate text-theme-muted ${compact ? "text-[10px]" : "text-xs"}`}>
+              <p className="mt-1 truncate text-xs text-theme-muted">
                 {item.label ?? `Period ${item.periodNumber}`}
               </p>
-              <p className={`mt-0.5 text-theme-muted/80 ${compact ? "text-[10px]" : "text-[11px]"}`}>
+              <p className="mt-0.5 text-[11px] text-theme-muted/80">
                 {formatDuration(item.startTime, item.endTime)}
               </p>
             </div>
@@ -104,14 +94,12 @@ export function SchoolPeriodTemplateEditor({
   const [draft, setDraft] = useState<SchoolPeriodTemplate[]>(templates);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(templates.length === 0);
 
   useEffect(() => {
     setDraft(templates.length > 0 ? templates : DEFAULT_SCHOOL_PERIOD_TEMPLATES);
   }, [templates]);
 
   const validation = useMemo(() => validateSchoolPeriodTemplates(draft), [draft]);
-  const displayPeriods = expanded ? draft : templates;
   const validationMessages = useMemo(
     () => [
       ...validation.errors.map((message, index) => ({
@@ -170,7 +158,6 @@ export function SchoolPeriodTemplateEditor({
         body: { periods: normalized },
       });
       onSaved(response.data);
-      setExpanded(false);
     } catch (error) {
       setSaveError((error as Error).message);
     } finally {
@@ -181,161 +168,144 @@ export function SchoolPeriodTemplateEditor({
   return (
     <section className="ms-card overflow-hidden">
       <div className="border-b border-theme bg-theme-surface/60 px-4 py-4 sm:px-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-theme-muted">
-              Bell schedule
-            </p>
-            <h2 className="mt-1 text-base font-semibold text-theme-primary">School teaching periods</h2>
-            <p className="mt-1 max-w-2xl text-sm text-theme-muted">
-              Set start and end times once for the whole school. Every class timetable uses these slots.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="ms-btn-ghost shrink-0 self-start"
-            onClick={() => setExpanded((value) => !value)}
-          >
-            {expanded ? "Done editing" : templates.length === 0 ? "Set up periods" : "Edit schedule"}
-          </button>
-        </div>
+        <p className="text-[11px] font-medium uppercase tracking-wide text-theme-muted">
+          Bell schedule
+        </p>
+        <h2 className="mt-1 text-base font-semibold text-theme-primary">School teaching periods</h2>
+        <p className="mt-1 max-w-2xl text-sm text-theme-muted">
+          Set start and end times once for the whole school. Every class timetable uses these slots.
+        </p>
       </div>
 
       <div className="space-y-4 px-4 py-4 sm:px-5 sm:py-5">
-        {displayPeriods.length > 0 ? (
+        {draft.length > 0 ? (
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-medium text-theme-muted">
-                {expanded ? "Live preview" : `${displayPeriods.length} periods configured`}
+              <p className="text-xs font-medium text-theme-muted">Live preview</p>
+              <p className="text-xs text-theme-muted">
+                {draft[0]?.startTime} → {draft[draft.length - 1]?.endTime}
               </p>
-              {!expanded && templates.length > 0 ? (
-                <p className="text-xs text-theme-muted">
-                  {templates[0]?.startTime} → {templates[templates.length - 1]?.endTime}
-                </p>
-              ) : null}
             </div>
-            <PeriodScheduleStrip periods={displayPeriods} compact={!expanded} />
+            <PeriodScheduleStrip periods={draft} />
           </div>
         ) : null}
 
-        {expanded ? (
-          <div className="space-y-3">
-            <p className="text-xs font-medium text-theme-muted">Edit periods</p>
-            <div className="space-y-2">
-              {draft.map((item, index) => {
-                const errors = rowFieldErrors(validation.fieldErrors, index);
-                const hasError = errors.length > 0;
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-theme-muted">Edit periods</p>
+          <div className="space-y-2">
+            {draft.map((item, index) => {
+              const errors = rowFieldErrors(validation.fieldErrors, index);
+              const hasError = errors.length > 0;
 
-                return (
-                  <div
-                    key={`edit-${item.periodNumber}-${index}`}
-                    className={`rounded-xl border bg-theme-surface p-3 sm:p-4 ${
-                      hasError ? "border-theme-danger/40 bg-theme-danger/5" : "border-theme"
-                    }`}
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                      <div className="flex items-center gap-3 sm:w-28 sm:shrink-0">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-theme-accent-muted text-sm font-semibold text-theme-accent">
-                          {item.periodNumber}
-                        </span>
-                        <div className="sm:hidden">
-                          <p className="text-sm font-medium text-theme-primary">
-                            {item.label ?? `Period ${item.periodNumber}`}
-                          </p>
-                          <p className="text-xs text-theme-muted">
-                            {formatDuration(item.startTime, item.endTime)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <label className="block min-w-0 flex-1 space-y-1">
-                        <span className="text-xs font-medium text-theme-muted">Label</span>
-                        <input
-                          className="ms-input w-full"
-                          value={item.label ?? ""}
-                          placeholder={`Period ${item.periodNumber}`}
-                          onChange={(event) => updateRow(index, { label: event.target.value })}
-                        />
-                      </label>
-
-                      <label className="block w-full space-y-1 sm:w-32">
-                        <span className="text-xs font-medium text-theme-muted">Start</span>
-                        <input
-                          type="time"
-                          className="ms-input w-full"
-                          value={item.startTime}
-                          onChange={(event) => updateRow(index, { startTime: event.target.value })}
-                        />
-                      </label>
-
-                      <label className="block w-full space-y-1 sm:w-32">
-                        <span className="text-xs font-medium text-theme-muted">End</span>
-                        <input
-                          type="time"
-                          className="ms-input w-full"
-                          value={item.endTime}
-                          onChange={(event) => updateRow(index, { endTime: event.target.value })}
-                        />
-                      </label>
-
-                      <div className="hidden w-20 shrink-0 text-center sm:block">
-                        <p className="text-xs font-medium text-theme-muted">Duration</p>
-                        <p className="mt-2 text-sm font-medium text-theme-primary">
+              return (
+                <div
+                  key={`edit-${item.periodNumber}-${index}`}
+                  className={`rounded-xl border bg-theme-surface p-3 sm:p-4 ${
+                    hasError ? "border-theme-danger/40 bg-theme-danger/5" : "border-theme"
+                  }`}
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <div className="flex items-center gap-3 sm:w-28 sm:shrink-0">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-theme-accent-muted text-sm font-semibold text-theme-accent">
+                        {item.periodNumber}
+                      </span>
+                      <div className="sm:hidden">
+                        <p className="text-sm font-medium text-theme-primary">
+                          {item.label ?? `Period ${item.periodNumber}`}
+                        </p>
+                        <p className="text-xs text-theme-muted">
                           {formatDuration(item.startTime, item.endTime)}
                         </p>
                       </div>
-
-                      <button
-                        type="button"
-                        className="ms-btn-ghost w-full px-3 text-xs text-theme-muted hover:text-theme-danger sm:w-auto"
-                        onClick={() => removePeriod(index)}
-                        disabled={draft.length <= 1}
-                      >
-                        Remove
-                      </button>
                     </div>
 
-                    {hasError ? (
-                      <ul className="mt-3 space-y-1 border-t border-theme-danger/20 pt-3 text-xs text-theme-danger">
-                        {errors.map(({ key, message }) => (
-                          <li key={key}>{message}</li>
-                        ))}
-                      </ul>
-                    ) : null}
+                    <label className="block min-w-0 flex-1 space-y-1">
+                      <span className="text-xs font-medium text-theme-muted">Label</span>
+                      <input
+                        className="ms-input w-full"
+                        value={item.label ?? ""}
+                        placeholder={`Period ${item.periodNumber}`}
+                        onChange={(event) => updateRow(index, { label: event.target.value })}
+                      />
+                    </label>
+
+                    <label className="block w-full space-y-1 sm:w-32">
+                      <span className="text-xs font-medium text-theme-muted">Start</span>
+                      <input
+                        type="time"
+                        className="ms-input w-full"
+                        value={item.startTime}
+                        onChange={(event) => updateRow(index, { startTime: event.target.value })}
+                      />
+                    </label>
+
+                    <label className="block w-full space-y-1 sm:w-32">
+                      <span className="text-xs font-medium text-theme-muted">End</span>
+                      <input
+                        type="time"
+                        className="ms-input w-full"
+                        value={item.endTime}
+                        onChange={(event) => updateRow(index, { endTime: event.target.value })}
+                      />
+                    </label>
+
+                    <div className="hidden w-20 shrink-0 text-center sm:block">
+                      <p className="text-xs font-medium text-theme-muted">Duration</p>
+                      <p className="mt-2 text-sm font-medium text-theme-primary">
+                        {formatDuration(item.startTime, item.endTime)}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="ms-btn-ghost w-full px-3 text-xs text-theme-muted hover:text-theme-danger sm:w-auto"
+                      onClick={() => removePeriod(index)}
+                      disabled={draft.length <= 1}
+                    >
+                      Remove
+                    </button>
                   </div>
-                );
-              })}
-            </div>
 
-            {!validation.valid && validationMessages.length > 0 ? (
-              <div className="rounded-xl border border-theme-danger/30 bg-theme-danger/5 px-4 py-3 text-sm text-theme-danger">
-                <p className="font-medium">Fix schedule issues before saving</p>
-                <ul className="mt-2 space-y-1 text-xs">
-                  {validationMessages.map(({ key, message }) => (
-                    <li key={key}>{message}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {saveError ? (
-              <div className="badge-danger rounded-xl px-4 py-3 text-sm">{saveError}</div>
-            ) : null}
-
-            <div className="flex flex-wrap items-center gap-2 border-t border-theme pt-4">
-              <button type="button" className="ms-btn-ghost" onClick={addPeriod}>
-                Add period
-              </button>
-              <LoadingButton
-                loading={saving}
-                disabled={!validation.valid}
-                onClick={() => void handleSave()}
-              >
-                Save school periods
-              </LoadingButton>
-            </div>
+                  {hasError ? (
+                    <ul className="mt-3 space-y-1 border-t border-theme-danger/20 pt-3 text-xs text-theme-danger">
+                      {errors.map(({ key, message }) => (
+                        <li key={key}>{message}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
-        ) : null}
+
+          {!validation.valid && validationMessages.length > 0 ? (
+            <div className="rounded-xl border border-theme-danger/30 bg-theme-danger/5 px-4 py-3 text-sm text-theme-danger">
+              <p className="font-medium">Fix schedule issues before saving</p>
+              <ul className="mt-2 space-y-1 text-xs">
+                {validationMessages.map(({ key, message }) => (
+                  <li key={key}>{message}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {saveError ? (
+            <div className="badge-danger rounded-xl px-4 py-3 text-sm">{saveError}</div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-2 border-t border-theme pt-4">
+            <button type="button" className="ms-btn-ghost" onClick={addPeriod}>
+              Add period
+            </button>
+            <LoadingButton
+              loading={saving}
+              disabled={!validation.valid}
+              onClick={() => void handleSave()}
+            >
+              Save school periods
+            </LoadingButton>
+          </div>
+        </div>
       </div>
     </section>
   );
