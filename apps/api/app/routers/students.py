@@ -1151,7 +1151,7 @@ async def update_student(
         )
 
     student = await _fetch_student_detail(conn, school_id, student_id)
-    return {"data": student}
+    return {"data": await enrich_student_media(student, school_id)}
 
 
 @router.patch("/{student_id}/transfer")
@@ -1254,7 +1254,7 @@ async def transfer_student(
     return {
         "data": {
             "message": f"{student['full_name']} has been moved to {new_class['name']}.",
-            "student": updated,
+            "student": await enrich_student_media(updated, school_id),
         }
     }
 
@@ -1336,7 +1336,7 @@ async def withdraw_student(
             "message": (
                 f"{student['full_name']} has been withdrawn. Their records are preserved."
             ),
-            "student": updated,
+            "student": await enrich_student_media(updated, school_id),
         }
     }
 
@@ -1429,9 +1429,10 @@ async def reinstate_student(
         )
 
     updated = await _fetch_student_detail(conn, school_id, student_id)
+    enriched = await enrich_student_media(updated, school_id)
     return {
         "data": {
             "message": f"{student['full_name']} has been reinstated.",
-            "student": updated,
+            "student": enriched,
         }
     }

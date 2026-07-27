@@ -64,14 +64,13 @@ export async function apiClient<T>(
     });
   } catch {
     throw new Error(
-      "Cannot reach the API. Start the backend with: npm run dev:api (or npm run dev:all from the repo root).",
+      "Unable to connect to the server. Please check your internet connection and try again.",
     );
   }
 
   if (response.status >= 300 && response.status < 400) {
-    const location = response.headers.get("location") ?? "unknown";
     throw new Error(
-      `API redirected to ${location}. Expected JSON from ${requestUrl}.`,
+      "The server redirected your request unexpectedly. Please refresh and try again.",
     );
   }
 
@@ -81,15 +80,15 @@ export async function apiClient<T>(
   if (!raw.trim()) {
     throw new Error(
       response.ok
-        ? "Empty API response. The server returned success without a body."
-        : `API request failed (${response.status}). Is the backend running on port 4000?`,
+        ? "The server returned an empty response. Please try again."
+        : "Something went wrong. The server could not process your request right now.",
     );
   }
 
   const trimmed = raw.trimStart();
   if (trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html")) {
     throw new Error(
-      `Received a web page instead of JSON from ${requestUrl}. The API route may be missing — restart the dev server and confirm POST hits /api${normalizedPath}.`,
+      "The server returned an unexpected response. Please refresh the page and try again.",
     );
   }
 
@@ -98,8 +97,8 @@ export async function apiClient<T>(
   } catch {
     throw new Error(
       response.ok
-        ? `Unexpected API response from ${requestUrl}`
-        : `API request failed (${response.status}). Is the backend running on port 4000?`,
+        ? "The server returned an unexpected response. Please try again."
+        : "Something went wrong. Please check your connection and try again.",
     );
   }
 
