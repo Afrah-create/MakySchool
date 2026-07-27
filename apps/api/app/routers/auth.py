@@ -11,6 +11,7 @@ from pydantic import BaseModel, EmailStr
 
 from app.config import settings
 from app.db.pool import get_db
+from app.lib.auth_link import link_user_auth_id
 from app.lib.email import send_password_reset_email
 from app.lib.jwt_utils import (
     ACCESS_TOKEN_EXPIRES,
@@ -84,21 +85,7 @@ async def _backfill_auth_user_id(
     user_id: uuid.UUID,
     auth_user_id: str | None,
 ) -> None:
-    if not auth_user_id:
-        return
-    try:
-        parsed = uuid.UUID(str(auth_user_id))
-    except ValueError:
-        return
-    await conn.execute(
-        """
-        UPDATE users
-        SET auth_user_id = $1, updated_at = NOW()
-        WHERE id = $2 AND auth_user_id IS NULL
-        """,
-        parsed,
-        user_id,
-    )
+    await link_user_auth_id(conn, user_id=user_id, auth_user_id=auth_user_id)
 
 
 async def _verify_tenant_credentials(

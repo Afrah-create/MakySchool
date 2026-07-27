@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.db.pool import get_db
+from app.lib.auth_link import link_user_auth_id
 from app.lib.password import hash_password
 from app.lib.permissions import can
 from app.lib.teacher_assignments import (
@@ -301,6 +302,15 @@ async def create_user(
             linked = await sync_user_password(normalized_email, temp_password)
             if linked:
                 auth_user_id = uuid.UUID(linked)
+                await conn.execute(
+                    """
+                    UPDATE users
+                    SET auth_user_id = NULL, updated_at = NOW()
+                    WHERE school_id = $1 AND auth_user_id = $2
+                    """,
+                    school_id,
+                    auth_user_id,
+                )
         except CentralAuthError as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -567,10 +577,11 @@ async def reset_user_password(
                 detail={"error": str(exc), "code": exc.code or "AUTH_SERVICE_ERROR"},
             ) from exc
         if linked:
-            await conn.execute(
-                "UPDATE users SET auth_user_id = $1 WHERE id = $2 AND auth_user_id IS NULL",
-                uuid.UUID(linked),
-                user_id,
+            await link_user_auth_id(
+                conn,
+                user_id=user_id,
+                school_id=school_id,
+                auth_user_id=linked,
             )
 
     updated = await conn.fetchrow(

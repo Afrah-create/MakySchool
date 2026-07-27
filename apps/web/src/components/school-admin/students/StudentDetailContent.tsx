@@ -87,6 +87,7 @@ export function StudentDetailContent({ studentId }: { studentId: string }) {
                 <div className="flex items-start gap-4">
                   {student.photo_url ? (
                     <img
+                      key={student.photo_url}
                       src={student.photo_url}
                       alt=""
                       className="h-16 w-16 rounded-full object-cover"

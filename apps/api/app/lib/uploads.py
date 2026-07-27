@@ -37,17 +37,39 @@ async def save_student_photo(
     content: bytes,
     content_type: str,
 ) -> str:
-    """Upload a student profile photo; returns the object key stored in the database."""
+    """Upload a student profile photo; returns the object key stored in the database.
+
+    Uses a unique object key per upload so replacements are not served from a
+    stale CDN/browser cache of a fixed ``profile.jpg`` key.
+    """
     storage = get_tenant_storage()
-    ext = _EXT_BY_MIME.get(content_type.lower().split(";")[0].strip(), ".jpg")
+    normalized = content_type.lower().split(";")[0].strip()
+    ext = _EXT_BY_MIME.get(normalized, ".jpg")
+    filename = f"profile-{uuid.uuid4().hex}{ext}"
     return await storage.upload_bytes(
         school_id,
         "students",
         content,
         content_type,
         str(student_id),
-        f"profile{ext}",
+        filename,
     )
+
+
+async def replace_student_photo(
+    school_id: uuid.UUID,
+    student_id: uuid.UUID,
+    content: bytes,
+    content_type: str,
+    *,
+    previous_photo_url: str | None,
+) -> str:
+    """Upload a new profile photo and delete the previous stored object when different."""
+    new_key = await save_student_photo(school_id, student_id, content, content_type)
+    if previous_photo_url and previous_photo_url != new_key:
+        await delete_stored_object(school_id, previous_photo_url)
+    return new_key
+
 
 
 def _normalize_delete_target(stored_value: str) -> tuple[str | None, Path | None]:

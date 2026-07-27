@@ -314,6 +314,7 @@ export function StudentsPageContent() {
                         <div className="flex items-center gap-3">
                           {student.photo_url ? (
                             <img
+                              key={student.photo_url}
                               src={student.photo_url}
                               alt=""
                               className="h-9 w-9 rounded-full object-cover"

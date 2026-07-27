@@ -87,9 +87,17 @@ export function EditStudentPanel({
     }
 
     if (!ACCEPTED_PHOTO_TYPES.includes(file.type)) {
-      setErrors((prev) => ({ ...prev, photo: "Photo must be a JPEG, PNG, or WebP image." }));
-      toast.error("Photo must be a JPEG, PNG, or WebP image.");
-      return;
+      const lower = file.name.toLowerCase();
+      const okByExt =
+        lower.endsWith(".jpg") ||
+        lower.endsWith(".jpeg") ||
+        lower.endsWith(".png") ||
+        lower.endsWith(".webp");
+      if (!okByExt) {
+        setErrors((prev) => ({ ...prev, photo: "Photo must be a JPEG, PNG, or WebP image." }));
+        toast.error("Photo must be a JPEG, PNG, or WebP image.");
+        return;
+      }
     }
 
     if (file.size > MAX_PHOTO_BYTES) {
@@ -128,35 +136,31 @@ export function EditStudentPanel({
     try {
       if (photo) {
         const formData = new FormData();
-        formData.append("full_name", fullName.trim());
-        formData.append("date_of_birth", dateOfBirth || "");
-        formData.append("gender", gender || "");
-        formData.append("guardian_name", guardianName.trim());
-        formData.append("guardian_relationship", guardianRelationship);
-        formData.append("guardian_phone", guardianPhone.trim());
-        formData.append("guardian_email", guardianEmail.trim());
         formData.append("photo", photo);
-
-        await apiClient(`/schools/students/${student!.id}`, {
-          method: "PATCH",
+        await apiClient(`/schools/students/${student!.id}/photo`, {
+          method: "POST",
           body: formData,
         });
-        toast.success(`Profile photo and details updated for ${fullName.trim()}.`);
-      } else {
-        await apiClient(`/schools/students/${student!.id}`, {
-          method: "PATCH",
-          body: {
-            full_name: fullName.trim(),
-            date_of_birth: dateOfBirth || null,
-            gender: gender || null,
-            guardian_name: guardianName.trim(),
-            guardian_relationship: guardianRelationship,
-            guardian_phone: guardianPhone.trim() || null,
-            guardian_email: guardianEmail.trim() || null,
-          },
-        });
-        toast.success(`Changes saved for ${fullName.trim()}.`);
       }
+
+      await apiClient(`/schools/students/${student!.id}`, {
+        method: "PATCH",
+        body: {
+          full_name: fullName.trim(),
+          date_of_birth: dateOfBirth || null,
+          gender: gender || null,
+          guardian_name: guardianName.trim(),
+          guardian_relationship: guardianRelationship,
+          guardian_phone: guardianPhone.trim() || null,
+          guardian_email: guardianEmail.trim() || null,
+        },
+      });
+
+      toast.success(
+        photo
+          ? `Profile photo and details updated for ${fullName.trim()}.`
+          : `Changes saved for ${fullName.trim()}.`,
+      );
       onSaved();
       onClose();
     } catch (error) {

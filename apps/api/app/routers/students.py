@@ -18,7 +18,7 @@ from app.lib.permissions import can
 from app.lib.rate_limit import get_school_key, limiter
 from app.lib.sequences import generate_learner_id
 from app.lib.teacher_assignments import format_class_name
-from app.lib.uploads import ALLOWED_STUDENT_PHOTO_TYPES, save_student_photo
+from app.lib.uploads import ALLOWED_STUDENT_PHOTO_TYPES, replace_student_photo, save_student_photo
 from app.lib.storage_urls import enrich_student_media
 from app.lib.user_sql import USER_DISPLAY_NAME_SQL
 from app.middleware.subscription_guard import require_tenant_with_subscription
@@ -1027,7 +1027,15 @@ async def update_student(
 
         photo_field = form.get("photo")
         if isinstance(photo_field, UploadFile) and photo_field.filename:
-            photo_mimetype = photo_field.content_type or ""
+            photo_mimetype = (photo_field.content_type or "").lower().split(";")[0].strip()
+            if photo_mimetype not in ALLOWED_STUDENT_PHOTO_TYPES:
+                name = (photo_field.filename or "").lower()
+                if name.endswith((".jpg", ".jpeg")):
+                    photo_mimetype = "image/jpeg"
+                elif name.endswith(".png"):
+                    photo_mimetype = "image/png"
+                elif name.endswith(".webp"):
+                    photo_mimetype = "image/webp"
             if photo_mimetype not in ALLOWED_STUDENT_PHOTO_TYPES:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1038,7 +1046,10 @@ async def update_student(
                     },
                 )
             photo_buffer = await photo_field.read()
-            if len(photo_buffer) > 2 * 1024 * 1024:
+            if not photo_buffer:
+                photo_buffer = None
+                photo_mimetype = None
+            elif len(photo_buffer) > 2 * 1024 * 1024:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail={
@@ -1075,8 +1086,8 @@ async def update_student(
             },
         )
 
-    existing = await conn.fetchval(
-        "SELECT id FROM students WHERE id = $1 AND school_id = $2 LIMIT 1",
+    existing = await conn.fetchrow(
+        "SELECT id, photo_url FROM students WHERE id = $1 AND school_id = $2 LIMIT 1",
         student_id,
         school_id,
     )
@@ -1103,12 +1114,16 @@ async def update_student(
         params.append(body.gender or None)
         index += 1
 
-    if photo_buffer and photo_mimetype:
-        photo_url = await save_student_photo(
+    if photo_buffer is not None:
+        mime = (photo_mimetype or "image/jpeg").lower().split(";")[0].strip()
+        if mime not in ALLOWED_STUDENT_PHOTO_TYPES:
+            mime = "image/jpeg"
+        photo_url = await replace_student_photo(
             school_id,
             student_id,
             photo_buffer,
-            photo_mimetype,
+            mime,
+            previous_photo_url=existing["photo_url"],
         )
         updates.append(f"photo_url = ${index}")
         params.append(photo_url)
@@ -1149,6 +1164,98 @@ async def update_student(
             student_id,
             school_id,
         )
+
+    student = await _fetch_student_detail(conn, school_id, student_id)
+    return {"data": await enrich_student_media(student, school_id)}
+
+
+@router.post("/{student_id}/photo")
+async def upload_student_photo(
+    student_id: uuid.UUID,
+    ctx: TenantCtx,
+    photo: UploadFile = File(...),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """Replace a student's profile photo (multipart), same path style as enrollment."""
+    school_id, actor = ctx
+
+    if not can(actor["role"], "manageStaff"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "You do not have permission to update students.",
+                "code": "FORBIDDEN",
+            },
+        )
+
+    existing = await conn.fetchrow(
+        "SELECT id, photo_url FROM students WHERE id = $1 AND school_id = $2 LIMIT 1",
+        student_id,
+        school_id,
+    )
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Student not found in your school.", "code": "NOT_FOUND"},
+        )
+
+    photo_mimetype = (photo.content_type or "").lower().split(";")[0].strip()
+    if photo_mimetype not in ALLOWED_STUDENT_PHOTO_TYPES:
+        name = (photo.filename or "").lower()
+        if name.endswith((".jpg", ".jpeg")):
+            photo_mimetype = "image/jpeg"
+        elif name.endswith(".png"):
+            photo_mimetype = "image/png"
+        elif name.endswith(".webp"):
+            photo_mimetype = "image/webp"
+
+    if photo_mimetype not in ALLOWED_STUDENT_PHOTO_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "Please fix the highlighted fields and try again.",
+                "code": "VALIDATION_ERROR",
+                "fields": {"photo": "Photo must be a JPEG, PNG, or WebP image."},
+            },
+        )
+
+    photo_buffer = await photo.read()
+    if not photo_buffer:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "Please fix the highlighted fields and try again.",
+                "code": "VALIDATION_ERROR",
+                "fields": {"photo": "Photo file is empty."},
+            },
+        )
+    if len(photo_buffer) > 2 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "Please fix the highlighted fields and try again.",
+                "code": "VALIDATION_ERROR",
+                "fields": {"photo": "Photo must be under 2 MB."},
+            },
+        )
+
+    photo_url = await replace_student_photo(
+        school_id,
+        student_id,
+        photo_buffer,
+        photo_mimetype,
+        previous_photo_url=existing["photo_url"],
+    )
+    await conn.execute(
+        """
+        UPDATE students
+        SET photo_url = $1, updated_at = NOW()
+        WHERE id = $2 AND school_id = $3
+        """,
+        photo_url,
+        student_id,
+        school_id,
+    )
 
     student = await _fetch_student_detail(conn, school_id, student_id)
     return {"data": await enrich_student_media(student, school_id)}
