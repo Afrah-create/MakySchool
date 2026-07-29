@@ -1,21 +1,5 @@
-from app.routers import (
-    billing,
-    fees,
-    superadmin_admins,
-    superadmin_auth,
-    superadmin_schools,
-    superadmin_settings,
-    superadmin_subscriptions,
-    webhooks,
-)
+"""
+MakySchool API routers package.
+"""
 
-__all__ = [
-    "billing",
-    "fees",
-    "webhooks",
-    "superadmin_auth",
-    "superadmin_schools",
-    "superadmin_admins",
-    "superadmin_settings",
-    "superadmin_subscriptions",
-]
+__all__ = []
