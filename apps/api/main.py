@@ -3,6 +3,8 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -26,6 +28,7 @@ from app.routers import (
     alevel,
     analytics,
     attendance,
+    continuous_assessment,
     auth,
     billing,
     classes,
@@ -194,6 +197,12 @@ def create_app() -> FastAPI:
     mount_v1_and_legacy(app, attendance.router, "/api/schools/attendance")
     mount_v1_and_legacy(app, discipline.router, "/api/schools/discipline")
     mount_v1_and_legacy(app, alevel.router, "/api/schools/alevel")
+
+    mount_v1_and_legacy(
+    app,
+    continuous_assessment.router,
+    "/api/schools/continuous-assessment",
+)
 
     mount_v1_and_legacy(app, analytics.router, "/api/schools/analytics")
 
