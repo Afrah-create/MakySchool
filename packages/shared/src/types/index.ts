@@ -43,3 +43,4 @@ export * from "./subscription";
 export * from "./platform";
 export * from "./timetable";
 export * from "./teaching-load";
+export * from "./resources";

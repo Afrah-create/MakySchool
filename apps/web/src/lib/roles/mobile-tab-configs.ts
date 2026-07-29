@@ -69,6 +69,7 @@ export const learnerMobileTabs: MobileTab[] = [
       "/learner/profile",
       "/learner/attendance",
       "/learner/report-cards",
+      "/learner/resources",
     ],
   },
 ];

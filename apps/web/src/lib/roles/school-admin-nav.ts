@@ -165,6 +165,13 @@ export const schoolAdminNavGroups: NavGroup[] = [
         requiredAction: "viewAllClasses",
       },
       {
+        href: "/dashboard/teaching-plans",
+        label: "Teaching plans",
+        icon: FileText,
+        exact: false,
+        requiredAction: "viewAllClasses",
+      },
+      {
         href: "/dashboard/alevel/exams",
         label: "A-Level",
         icon: GraduationCap,

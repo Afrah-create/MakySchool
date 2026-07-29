@@ -40,10 +40,14 @@ class Settings(BaseSettings):
 
     UPLOAD_DIR: str = str(_API_ROOT / "uploads")
     MAX_UPLOAD_SIZE_MB: int = 2
+    MAX_TEACHING_PLAN_SIZE_MB: int = 50
+    MAX_RESOURCE_DOC_SIZE_MB: int = 100
+    MAX_RESOURCE_VIDEO_SIZE_MB: int = 2048
 
     # Object storage — local (dev) or Wasabi S3-compatible (production)
     STORAGE_BACKEND: str = "local"  # local | wasabi
     STORAGE_PRESIGNED_TTL_SECONDS: int = 3600
+    STORAGE_VIDEO_PRESIGNED_TTL_SECONDS: int = 14400
     WASABI_ACCESS_KEY: str = ""
     WASABI_SECRET_KEY: str = ""
     WASABI_BUCKET: str = "makyschool"

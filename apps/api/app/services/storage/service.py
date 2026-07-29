@@ -196,6 +196,53 @@ class TenantStorageService:
             expires_in=ttl,
         )
 
+    async def presigned_upload_url_for_key(
+        self,
+        school_id: uuid.UUID,
+        key: str,
+        content_type: str,
+        *,
+        expires_in: int | None = None,
+    ) -> dict[str, Any]:
+        """Presign a PUT for an already-built tenant key (documents/videos allowed)."""
+        normalized = assert_tenant_key(school_id, key)
+        mime = (content_type or "").lower().split(";")[0].strip()
+        if not mime:
+            raise StorageValidationError("Content type is required")
+        ttl = expires_in or settings.STORAGE_PRESIGNED_TTL_SECONDS
+        result = await self._run(
+            self._backend.generate_presigned_upload_url,
+            normalized,
+            content_type=mime,
+            expires_in=ttl,
+        )
+        return result
+
+    async def upload_bytes_to_key(
+        self,
+        school_id: uuid.UUID,
+        key: str,
+        data: bytes,
+        *,
+        content_type: str,
+        max_bytes: int | None = None,
+    ) -> str:
+        """Store raw bytes at an explicit tenant key (local-upload bridge)."""
+        normalized = assert_tenant_key(school_id, key)
+        limit = max_bytes if max_bytes is not None else self._max_bytes()
+        if len(data) > limit:
+            raise StorageValidationError(f"File exceeds the allowed size limit")
+        mime = (content_type or "application/octet-stream").lower().split(";")[0].strip()
+        buffer = BytesIO(data)
+        await self._run(
+            self._backend.upload,
+            normalized,
+            buffer,
+            content_type=mime,
+            content_length=len(data),
+        )
+        return normalized
+
     async def copy(
         self,
         school_id: uuid.UUID,

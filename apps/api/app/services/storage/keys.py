@@ -22,6 +22,8 @@ SCHOOL_STORAGE_CATEGORIES = (
     "documents",
     "invoices",
     "library",
+    "teaching-plans",
+    "resources",
 )
 
 
