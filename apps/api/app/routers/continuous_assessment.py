@@ -1,56 +1,57 @@
-from __future__ import annotations
-
-import uuid
+from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 
 from app.db.pool import get_db
-from app.schemas.continuous_assessment import (
+
+from app.services.continuous_assessment.schemas import (
+    AssessmentDetailsResponse,
+    AssessmentResponse,
     CreateAssessmentRequest,
-    EnterScoreRequest,
+    SubmitScoresRequest,
 )
-from app.services import continuous_assessment as service
+from app.services.continuous_assessment.service import (
+    create_assessment,
+    get_assessment,
+    list_assessments,
+    save_scores,
+)
 
 router = APIRouter(tags=["Continuous Assessment"])
 
 
-@router.get("/")
-async def list_assessments(
-    school_id: uuid.UUID,
+# TODO:
+# Replace these with your real authentication dependency later.
+def current_school_id() -> UUID:
+    return UUID("00000000-0000-0000-0000-000000000001")
+
+
+def current_teacher_id() -> UUID:
+    return UUID("00000000-0000-0000-0000-000000000001")
+
+
+@router.get("/", response_model=list[AssessmentResponse])
+async def get_assessments(
     conn: asyncpg.Connection = Depends(get_db),
 ):
-    return await service.list_assessments(conn, school_id)
+    return await list_assessments(
+        conn,
+        school_id=current_school_id(),
+    )
 
 
-@router.get("/{assessment_id}")
-async def get_assessment(
-    assessment_id: uuid.UUID,
-    conn: asyncpg.Connection = Depends(get_db),
-):
-    assessment = await service.get_assessment(conn, assessment_id)
-
-    if assessment is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Assessment not found.",
-        )
-
-    return assessment
-
-
-@router.post("/")
-async def create_assessment(
-    school_id: uuid.UUID,
+@router.post("/", response_model=AssessmentResponse)
+async def create_new_assessment(
     request: CreateAssessmentRequest,
     conn: asyncpg.Connection = Depends(get_db),
 ):
-    return await service.create_assessment(
+    return await create_assessment(
         conn,
-        school_id=school_id,
+        school_id=current_school_id(),
+        teacher_id=current_teacher_id(),
         class_id=request.class_id,
         subject_id=request.subject_id,
-        teacher_id=request.teacher_id,
         term_id=request.term_id,
         title=request.title,
         assessment_type=request.assessment_type,
@@ -59,54 +60,28 @@ async def create_assessment(
     )
 
 
-@router.post("/{assessment_id}/submit")
-async def submit_assessment(
-    assessment_id: uuid.UUID,
-    submitted_by: uuid.UUID,
+@router.get("/{assessment_id}", response_model=AssessmentDetailsResponse)
+async def assessment_details(
+    assessment_id: UUID,
     conn: asyncpg.Connection = Depends(get_db),
 ):
-    return await service.submit_assessment(
+    return await get_assessment(
         conn,
-        assessment_id,
-        submitted_by,
-    )
-
-
-@router.post("/{assessment_id}/unlock")
-async def unlock_assessment(
-    assessment_id: uuid.UUID,
-    unlocked_by: uuid.UUID,
-    conn: asyncpg.Connection = Depends(get_db),
-):
-    return await service.unlock_assessment(
-        conn,
-        assessment_id,
-        unlocked_by,
+        assessment_id=assessment_id,
     )
 
 
 @router.post("/{assessment_id}/scores")
-async def save_score(
-    assessment_id: uuid.UUID,
-    request: EnterScoreRequest,
+async def enter_scores(
+    assessment_id: UUID,
+    request: SubmitScoresRequest,
     conn: asyncpg.Connection = Depends(get_db),
 ):
-    return await service.save_student_score(
+    await save_scores(
         conn,
         assessment_id=assessment_id,
-        student_id=request.student_id,
-        score=request.score,
-        remarks=request.remarks,
-        entered_by=request.entered_by,
+        teacher_id=current_teacher_id(),
+        scores=request.scores,
     )
 
-
-@router.get("/{assessment_id}/scores")
-async def list_scores(
-    assessment_id: uuid.UUID,
-    conn: asyncpg.Connection = Depends(get_db),
-):
-    return await service.list_scores(
-        conn,
-        assessment_id,
-    )
+    return {"message": "Scores saved successfully."}
