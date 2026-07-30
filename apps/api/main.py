@@ -29,6 +29,7 @@ from app.routers import (
     analytics,
     attendance,
     continuous_assessment,
+
     auth,
     billing,
     classes,
