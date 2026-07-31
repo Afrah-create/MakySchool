@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import asyncpg
+from fastapi import HTTPException
 
 from app.lib.primary_access import fetch_class_level, is_upper_primary
 from app.lib.primary_exam_access import (
@@ -26,6 +27,8 @@ from app.lib.primary_exam_access import (
 from app.lib.primary_reports import BULK_MARKS_LIMIT
 from app.lib.teacher_assignments import format_class_name
 from app.services.primary.recalc import recalculate_exam_results
+
+_UNSET = object()
 
 DEFAULT_EXAM_TYPES = [
     {"name": "Beginning of Term", "code": "BOT", "sort_order": 1},
@@ -168,16 +171,23 @@ async def list_exams(
     *,
     class_id: uuid.UUID | None = None,
     term_id: uuid.UUID | None = None,
+    status: str | None = None,
+    include_deleted: bool = False,
     teacher_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
     clauses = ["e.school_id = $1"]
     args: list[Any] = [school_id]
+    if not include_deleted:
+        clauses.append("e.deleted_at IS NULL")
     if class_id:
         args.append(class_id)
         clauses.append(f"e.class_id = ${len(args)}")
     if term_id:
         args.append(term_id)
         clauses.append(f"e.term_id = ${len(args)}")
+    if status:
+        args.append(status)
+        clauses.append(f"e.status = ${len(args)}")
     if teacher_id:
         assigned = await teacher_assigned_primary_class_ids(conn, school_id, teacher_id)
         if not assigned:
@@ -189,7 +199,77 @@ async def list_exams(
         f"{EXAM_SELECT} WHERE {' AND '.join(clauses)} ORDER BY e.created_at DESC",
         *args,
     )
-    return [serialize_exam(r) for r in rows]
+    exams = [serialize_exam(r) for r in rows]
+    if not exams:
+        return []
+    exam_ids = [uuid.UUID(e["id"]) for e in exams]
+    mark_rows = await conn.fetch(
+        """
+        SELECT exam_id, COUNT(*)::int AS mark_count
+        FROM primary_exam_marks
+        WHERE school_id = $1 AND exam_id = ANY($2::uuid[])
+        GROUP BY exam_id
+        """,
+        school_id,
+        exam_ids,
+    )
+    mark_map = {str(r["exam_id"]): int(r["mark_count"]) for r in mark_rows}
+    subject_rows = await conn.fetch(
+        """
+        SELECT exam_id, subject_id
+        FROM primary_exam_subjects
+        WHERE school_id = $1 AND exam_id = ANY($2::uuid[])
+        """,
+        school_id,
+        exam_ids,
+    )
+    subjects_map: dict[str, list[str]] = {}
+    for r in subject_rows:
+        subjects_map.setdefault(str(r["exam_id"]), []).append(str(r["subject_id"]))
+    for exam in exams:
+        exam["hasMarks"] = mark_map.get(exam["id"], 0) > 0
+        exam["subjectIds"] = subjects_map.get(exam["id"], [])
+    return exams
+
+
+async def exam_mark_count(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam_id: uuid.UUID,
+) -> int:
+    return int(
+        await conn.fetchval(
+            """
+            SELECT COUNT(*)::int FROM primary_exam_marks
+            WHERE school_id = $1 AND exam_id = $2
+            """,
+            school_id,
+            exam_id,
+        )
+        or 0
+    )
+
+
+async def _attach_subjects(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam: dict[str, Any],
+) -> dict[str, Any]:
+    exam_id = uuid.UUID(exam["id"])
+    subjects = await fetch_exam_subject_rows(conn, school_id, exam_id)
+    exam["subjects"] = [
+        {
+            "id": str(s["id"]),
+            "name": s["name"],
+            "code": s["code"],
+            "maxMark": float(s["max_mark"]),
+            "isPleSubject": bool(s["is_ple_subject"]),
+        }
+        for s in subjects
+    ]
+    exam["subjectIds"] = [s["id"] for s in exam["subjects"]]
+    exam["hasMarks"] = (await exam_mark_count(conn, school_id, exam_id)) > 0
+    return exam
 
 
 async def create_exam(
@@ -273,19 +353,57 @@ async def create_exam(
     exam_id = row["id"]
     await set_exam_subjects(conn, school_id, exam_id, list(resolved))
     exam = await require_exam(conn, school_id, exam_id)
-    subjects = await fetch_exam_subject_rows(conn, school_id, exam_id)
-    exam["subjects"] = [
-        {
-            "id": str(s["id"]),
-            "name": s["name"],
-            "code": s["code"],
-            "maxMark": float(s["max_mark"]),
-            "isPleSubject": bool(s["is_ple_subject"]),
-        }
-        for s in subjects
-    ]
-    exam["subjectIds"] = [s["id"] for s in exam["subjects"]]
-    return exam
+    return await _attach_subjects(conn, school_id, exam)
+
+
+async def update_exam(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam_id: uuid.UUID,
+    *,
+    name: str | None = None,
+    notes: Any = _UNSET,
+    subject_ids: list[uuid.UUID] | None = None,
+) -> dict[str, Any]:
+    exam = await require_exam(conn, school_id, exam_id)
+    if exam.get("deleted"):
+        raise ValueError("Cannot edit a deleted exam. Restore it first.")
+
+    sets: list[str] = ["updated_at = NOW()"]
+    args: list[Any] = []
+    if name is not None:
+        trimmed = name.strip()
+        if not trimmed:
+            raise ValueError("Exam name cannot be empty.")
+        args.append(trimmed)
+        sets.append(f"name = ${len(args)}")
+    if notes is not _UNSET:
+        args.append(notes)
+        sets.append(f"notes = ${len(args)}")
+
+    if len(args) > 0:
+        args.extend([exam_id, school_id])
+        await conn.execute(
+            f"""
+            UPDATE primary_exams SET {', '.join(sets)}
+            WHERE id = ${len(args) - 1} AND school_id = ${len(args)}
+              AND deleted_at IS NULL
+            """,
+            *args,
+        )
+
+    if subject_ids is not None:
+        marks = await exam_mark_count(conn, school_id, exam_id)
+        if marks > 0:
+            raise ValueError(
+                "Cannot change exam subjects after marks have been entered."
+            )
+        if exam["status"] == "open":
+            raise ValueError("Close the exam before changing subjects.")
+        await set_exam_subjects(conn, school_id, exam_id, subject_ids)
+
+    updated = await require_exam(conn, school_id, exam_id)
+    return await _attach_subjects(conn, school_id, updated)
 
 
 async def open_exam(
@@ -306,7 +424,7 @@ async def open_exam(
           closed_at = NULL,
           closed_by = NULL,
           updated_at = NOW()
-        WHERE id = $1 AND school_id = $2
+        WHERE id = $1 AND school_id = $2 AND deleted_at IS NULL
         """,
         exam_id,
         school_id,
@@ -329,7 +447,7 @@ async def close_exam(
           closed_at = NOW(),
           closed_by = $3,
           updated_at = NOW()
-        WHERE id = $1 AND school_id = $2
+        WHERE id = $1 AND school_id = $2 AND deleted_at IS NULL
         """,
         exam_id,
         school_id,
@@ -338,14 +456,114 @@ async def close_exam(
     return await require_exam(conn, school_id, exam_id)
 
 
-async def delete_exam(
+async def soft_delete_exam(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam_id: uuid.UUID,
+    actor_id: uuid.UUID,
+) -> dict[str, Any]:
+    exam = await require_exam(conn, school_id, exam_id)
+    if exam["status"] == "open":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "Close the exam before deleting it.",
+                "code": "EXAM_OPEN",
+            },
+        )
+    row = await conn.fetchrow(
+        """
+        UPDATE primary_exams SET
+          deleted_at = NOW(),
+          deleted_by = $3,
+          updated_at = NOW()
+        WHERE id = $1 AND school_id = $2 AND deleted_at IS NULL
+        RETURNING id, deleted_at
+        """,
+        exam_id,
+        school_id,
+        actor_id,
+    )
+    if not row:
+        raise LookupError("Exam not found.")
+    return await require_exam(conn, school_id, exam_id, include_deleted=True)
+
+
+async def restore_exam(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam_id: uuid.UUID,
+) -> dict[str, Any]:
+    exam = await require_exam(conn, school_id, exam_id, include_deleted=True)
+    if not exam.get("deleted"):
+        raise ValueError("Exam is not deleted.")
+
+    conflict = await conn.fetchval(
+        """
+        SELECT 1 FROM primary_exams
+        WHERE school_id = $1
+          AND class_id = $2
+          AND term_id = $3
+          AND exam_type_id = $4
+          AND deleted_at IS NULL
+          AND id <> $5
+        LIMIT 1
+        """,
+        school_id,
+        uuid.UUID(exam["classId"]),
+        uuid.UUID(exam["termId"]),
+        uuid.UUID(exam["examTypeId"]),
+        exam_id,
+    )
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": (
+                    "An active exam of this type already exists for this class and term. "
+                    "Delete or keep the other exam before restoring."
+                ),
+                "code": "DUPLICATE",
+            },
+        )
+
+    await conn.execute(
+        """
+        UPDATE primary_exams SET
+          deleted_at = NULL,
+          deleted_by = NULL,
+          updated_at = NOW()
+        WHERE id = $1 AND school_id = $2
+        """,
+        exam_id,
+        school_id,
+    )
+    return await require_exam(conn, school_id, exam_id)
+
+
+async def hard_delete_exam(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
     exam_id: uuid.UUID,
 ) -> None:
-    exam = await require_exam(conn, school_id, exam_id)
-    if exam["status"] == "open":
-        raise ValueError("Close the exam before deleting it.")
+    exam = await require_exam(conn, school_id, exam_id, include_deleted=True)
+    if exam["status"] == "open" and not exam.get("deleted"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "Close the exam before permanently deleting it.",
+                "code": "EXAM_OPEN",
+            },
+        )
+    marks = await exam_mark_count(conn, school_id, exam_id)
+    if marks > 0:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "This exam has marks. Soft-delete it instead to keep the record.",
+                "code": "EXAM_HAS_MARKS",
+            },
+        )
     result = await conn.execute(
         "DELETE FROM primary_exams WHERE id = $1 AND school_id = $2",
         exam_id,
@@ -353,6 +571,16 @@ async def delete_exam(
     )
     if result == "DELETE 0":
         raise LookupError("Exam not found.")
+
+
+# Back-compat alias — prefer soft_delete_exam.
+async def delete_exam(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam_id: uuid.UUID,
+    actor_id: uuid.UUID,
+) -> dict[str, Any]:
+    return await soft_delete_exam(conn, school_id, exam_id, actor_id)
 
 
 async def get_exam_grades_grid(

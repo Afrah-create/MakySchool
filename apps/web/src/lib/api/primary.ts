@@ -337,8 +337,11 @@ export const primaryApi = {
     }).then((r) => r.data);
   },
 
-  listExamTypes() {
-    return apiClient<PrimaryExamTypeOption[]>(`${BASE}/exam-types`).then((r) => r.data);
+  listExamTypes(activeOnly = false) {
+    const qs = activeOnly ? "?active_only=true" : "";
+    return apiClient<PrimaryExamTypeOption[]>(`${BASE}/exam-types${qs}`).then(
+      (r) => r.data,
+    );
   },
 
   createExamType(body: { name: string; code: string; sortOrder?: number }) {
@@ -352,10 +355,43 @@ export const primaryApi = {
     }).then((r) => r.data);
   },
 
-  listExams(params?: { classId?: string; termId?: string }) {
+  updateExamType(
+    id: string,
+    body: {
+      name?: string;
+      code?: string;
+      sortOrder?: number;
+      isActive?: boolean;
+    },
+  ) {
+    const payload: Record<string, unknown> = {};
+    if (body.name !== undefined) payload.name = body.name;
+    if (body.code !== undefined) payload.code = body.code;
+    if (body.sortOrder !== undefined) payload.sort_order = body.sortOrder;
+    if (body.isActive !== undefined) payload.is_active = body.isActive;
+    return apiClient<PrimaryExamTypeOption>(`${BASE}/exam-types/${id}`, {
+      method: "PATCH",
+      body: payload,
+    }).then((r) => r.data);
+  },
+
+  deleteExamType(id: string) {
+    return apiClient<{ ok: boolean }>(`${BASE}/exam-types/${id}`, {
+      method: "DELETE",
+    }).then((r) => r.data);
+  },
+
+  listExams(params?: {
+    classId?: string;
+    termId?: string;
+    status?: string;
+    includeDeleted?: boolean;
+  }) {
     const q = new URLSearchParams();
     if (params?.classId) q.set("class_id", params.classId);
     if (params?.termId) q.set("term_id", params.termId);
+    if (params?.status) q.set("status", params.status);
+    if (params?.includeDeleted) q.set("include_deleted", "true");
     const qs = q.toString() ? `?${q}` : "";
     return apiClient<PrimaryExam[]>(`${BASE}/exams${qs}`).then((r) => r.data);
   },
@@ -364,7 +400,8 @@ export const primaryApi = {
     classId: string;
     termId: string;
     examTypeId: string;
-    name?: string;
+    name?: string | null;
+    notes?: string | null;
     openNow?: boolean;
     subjectIds?: string[];
   }) {
@@ -375,9 +412,28 @@ export const primaryApi = {
         term_id: body.termId,
         exam_type_id: body.examTypeId,
         name: body.name,
+        notes: body.notes,
         open_now: body.openNow ?? false,
         subject_ids: body.subjectIds,
       },
+    }).then((r) => r.data);
+  },
+
+  updateExam(
+    examId: string,
+    body: {
+      name?: string;
+      notes?: string | null;
+      subjectIds?: string[];
+    },
+  ) {
+    const payload: Record<string, unknown> = {};
+    if (body.name !== undefined) payload.name = body.name;
+    if (body.notes !== undefined) payload.notes = body.notes;
+    if (body.subjectIds !== undefined) payload.subject_ids = body.subjectIds;
+    return apiClient<PrimaryExam>(`${BASE}/exams/${examId}`, {
+      method: "PATCH",
+      body: payload,
     }).then((r) => r.data);
   },
 
@@ -389,6 +445,26 @@ export const primaryApi = {
 
   closeExam(examId: string) {
     return apiClient<PrimaryExam>(`${BASE}/exams/${examId}/close`, {
+      method: "POST",
+    }).then((r) => r.data);
+  },
+
+  softDeleteExam(examId: string) {
+    return apiClient<{ ok: boolean; hard: boolean; exam?: PrimaryExam }>(
+      `${BASE}/exams/${examId}`,
+      { method: "DELETE" },
+    ).then((r) => r.data);
+  },
+
+  hardDeleteExam(examId: string) {
+    return apiClient<{ ok: boolean; hard: boolean }>(
+      `${BASE}/exams/${examId}?hard=true`,
+      { method: "DELETE" },
+    ).then((r) => r.data);
+  },
+
+  restoreExam(examId: string) {
+    return apiClient<PrimaryExam>(`${BASE}/exams/${examId}/restore`, {
       method: "POST",
     }).then((r) => r.data);
   },

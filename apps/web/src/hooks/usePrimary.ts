@@ -1,6 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  CreatePrimaryExamPayload,
+  PrimaryExamFilters,
+  UpdatePrimaryExamPayload,
+  UpdatePrimaryExamTypePayload,
+} from "@makyschool/shared";
 import { primaryApi } from "@/lib/api/primary";
 
 export const primaryKeys = {
@@ -12,7 +18,16 @@ export const primaryKeys = {
   roster: (classId: string) => ["primary", "roster", classId] as const,
   classResults: (classId: string, termId: string) =>
     ["primary", "results", classId, termId] as const,
-  exams: (key: string) => ["primary", "exams", key] as const,
+  exams: (filters: PrimaryExamFilters = {}) =>
+    [
+      "primary",
+      "exams",
+      filters.classId ?? "",
+      filters.termId ?? "",
+      filters.status ?? "",
+      filters.includeDeleted ? "1" : "0",
+    ] as const,
+  examTypes: ["primary", "exam-types"] as const,
   thematic: (classId: string, termId: string) =>
     ["primary", "thematic", classId, termId] as const,
   ple: (yearId: string) => ["primary", "ple", yearId] as const,
@@ -87,5 +102,112 @@ export function useEnsurePrimarySetup() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["primary"] });
     },
+  });
+}
+
+export function usePrimaryExamTypes(enabled = true, activeOnly = false) {
+  return useQuery({
+    queryKey: [...primaryKeys.examTypes, activeOnly ? "active" : "all"],
+    queryFn: () => primaryApi.listExamTypes(activeOnly),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function usePrimaryExams(filters: PrimaryExamFilters = {}, enabled = true) {
+  return useQuery({
+    queryKey: primaryKeys.exams(filters),
+    queryFn: () =>
+      primaryApi.listExams({
+        classId: filters.classId,
+        termId: filters.termId,
+        status: filters.status || undefined,
+        includeDeleted: filters.includeDeleted,
+      }),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useCreatePrimaryExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreatePrimaryExamPayload) => primaryApi.createExam(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "exams"] }),
+  });
+}
+
+export function useUpdatePrimaryExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; payload: UpdatePrimaryExamPayload }) =>
+      primaryApi.updateExam(args.id, args.payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "exams"] }),
+  });
+}
+
+export function useSoftDeletePrimaryExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => primaryApi.softDeleteExam(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "exams"] }),
+  });
+}
+
+export function useHardDeletePrimaryExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => primaryApi.hardDeleteExam(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "exams"] }),
+  });
+}
+
+export function useRestorePrimaryExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => primaryApi.restoreExam(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "exams"] }),
+  });
+}
+
+export function useOpenPrimaryExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => primaryApi.openExam(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "exams"] }),
+  });
+}
+
+export function useClosePrimaryExam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => primaryApi.closeExam(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "exams"] }),
+  });
+}
+
+export function useCreatePrimaryExamType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { name: string; code: string; sortOrder?: number }) =>
+      primaryApi.createExamType(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: primaryKeys.examTypes }),
+  });
+}
+
+export function useUpdatePrimaryExamType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: string; payload: UpdatePrimaryExamTypePayload }) =>
+      primaryApi.updateExamType(args.id, args.payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: primaryKeys.examTypes }),
+  });
+}
+
+export function useDeletePrimaryExamType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => primaryApi.deleteExamType(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: primaryKeys.examTypes }),
   });
 }

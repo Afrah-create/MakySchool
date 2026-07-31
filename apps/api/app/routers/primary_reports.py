@@ -961,6 +961,12 @@ class ExamCreateBody(BaseModel):
     subject_ids: list[uuid.UUID] | None = None
 
 
+class ExamPatchBody(BaseModel):
+    name: str | None = None
+    notes: str | None = None
+    subject_ids: list[uuid.UUID] | None = None
+
+
 class ExamGradeItem(BaseModel):
     student_id: uuid.UUID
     subject_id: uuid.UUID
@@ -986,12 +992,16 @@ def _require_teacher(actor: dict[str, Any]) -> None:
 @router.get("/exam-types")
 async def get_exam_types(
     ctx: TenantCtx,
+    active_only: bool = Query(False),
     conn: asyncpg.Connection = Depends(get_db),
 ):
     school_id, actor = ctx
     try:
         await _gate(conn, school_id, actor, "viewPrimaryResults")
-        data = await exams_svc.ensure_default_exam_types(conn, school_id)
+        await exams_svc.ensure_default_exam_types(conn, school_id)
+        data = await exams_svc.list_exam_types(
+            conn, school_id, active_only=active_only
+        )
         return {"data": data}
     except Exception as exc:
         raise _http(exc) from exc
@@ -1058,12 +1068,16 @@ async def get_exams(
     ctx: TenantCtx,
     class_id: uuid.UUID | None = Query(None),
     term_id: uuid.UUID | None = Query(None),
+    status_filter: str | None = Query(None, alias="status"),
+    include_deleted: bool = Query(False),
     conn: asyncpg.Connection = Depends(get_db),
 ):
     school_id, actor = ctx
     try:
         await assert_primary_enabled(conn, school_id)
         role = (actor.get("role") or "").lower()
+        if status_filter and status_filter not in ("draft", "open", "closed"):
+            raise ValueError("status must be draft, open, or closed.")
         if role == "teacher":
             require_primary_action(actor, "enterPrimaryMarks")
             data = await exams_svc.list_exams(
@@ -1071,12 +1085,21 @@ async def get_exams(
                 school_id,
                 class_id=class_id,
                 term_id=term_id,
+                status=status_filter,
+                include_deleted=False,
                 teacher_id=actor_user_id(actor),
             )
         else:
             require_primary_action(actor, "viewPrimaryResults")
+            if include_deleted:
+                require_primary_action(actor, "managePrimarySetup")
             data = await exams_svc.list_exams(
-                conn, school_id, class_id=class_id, term_id=term_id
+                conn,
+                school_id,
+                class_id=class_id,
+                term_id=term_id,
+                status=status_filter,
+                include_deleted=include_deleted,
             )
         return {"data": data}
     except Exception as exc:
@@ -1105,6 +1128,35 @@ async def post_exam(
                 open_now=body.open_now,
                 subject_ids=body.subject_ids,
             )
+        return {"data": data}
+    except asyncpg.UniqueViolationError as exc:
+        raise _http(
+            ValueError("An exam of this type already exists for this class and term.")
+        ) from exc
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.patch("/exams/{exam_id}")
+async def patch_exam(
+    exam_id: uuid.UUID,
+    body: ExamPatchBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        payload = body.model_dump(exclude_unset=True)
+        kwargs: dict[str, Any] = {}
+        if "name" in payload:
+            kwargs["name"] = payload["name"]
+        if "notes" in payload:
+            kwargs["notes"] = payload["notes"]
+        if "subject_ids" in payload:
+            kwargs["subject_ids"] = payload["subject_ids"]
+        async with conn.transaction():
+            data = await exams_svc.update_exam(conn, school_id, exam_id, **kwargs)
         return {"data": data}
     except asyncpg.UniqueViolationError as exc:
         raise _http(
@@ -1148,8 +1200,8 @@ async def close_exam(
         raise _http(exc) from exc
 
 
-@router.delete("/exams/{exam_id}")
-async def delete_exam(
+@router.post("/exams/{exam_id}/restore")
+async def restore_exam(
     exam_id: uuid.UUID,
     ctx: TenantCtx,
     conn: asyncpg.Connection = Depends(get_db),
@@ -1157,8 +1209,37 @@ async def delete_exam(
     school_id, actor = ctx
     try:
         await _gate(conn, school_id, actor, "managePrimarySetup")
-        await exams_svc.delete_exam(conn, school_id, exam_id)
-        return {"data": {"ok": True}}
+        data = await exams_svc.restore_exam(conn, school_id, exam_id)
+        return {"data": data}
+    except asyncpg.UniqueViolationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "An active exam of this type already exists for this class and term.",
+                "code": "DUPLICATE",
+            },
+        ) from exc
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.delete("/exams/{exam_id}")
+async def delete_exam(
+    exam_id: uuid.UUID,
+    ctx: TenantCtx,
+    hard: bool = Query(False),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        if hard:
+            await exams_svc.hard_delete_exam(conn, school_id, exam_id)
+            return {"data": {"ok": True, "hard": True}}
+        data = await exams_svc.soft_delete_exam(
+            conn, school_id, exam_id, actor_user_id(actor)
+        )
+        return {"data": {"ok": True, "hard": False, "exam": data}}
     except Exception as exc:
         raise _http(exc) from exc
 

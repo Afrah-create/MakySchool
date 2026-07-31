@@ -23,7 +23,6 @@ import {
 } from "@/hooks/usePrimary";
 import { primaryApi } from "@/lib/api/primary";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { primaryKeys } from "@/hooks/usePrimary";
 
 type ScoreRow = { studentId: string; fullName: string; learnerId: string | null; score: string };
 
@@ -65,7 +64,7 @@ export function PrimaryMarksContent() {
 
   const examsKey = `${classId}|${subjectId}|${term?.id}|${examType}`;
   const { data: existingExams } = useQuery({
-    queryKey: primaryKeys.exams(examsKey),
+    queryKey: ["primary", "legacy-exam-marks", examsKey],
     queryFn: () =>
       primaryApi.listExamMarks({
         classId,

@@ -20,7 +20,7 @@ EXAM_STATUSES = frozenset({"draft", "open", "closed"})
 EXAM_SELECT = """
     SELECT e.id, e.school_id, e.class_id, e.term_id, e.academic_year_id,
            e.exam_type_id, e.name, e.status, e.opened_at, e.closed_at, e.notes,
-           e.created_at, e.updated_at,
+           e.created_at, e.updated_at, e.deleted_at, e.deleted_by,
            et.name AS exam_type_name, et.code AS exam_type_code,
            t.name AS term_name,
            CASE
@@ -40,6 +40,7 @@ EXAM_SELECT = """
 
 
 def serialize_exam(row: asyncpg.Record) -> dict[str, Any]:
+    deleted_at = row.get("deleted_at")
     return {
         "id": str(row["id"]),
         "schoolId": str(row["school_id"]),
@@ -51,8 +52,8 @@ def serialize_exam(row: asyncpg.Record) -> dict[str, Any]:
         "examTypeCode": row.get("exam_type_code"),
         "name": row["name"],
         "status": row["status"],
-        "isOpen": row["status"] == "open",
-        "isLocked": row["status"] == "closed",
+        "isOpen": row["status"] == "open" and deleted_at is None,
+        "isLocked": row["status"] == "closed" or deleted_at is not None,
         "openedAt": row["opened_at"].isoformat() if row.get("opened_at") else None,
         "openedByName": row.get("opened_by_name"),
         "closedAt": row["closed_at"].isoformat() if row.get("closed_at") else None,
@@ -62,6 +63,8 @@ def serialize_exam(row: asyncpg.Record) -> dict[str, Any]:
         "classLevel": row.get("class_level"),
         "termName": row.get("term_name"),
         "createdAt": row["created_at"].isoformat() if row.get("created_at") else None,
+        "deletedAt": deleted_at.isoformat() if deleted_at else None,
+        "deleted": deleted_at is not None,
     }
 
 
@@ -159,9 +162,14 @@ async def fetch_exam(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
     exam_id: uuid.UUID,
+    *,
+    include_deleted: bool = False,
 ) -> dict[str, Any] | None:
+    clause = "e.school_id = $1 AND e.id = $2"
+    if not include_deleted:
+        clause += " AND e.deleted_at IS NULL"
     row = await conn.fetchrow(
-        f"{EXAM_SELECT} WHERE e.school_id = $1 AND e.id = $2",
+        f"{EXAM_SELECT} WHERE {clause}",
         school_id,
         exam_id,
     )
@@ -172,8 +180,12 @@ async def require_exam(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
     exam_id: uuid.UUID,
+    *,
+    include_deleted: bool = False,
 ) -> dict[str, Any]:
-    exam = await fetch_exam(conn, school_id, exam_id)
+    exam = await fetch_exam(
+        conn, school_id, exam_id, include_deleted=include_deleted
+    )
     if not exam:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -188,7 +200,7 @@ async def assert_exam_open(
     exam_id: uuid.UUID,
 ) -> dict[str, Any]:
     exam = await require_exam(conn, school_id, exam_id)
-    if exam["status"] != "open":
+    if exam.get("deleted") or exam["status"] != "open":
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail={

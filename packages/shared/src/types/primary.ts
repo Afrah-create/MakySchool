@@ -75,6 +75,14 @@ export interface PrimaryExam {
   classLevel?: string | null;
   termName?: string | null;
   notes?: string | null;
+  openedAt?: string | null;
+  openedByName?: string | null;
+  closedAt?: string | null;
+  closedByName?: string | null;
+  createdAt?: string | null;
+  deletedAt?: string | null;
+  deleted?: boolean;
+  hasMarks?: boolean;
   subjectIds?: string[];
   subjects?: Array<{
     id: string;
@@ -83,6 +91,42 @@ export interface PrimaryExam {
     maxMark: number;
     isPleSubject?: boolean;
   }>;
+}
+
+export interface CreatePrimaryExamPayload {
+  classId: string;
+  termId: string;
+  examTypeId: string;
+  name?: string | null;
+  notes?: string | null;
+  openNow?: boolean;
+  subjectIds?: string[];
+}
+
+export interface UpdatePrimaryExamPayload {
+  name?: string;
+  notes?: string | null;
+  subjectIds?: string[];
+}
+
+export interface PrimaryExamFilters {
+  classId?: string;
+  termId?: string;
+  status?: PrimaryExamStatus | "";
+  includeDeleted?: boolean;
+}
+
+export interface CreatePrimaryExamTypePayload {
+  name: string;
+  code: string;
+  sortOrder?: number;
+}
+
+export interface UpdatePrimaryExamTypePayload {
+  name?: string;
+  code?: string;
+  sortOrder?: number;
+  isActive?: boolean;
 }
 
 export interface PrimaryExamGradesGrid {
