@@ -70,7 +70,7 @@ export function PrimaryResultsContent() {
       maxWidth="7xl"
       eyebrow="Primary"
       title="Results"
-      description="Class term results, grades, and positions."
+      description="Latest exam results per student — PLE aggregate (lower is better), division, and subject grades."
       actions={
         <button type="button" className="ms-btn-secondary" onClick={() => setRankOpen(true)}>
           Recalculate rankings
@@ -116,6 +116,8 @@ export function PrimaryResultsContent() {
                     <th className="px-3 py-2">Avg level</th>
                   ) : (
                     <>
+                      <th className="px-3 py-2">Agg</th>
+                      <th className="px-3 py-2">Div</th>
                       <th className="px-3 py-2">Avg%</th>
                       <th className="px-3 py-2">Grade</th>
                     </>
@@ -138,6 +140,10 @@ export function PrimaryResultsContent() {
                       <td className="px-3 py-2 tabular-nums">{s.averageLevel ?? "—"}</td>
                     ) : (
                       <>
+                        <td className="px-3 py-2 tabular-nums font-medium">
+                          {s.aggregate ?? "—"}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">{s.division ?? "—"}</td>
                         <td className="px-3 py-2 tabular-nums">{s.averagePercent ?? "—"}</td>
                         <td className="px-3 py-2">
                           {s.overallGrade ? (
@@ -147,6 +153,9 @@ export function PrimaryResultsContent() {
                               }`}
                             >
                               {s.overallGrade}
+                              {s.overallGradeLabel ? (
+                                <span className="ml-1 opacity-70">{s.overallGradeLabel}</span>
+                              ) : null}
                             </span>
                           ) : (
                             "—"

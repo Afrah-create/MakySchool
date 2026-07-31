@@ -94,8 +94,8 @@ export function PrimaryGradesContent({ portal = "admin" }: { portal?: "admin" | 
     );
   }
 
-  async function save() {
-    if (!grid || !examId) return;
+  async function save(): Promise<boolean> {
+    if (!grid || !examId) return false;
     const marks: Array<{
       studentId: string;
       subjectId: string;
@@ -105,22 +105,54 @@ export function PrimaryGradesContent({ portal = "admin" }: { portal?: "admin" | 
     for (const st of grid.students) {
       for (const subj of grid.subjects) {
         const key = `${st.studentId}:${subj.id}`;
-        const raw = drafts[key];
+        const raw = (drafts[key] ?? "").toString().trim();
+        const prev = st.scores[subj.id]?.score ?? null;
+        if (raw === "") {
+          // Allow clearing a previously saved score.
+          if (prev != null) {
+            marks.push({
+              studentId: st.studentId,
+              subjectId: subj.id,
+              score: null,
+              maxScore: subj.maxMark,
+            });
+          }
+          continue;
+        }
+        const next = Number(raw);
+        if (Number.isNaN(next)) {
+          toast.error(`Invalid score for ${st.fullName} · ${subj.code}`);
+          return;
+        }
+        // Always re-send filled scores so save is reliable even if drafts/grid drift.
         marks.push({
           studentId: st.studentId,
           subjectId: subj.id,
-          score: raw === "" || raw == null ? null : Number(raw),
+          score: next,
           maxScore: subj.maxMark,
         });
       }
     }
+    if (!marks.length) {
+      toast.error("Enter at least one score before saving.");
+      return false;
+    }
     setSaving(true);
     try {
-      await primaryApi.bulkExamGrades(examId, marks);
-      toast.success("Marks saved.");
+      const result = (await primaryApi.bulkExamGrades(examId, marks)) as {
+        saved?: number;
+        recalcWarning?: string;
+      };
+      if (result?.recalcWarning) {
+        toast.error(result.recalcWarning);
+      } else {
+        toast.success(`Saved ${result?.saved ?? marks.length} mark(s).`);
+      }
       await qc.invalidateQueries({ queryKey: ["primary", "exam-grades", examId] });
+      return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed.");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -130,6 +162,12 @@ export function PrimaryGradesContent({ portal = "admin" }: { portal?: "admin" | 
     if (!examId) return;
     setSubmitting(true);
     try {
+      // Persist current grid first — submit only locks existing DB scores.
+      const ok = await save();
+      if (!ok) {
+        setSubmitOpen(false);
+        return;
+      }
       await primaryApi.submitExam(examId);
       toast.success("Marks submitted.");
       setSubmitOpen(false);
@@ -163,8 +201,8 @@ export function PrimaryGradesContent({ portal = "admin" }: { portal?: "admin" | 
       title={isTeacher ? "Enter marks" : "View grades"}
       description={
         isTeacher
-          ? "Enter scores for subjects you teach. Submit when finished — an admin can unlock if you need changes."
-          : "Teachers enter marks. Unlock a teacher to let them re-enter after submission."
+          ? "Enter scores for subjects you teach on this exam. Submit when finished — an admin can unlock if you need changes. CA is entered separately and does not block submit."
+          : "Teachers enter marks for exam subjects only. Unlock a teacher to let them re-enter after submission."
       }
     >
       <div className="space-y-4">
@@ -255,6 +293,11 @@ export function PrimaryGradesContent({ portal = "admin" }: { portal?: "admin" | 
                     {grid.subjects.map((s) => (
                       <th key={s.id} className="px-2 py-2 text-center">
                         {s.code}
+                        {s.isPleSubject ? (
+                          <span className="mt-0.5 block text-[10px] font-normal normal-case text-theme-muted">
+                            agg
+                          </span>
+                        ) : null}
                       </th>
                     ))}
                   </tr>

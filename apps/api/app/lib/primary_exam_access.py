@@ -8,7 +8,12 @@ from typing import Any
 import asyncpg
 from fastapi import HTTPException, status
 
-from app.lib.primary_access import actor_user_id, fetch_class_level, is_upper_primary
+from app.lib.primary_access import (
+    actor_user_id,
+    fetch_class_level,
+    is_upper_primary,
+    level_in_range,
+)
 
 EXAM_STATUSES = frozenset({"draft", "open", "closed"})
 
@@ -58,6 +63,96 @@ def serialize_exam(row: asyncpg.Record) -> dict[str, Any]:
         "termName": row.get("term_name"),
         "createdAt": row["created_at"].isoformat() if row.get("created_at") else None,
     }
+
+
+async def fetch_exam_subject_rows(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam_id: uuid.UUID,
+) -> list[asyncpg.Record]:
+    return await conn.fetch(
+        """
+        SELECT ps.id, ps.name, ps.code, ps.max_mark, ps.is_ple_subject, ps.display_order
+        FROM primary_exam_subjects es
+        JOIN primary_subjects ps ON ps.id = es.subject_id
+        WHERE es.school_id = $1 AND es.exam_id = $2 AND ps.is_active = true
+        ORDER BY ps.display_order, ps.name
+        """,
+        school_id,
+        exam_id,
+    )
+
+
+async def list_exam_subject_ids(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam_id: uuid.UUID,
+) -> set[str]:
+    rows = await fetch_exam_subject_rows(conn, school_id, exam_id)
+    return {str(r["id"]) for r in rows}
+
+
+async def resolve_default_exam_subject_ids(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    class_id: uuid.UUID,
+    level: str,
+) -> list[uuid.UUID]:
+    """Default exam scope: PLE aggregate subjects for the class; else all cores."""
+    rows = await conn.fetch(
+        """
+        SELECT id, applies_from, applies_to, is_ple_subject, subject_type
+        FROM primary_subjects
+        WHERE school_id = $1 AND is_active = true
+          AND subject_type IN ('core', 'elective')
+        ORDER BY display_order, name
+        """,
+        school_id,
+    )
+    in_level = [
+        r
+        for r in rows
+        if level_in_range(level, r["applies_from"], r["applies_to"])
+    ]
+    ple = [r["id"] for r in in_level if r["is_ple_subject"]]
+    if ple:
+        return list(ple)
+    return [r["id"] for r in in_level]
+
+
+async def set_exam_subjects(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    exam_id: uuid.UUID,
+    subject_ids: list[uuid.UUID],
+) -> None:
+    if not subject_ids:
+        raise ValueError("Select at least one subject for this exam.")
+    valid = await conn.fetch(
+        """
+        SELECT id FROM primary_subjects
+        WHERE school_id = $1 AND id = ANY($2::uuid[]) AND is_active = true
+        """,
+        school_id,
+        subject_ids,
+    )
+    if len(valid) != len(set(subject_ids)):
+        raise ValueError("One or more subjects are invalid for this school.")
+    await conn.execute(
+        "DELETE FROM primary_exam_subjects WHERE school_id = $1 AND exam_id = $2",
+        school_id,
+        exam_id,
+    )
+    await conn.executemany(
+        """
+        INSERT INTO primary_exam_subjects (exam_id, subject_id, school_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT DO NOTHING
+        """,
+        [(exam_id, sid, school_id) for sid in subject_ids],
+    )
+
 
 
 async def fetch_exam(
@@ -161,7 +256,7 @@ async def assert_teacher_can_grade_class(
     level = await fetch_class_level(conn, school_id, class_id)
     if not is_upper_primary(level):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "error": "Subject exams apply to P4–P7. Use thematic assessment for lower primary.",
                 "code": "NOT_UPPER_PRIMARY",

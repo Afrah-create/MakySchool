@@ -10,7 +10,7 @@ import asyncpg
 from app.lib.primary_access import fetch_class_level, is_lower_primary
 from app.lib.primary_reports import THEMATIC_LEVELS
 from app.lib.teacher_assignments import format_class_name
-from app.services.primary.recalc import recalculate_class_positions
+from app.services.primary.recalc import _has_column, recalculate_class_positions
 
 
 async def class_results(
@@ -82,27 +82,40 @@ async def class_results(
 
     rows = await conn.fetch(
         """
-        SELECT
+        SELECT DISTINCT ON (tr.student_id)
           tr.student_id, s.full_name, s.learner_id,
           tr.average_percent, tr.overall_grade, tr.overall_grade_label,
           tr.class_position, tr.total_students,
+          tr.aggregate, tr.division, tr.exam_id,
           tr.class_teacher_comment, tr.head_teacher_comment
         FROM primary_term_results tr
         JOIN students s ON s.id = tr.student_id
         WHERE tr.school_id = $1 AND tr.class_id = $2 AND tr.term_id = $3
-        ORDER BY tr.class_position NULLS LAST, s.full_name
+          AND tr.exam_id IS NOT NULL
+        ORDER BY tr.student_id, tr.calculated_at DESC NULLS LAST
         """,
         school_id,
         class_id,
         term_id,
     )
+    rows = sorted(
+        rows,
+        key=lambda r: (
+            r["class_position"] is None,
+            r["class_position"] or 0,
+            (r["full_name"] or "").lower(),
+        ),
+    )
 
     subject_grades = await conn.fetch(
         """
-        SELECT sr.student_id, ps.code, sr.grade, sr.final_percent
+        SELECT DISTINCT ON (sr.student_id, ps.code)
+          sr.student_id, ps.code, sr.grade, sr.final_percent, sr.grade_points
         FROM primary_subject_results sr
         JOIN primary_subjects ps ON ps.id = sr.subject_id
         WHERE sr.school_id = $1 AND sr.class_id = $2 AND sr.term_id = $3
+          AND sr.exam_id IS NOT NULL
+        ORDER BY sr.student_id, ps.code, sr.calculated_at DESC NULLS LAST
         """,
         school_id,
         class_id,
@@ -114,6 +127,7 @@ async def class_results(
         grades_map.setdefault(sid, {})[g["code"]] = {
             "grade": g["grade"],
             "finalPercent": float(g["final_percent"]) if g["final_percent"] is not None else None,
+            "gradePoints": g["grade_points"],
         }
 
     return {
@@ -132,6 +146,9 @@ async def class_results(
                 else None,
                 "overallGrade": r["overall_grade"],
                 "overallGradeLabel": r["overall_grade_label"],
+                "aggregate": r["aggregate"],
+                "division": r["division"],
+                "examId": str(r["exam_id"]) if r["exam_id"] else None,
                 "classPosition": r["class_position"],
                 "totalStudents": r["total_students"],
                 "subjectGrades": grades_map.get(str(r["student_id"]), {}),
@@ -153,8 +170,8 @@ async def student_result(
 ) -> dict[str, Any]:
     student = await conn.fetchrow(
         """
-        SELECT s.id, s.full_name, s.learner_id, s.current_class_id,
-               sc.level, sc.stream
+        SELECT s.id, s.full_name, s.learner_id, s.current_class_id, s.photo_url,
+               sc.level, sc.stream, s.gender, s.date_of_birth
         FROM students s
         LEFT JOIN school_classes sc ON sc.id = s.current_class_id
         WHERE s.id = $1 AND s.school_id = $2
@@ -184,6 +201,14 @@ async def student_result(
         if student["level"]
         else None
     )
+    name_parts = [p for p in (student["full_name"] or "").strip().split() if p]
+    if not name_parts:
+        initials = "?"
+    elif len(name_parts) == 1:
+        initials = name_parts[0][:2].upper()
+    else:
+        initials = f"{name_parts[0][0]}{name_parts[-1][0]}".upper()
+
     base = {
         "student": {
             "id": str(student["id"]),
@@ -191,7 +216,13 @@ async def student_result(
             "learnerId": student["learner_id"],
             "className": class_name,
             "classId": str(student["current_class_id"]) if student["current_class_id"] else None,
+            "photoUrl": student["photo_url"],
+            "gender": student.get("gender"),
+            "dateOfBirth": student["date_of_birth"].isoformat()
+            if student.get("date_of_birth")
+            else None,
         },
+        "studentInitials": initials,
         "termId": str(term["id"]),
         "termName": term["name"],
         "academicYear": term["year"],
@@ -226,35 +257,92 @@ async def student_result(
         ]
         return base
 
-    subject_rows = await conn.fetch(
+    # Prefer the latest exam-scoped result set for this term.
+    latest_exam = await conn.fetchrow(
         """
-        SELECT
-          ps.name AS subject_name, ps.code AS subject_code,
-          sr.ca_percentage, sr.exam_score, sr.exam_percentage,
-          sr.final_percent, sr.grade, sr.grade_label, sr.position,
-          sr.teacher_comment
-        FROM primary_subject_results sr
-        JOIN primary_subjects ps ON ps.id = sr.subject_id
-        WHERE sr.school_id = $1 AND sr.student_id = $2 AND sr.term_id = $3
-        ORDER BY ps.display_order
+        SELECT exam_id FROM primary_term_results
+        WHERE school_id = $1 AND student_id = $2 AND term_id = $3
+          AND exam_id IS NOT NULL
+        ORDER BY calculated_at DESC NULLS LAST
+        LIMIT 1
         """,
         school_id,
         student_id,
         term_id,
     )
-    term_row = await conn.fetchrow(
-        """
-        SELECT * FROM primary_term_results
-        WHERE school_id = $1 AND student_id = $2 AND term_id = $3
-        """,
-        school_id,
-        student_id,
-        term_id,
+    exam_id = latest_exam["exam_id"] if latest_exam else None
+    has_gp = await _has_column(conn, "primary_subject_results", "grade_points")
+    gp_select = "sr.grade_points" if has_gp else "NULL::int AS grade_points"
+    has_agg = await _has_column(conn, "primary_term_results", "aggregate")
+
+    if exam_id:
+        subject_rows = await conn.fetch(
+            f"""
+            SELECT
+              ps.name AS subject_name, ps.code AS subject_code, ps.is_ple_subject,
+              sr.ca_percentage, sr.exam_score, sr.exam_percentage,
+              sr.final_percent, sr.grade, sr.grade_label, {gp_select}, sr.position,
+              sr.teacher_comment
+            FROM primary_subject_results sr
+            JOIN primary_subjects ps ON ps.id = sr.subject_id
+            WHERE sr.school_id = $1 AND sr.student_id = $2 AND sr.exam_id = $3
+            ORDER BY ps.display_order
+            """,
+            school_id,
+            student_id,
+            exam_id,
+        )
+        term_row = await conn.fetchrow(
+            """
+            SELECT tr.*, e.name AS exam_name, et.name AS exam_type_name
+            FROM primary_term_results tr
+            LEFT JOIN primary_exams e ON e.id = tr.exam_id
+            LEFT JOIN primary_exam_types et ON et.id = e.exam_type_id
+            WHERE tr.school_id = $1 AND tr.student_id = $2 AND tr.exam_id = $3
+            """,
+            school_id,
+            student_id,
+            exam_id,
+        )
+    else:
+        subject_rows = await conn.fetch(
+            f"""
+            SELECT
+              ps.name AS subject_name, ps.code AS subject_code, ps.is_ple_subject,
+              sr.ca_percentage, sr.exam_score, sr.exam_percentage,
+              sr.final_percent, sr.grade, sr.grade_label, {gp_select}, sr.position,
+              sr.teacher_comment
+            FROM primary_subject_results sr
+            JOIN primary_subjects ps ON ps.id = sr.subject_id
+            WHERE sr.school_id = $1 AND sr.student_id = $2 AND sr.term_id = $3
+            ORDER BY ps.display_order
+            """,
+            school_id,
+            student_id,
+            term_id,
+        )
+        term_row = await conn.fetchrow(
+            """
+            SELECT * FROM primary_term_results
+            WHERE school_id = $1 AND student_id = $2 AND term_id = $3
+            ORDER BY calculated_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            school_id,
+            student_id,
+            term_id,
+        )
+
+    base["examId"] = str(exam_id) if exam_id else None
+    base["examName"] = term_row["exam_name"] if term_row and "exam_name" in term_row.keys() else None
+    base["examTypeName"] = (
+        term_row["exam_type_name"] if term_row and "exam_type_name" in term_row.keys() else None
     )
     base["subjectResults"] = [
         {
             "subjectName": r["subject_name"],
             "subjectCode": r["subject_code"],
+            "isPleSubject": bool(r["is_ple_subject"]),
             "caPercentage": float(r["ca_percentage"]) if r["ca_percentage"] is not None else None,
             "examScore": float(r["exam_score"]) if r["exam_score"] is not None else None,
             "examPercentage": float(r["exam_percentage"])
@@ -263,6 +351,7 @@ async def student_result(
             "finalPercent": float(r["final_percent"]) if r["final_percent"] is not None else None,
             "grade": r["grade"],
             "gradeLabel": r["grade_label"],
+            "gradePoints": r["grade_points"],
             "position": r["position"],
             "teacherComment": r["teacher_comment"],
         }
@@ -286,6 +375,8 @@ async def student_result(
             else None,
             "overallGrade": term_row["overall_grade"],
             "overallGradeLabel": term_row["overall_grade_label"],
+            "aggregate": term_row["aggregate"] if has_agg else None,
+            "division": term_row["division"] if has_agg else None,
             "classPosition": term_row["class_position"],
             "totalStudents": term_row["total_students"],
             "attendanceDays": term_row["attendance_days"],

@@ -27,6 +27,8 @@ export interface PrimarySetup {
   caWeight: number;
   examWeight: number;
   allowThematicInP4: boolean;
+  /** ple_points = D1–F9 aggregate (4–36); percent = average % */
+  aggregateMode: "ple_points" | "percent";
   isActive: boolean;
   gradeScale: PrimaryGradeBand[];
 }
@@ -73,11 +75,25 @@ export interface PrimaryExam {
   classLevel?: string | null;
   termName?: string | null;
   notes?: string | null;
+  subjectIds?: string[];
+  subjects?: Array<{
+    id: string;
+    name: string;
+    code: string;
+    maxMark: number;
+    isPleSubject?: boolean;
+  }>;
 }
 
 export interface PrimaryExamGradesGrid {
   exam: PrimaryExam;
-  subjects: Array<{ id: string; name: string; code: string; maxMark: number }>;
+  subjects: Array<{
+    id: string;
+    name: string;
+    code: string;
+    maxMark: number;
+    isPleSubject?: boolean;
+  }>;
   students: Array<{
     studentId: string;
     fullName: string;
@@ -144,9 +160,15 @@ export interface PrimaryClassResults {
     averagePercent?: number | null;
     overallGrade?: string | null;
     overallGradeLabel?: string | null;
+    aggregate?: number | null;
+    division?: string | null;
+    examId?: string | null;
     classPosition?: number | null;
     totalStudents?: number | null;
-    subjectGrades?: Record<string, { grade: string | null; finalPercent: number | null }>;
+    subjectGrades?: Record<
+      string,
+      { grade: string | null; finalPercent: number | null; gradePoints?: number | null }
+    >;
     thematicCount?: number;
     averageLevel?: number | null;
     isLowerPrimary: boolean;

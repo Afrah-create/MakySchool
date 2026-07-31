@@ -10,7 +10,7 @@ import { isUpperPrimaryLevel, schoolOffersPrimary } from "@makyschool/shared";
 import { useSchool } from "@/providers/SchoolProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { useCurrentTerm } from "@/hooks/useCurrentTerm";
-import { usePrimaryClasses } from "@/hooks/usePrimary";
+import { usePrimaryClasses, usePrimarySubjects } from "@/hooks/usePrimary";
 import { primaryApi } from "@/lib/api/primary";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -27,12 +27,31 @@ export function PrimaryExamsContent() {
   );
   const [classId, setClassId] = useState("");
   const [examTypeId, setExamTypeId] = useState("");
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!classId && upper[0]) setClassId(upper[0].id);
   }, [upper, classId]);
+
+  const selectedClass = upper.find((c) => c.id === classId);
+  const { data: subjects = [] } = usePrimarySubjects(selectedClass?.level, offers && !!classId);
+  const examableSubjects = useMemo(
+    () => subjects.filter((s) => s.subjectType === "core" || s.subjectType === "elective"),
+    [subjects],
+  );
+  const subjectCatalogKey = useMemo(
+    () => examableSubjects.map((s) => `${s.id}:${s.isPleSubject ? 1 : 0}`).join("|"),
+    [examableSubjects],
+  );
+
+  useEffect(() => {
+    const ple = examableSubjects.filter((s) => s.isPleSubject).map((s) => s.id);
+    setSelectedSubjects(ple.length ? ple : examableSubjects.map((s) => s.id));
+    // Reset only when class/catalogue changes — not when toggling chips.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classId, subjectCatalogKey]);
 
   const { data: examTypes = [] } = useQuery({
     queryKey: ["primary", "exam-types"],
@@ -62,9 +81,19 @@ export function PrimaryExamsContent() {
     );
   }
 
+  function toggleSubject(id: string) {
+    setSelectedSubjects((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
   async function createExam() {
     if (!classId || !term?.id || !examTypeId) {
       toast.error("Select class, term, and exam type.");
+      return;
+    }
+    if (!selectedSubjects.length) {
+      toast.error("Select at least one subject for this exam.");
       return;
     }
     setCreating(true);
@@ -74,6 +103,7 @@ export function PrimaryExamsContent() {
         termId: term.id,
         examTypeId,
         openNow: true,
+        subjectIds: selectedSubjects,
       });
       toast.success("Exam created and opened for teachers.");
       await qc.invalidateQueries({ queryKey: ["primary", "exams"] });
@@ -104,38 +134,77 @@ export function PrimaryExamsContent() {
       maxWidth="7xl"
       eyebrow="Primary"
       title="Exams"
-      description="Create an exam for a P4–P7 class. Teachers enter marks for subjects they teach; you unlock if they need to re-enter."
+      description="Create an exam for a P4–P7 class. Default subjects are the four aggregate cores (ENG, MATH, SCI, SST). Teachers enter only subjects they teach."
     >
       <div className="space-y-4">
-        <div className="flex flex-wrap gap-3 rounded-xl border border-theme bg-theme-surface p-4">
-          <label className="block">
-            <span className="mb-1 block text-[11px] uppercase text-theme-muted">Class</span>
-            <select className="ms-input" value={classId} onChange={(e) => setClassId(e.target.value)}>
-              {upper.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[11px] uppercase text-theme-muted">Exam type</span>
-            <select
-              className="ms-input"
-              value={examTypeId}
-              onChange={(e) => setExamTypeId(e.target.value)}
-            >
-              {examTypes.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="flex items-end">
-            <LoadingButton loading={creating} onClick={() => void createExam()}>
-              Create & open
-            </LoadingButton>
+        <div className="space-y-4 rounded-xl border border-theme bg-theme-surface p-4">
+          <div className="flex flex-wrap gap-3">
+            <label className="block">
+              <span className="mb-1 block text-[11px] uppercase text-theme-muted">Class</span>
+              <select className="ms-input" value={classId} onChange={(e) => setClassId(e.target.value)}>
+                {upper.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] uppercase text-theme-muted">Exam type</span>
+              <select
+                className="ms-input"
+                value={examTypeId}
+                onChange={(e) => setExamTypeId(e.target.value)}
+              >
+                {examTypes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-end">
+              <LoadingButton loading={creating} onClick={() => void createExam()}>
+                Create & open
+              </LoadingButton>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase text-theme-muted">
+              Subjects in this exam
+            </p>
+            {!examableSubjects.length ? (
+              <p className="text-sm text-theme-muted">
+                No subjects installed. Use Primary setup → Install default subjects.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {examableSubjects.map((s) => {
+                  const on = selectedSubjects.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => toggleSubject(s.id)}
+                      className={[
+                        "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+                        on
+                          ? "border-theme-accent bg-theme-accent-muted text-theme-primary"
+                          : "border-theme text-theme-muted hover:bg-nav-hover",
+                      ].join(" ")}
+                    >
+                      {s.code}
+                      {s.isPleSubject ? " · agg" : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <p className="mt-2 text-xs text-theme-muted">
+              Aggregate ranking uses subjects marked “agg” (PLE cores). Extra subjects can still
+              appear on the marksheet without affecting aggregate.
+            </p>
           </div>
         </div>
 

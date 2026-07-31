@@ -158,78 +158,141 @@ async def install_default_subjects(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
 ) -> dict[str, Any]:
-    """Seed DEFAULT_SUBJECTS (incl. LIT/NUM) into primary + school_subjects catalogue."""
-    created = 0
-    linked = 0
+    """Seed DEFAULT_SUBJECTS (incl. LIT/NUM) into primary + school_subjects.
+
+    Batched SQL keeps remote DBs (e.g. Supabase) under Next.js proxy timeouts.
+    """
+    has_bridge = await conn.fetchval(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'primary_subjects'
+          AND column_name = 'school_subject_id'
+        """
+    )
+    if not has_bridge:
+        raise LookupError(
+            "Database is missing migration 049_primary_exams.sql "
+            "(primary_subjects.school_subject_id). Run migrations and retry."
+        )
+
+    # Distinct catalogue names (RE lower vs upper share display name otherwise).
+    catalogue_specs = []
     for s in DEFAULT_SUBJECTS:
-        catalogue_id = await _resolve_or_create_catalogue(conn, school_id, s["name"])
-        row = await conn.fetchrow(
+        cat_name = s["name"]
+        if s["code"] == "RE":
+            cat_name = "Religious Education (Lower Primary)"
+        elif s["code"] == "RE_UP":
+            cat_name = "Religious Education (Upper Primary)"
+        catalogue_specs.append({**s, "catalogue_name": cat_name})
+
+    by_lower: dict[str, uuid.UUID] = {}
+    for spec in catalogue_specs:
+        name = spec["catalogue_name"]
+        key = name.lower()
+        if key in by_lower:
+            continue
+        existing = await conn.fetchval(
             """
-            INSERT INTO primary_subjects (
-              school_id, name, code, subject_type, applies_from, applies_to,
-              max_mark, is_ple_subject, display_order, school_subject_id
-            )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-            ON CONFLICT (school_id, code) DO UPDATE SET
-              name = EXCLUDED.name,
-              subject_type = EXCLUDED.subject_type,
-              applies_from = EXCLUDED.applies_from,
-              applies_to = EXCLUDED.applies_to,
-              max_mark = EXCLUDED.max_mark,
-              is_ple_subject = EXCLUDED.is_ple_subject,
-              display_order = EXCLUDED.display_order,
-              school_subject_id = COALESCE(primary_subjects.school_subject_id, EXCLUDED.school_subject_id),
-              is_active = true
-            RETURNING *
+            SELECT id FROM school_subjects
+            WHERE school_id = $1 AND LOWER(name) = LOWER($2)
+            LIMIT 1
             """,
             school_id,
-            s["name"],
-            s["code"],
-            s["subject_type"],
-            s["applies_from"],
-            s["applies_to"],
-            s.get("max_mark", 100),
-            s.get("is_ple_subject", False),
-            s.get("display_order", 0),
-            catalogue_id,
+            name,
         )
-        if row:
-            created += 1
-            if not row["school_subject_id"]:
-                await conn.execute(
-                    """
-                    UPDATE primary_subjects SET school_subject_id = $3
-                    WHERE id = $1 AND school_id = $2
-                    """,
-                    row["id"],
-                    school_id,
-                    catalogue_id,
-                )
-            sid = row["school_subject_id"] or catalogue_id
-            before = await conn.fetchval(
-                """
-                SELECT COUNT(*)::int FROM school_class_subjects
-                WHERE school_id = $1 AND subject_id = $2
-                """,
+        if existing:
+            by_lower[key] = existing
+            continue
+        created_id = await conn.fetchval(
+            """
+            INSERT INTO school_subjects (school_id, name)
+            VALUES ($1, $2)
+            RETURNING id
+            """,
+            school_id,
+            name,
+        )
+        by_lower[key] = created_id
+
+    before_count = await conn.fetchval(
+        "SELECT COUNT(*)::int FROM primary_subjects WHERE school_id = $1",
+        school_id,
+    )
+
+    await conn.executemany(
+        """
+        INSERT INTO primary_subjects (
+          school_id, name, code, subject_type, applies_from, applies_to,
+          max_mark, is_ple_subject, display_order, school_subject_id
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        ON CONFLICT (school_id, code) DO UPDATE SET
+          name = EXCLUDED.name,
+          subject_type = EXCLUDED.subject_type,
+          applies_from = EXCLUDED.applies_from,
+          applies_to = EXCLUDED.applies_to,
+          max_mark = EXCLUDED.max_mark,
+          is_ple_subject = EXCLUDED.is_ple_subject,
+          display_order = EXCLUDED.display_order,
+          school_subject_id = COALESCE(
+            primary_subjects.school_subject_id, EXCLUDED.school_subject_id
+          ),
+          is_active = true
+        """,
+        [
+            (
                 school_id,
-                sid,
-            )
-            await _link_catalogue_to_primary_classes(
-                conn,
-                school_id,
-                sid,
+                s["name"],
+                s["code"],
+                s["subject_type"],
                 s["applies_from"],
                 s["applies_to"],
+                s.get("max_mark", 100),
+                s.get("is_ple_subject", False),
+                s.get("display_order", 0),
+                by_lower[s["catalogue_name"].lower()],
             )
-            after = await conn.fetchval(
-                """
-                SELECT COUNT(*)::int FROM school_class_subjects
-                WHERE school_id = $1 AND subject_id = $2
-                """,
-                school_id,
-                sid,
-            )
-            linked += max(0, (after or 0) - (before or 0))
+            for s in catalogue_specs
+        ],
+    )
+
+    after_count = await conn.fetchval(
+        "SELECT COUNT(*)::int FROM primary_subjects WHERE school_id = $1",
+        school_id,
+    )
+    created = max(0, (after_count or 0) - (before_count or 0))
+
+    before_links = await conn.fetchval(
+        "SELECT COUNT(*)::int FROM school_class_subjects WHERE school_id = $1",
+        school_id,
+    )
+    await conn.execute(
+        """
+        INSERT INTO school_class_subjects (school_id, class_id, subject_id)
+        SELECT ps.school_id, sc.id, ps.school_subject_id
+        FROM primary_subjects ps
+        JOIN school_classes sc
+          ON sc.school_id = ps.school_id
+         AND sc.level = ANY($2::text[])
+        WHERE ps.school_id = $1
+          AND ps.is_active = true
+          AND ps.school_subject_id IS NOT NULL
+          AND ARRAY_POSITION($2::text[], ps.applies_from)
+              <= ARRAY_POSITION($2::text[], sc.level)
+          AND ARRAY_POSITION($2::text[], sc.level)
+              <= ARRAY_POSITION($2::text[], ps.applies_to)
+        ON CONFLICT (class_id, subject_id) DO NOTHING
+        """,
+        school_id,
+        ["P1", "P2", "P3", "P4", "P5", "P6", "P7"],
+    )
+    after_links = await conn.fetchval(
+        "SELECT COUNT(*)::int FROM school_class_subjects WHERE school_id = $1",
+        school_id,
+    )
+    linked = max(0, (after_links or 0) - (before_links or 0))
 
     subjects = await list_subjects(conn, school_id, active_only=False)
     return {

@@ -1299,12 +1299,24 @@ async def get_daily_attendance(
           a.status,
           a.notes
         FROM students s
-        LEFT JOIN attendance a
-          ON a.student_id  = s.id
-         AND a.date        = $1
-         AND a.term_id     = $2
-         AND a.school_id   = $3
-         AND ($4::uuid IS NULL OR a.timetable_period_id = $4)
+        LEFT JOIN LATERAL (
+          SELECT att.status, att.notes
+          FROM attendance att
+          WHERE att.student_id = s.id
+            AND att.date = $1
+            AND att.term_id = $2
+            AND att.school_id = $3
+            AND ($4::uuid IS NULL OR att.timetable_period_id = $4)
+          ORDER BY
+            CASE att.status
+              WHEN 'absent' THEN 0
+              WHEN 'late' THEN 1
+              WHEN 'present' THEN 2
+              ELSE 3
+            END,
+            att.created_at DESC NULLS LAST
+          LIMIT 1
+        ) a ON true
         WHERE s.current_class_id = $5
           AND s.status = 'active'
           AND s.school_id = $3

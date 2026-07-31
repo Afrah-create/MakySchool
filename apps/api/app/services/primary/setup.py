@@ -11,6 +11,7 @@ from app.lib.primary_reports import (
     DEFAULT_GRADE_SCALE,
     DEFAULT_SUBJECTS,
     DEFAULT_THEMES,
+    AGGREGATE_MODES,
     validate_grade_scale,
 )
 
@@ -22,6 +23,7 @@ def serialize_setup(system: asyncpg.Record, scales: list[asyncpg.Record]) -> dic
         "caWeight": float(system["ca_weight"]),
         "examWeight": float(system["exam_weight"]),
         "allowThematicInP4": bool(system["allow_thematic_in_p4"]),
+        "aggregateMode": system.get("aggregate_mode") or "ple_points",
         "isActive": bool(system["is_active"]),
         "gradeScale": [
             {
@@ -191,6 +193,7 @@ async def update_setup(
     ca_weight: float | None = None,
     exam_weight: float | None = None,
     allow_thematic_in_p4: bool | None = None,
+    aggregate_mode: str | None = None,
     grade_scale: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     system = await conn.fetchrow(
@@ -210,6 +213,11 @@ async def update_setup(
         if allow_thematic_in_p4 is None
         else allow_thematic_in_p4
     )
+    mode = system.get("aggregate_mode") or "ple_points"
+    if aggregate_mode is not None:
+        if aggregate_mode not in AGGREGATE_MODES:
+            raise ValueError("aggregate_mode must be 'ple_points' or 'percent'.")
+        mode = aggregate_mode
 
     await conn.execute(
         """
@@ -217,6 +225,7 @@ async def update_setup(
         SET ca_weight = $2,
             exam_weight = $3,
             allow_thematic_in_p4 = $4,
+            aggregate_mode = $5,
             updated_at = NOW()
         WHERE school_id = $1
         """,
@@ -224,6 +233,7 @@ async def update_setup(
         new_ca,
         new_exam,
         thematic,
+        mode,
     )
 
     if grade_scale is not None:

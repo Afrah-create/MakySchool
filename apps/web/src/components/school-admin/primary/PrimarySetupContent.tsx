@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
@@ -22,6 +22,7 @@ export function PrimarySetupContent() {
   const ensure = useEnsurePrimarySetup();
   const [ca, setCa] = useState(30);
   const [exam, setExam] = useState(70);
+  const [aggregateMode, setAggregateMode] = useState<"ple_points" | "percent">("ple_points");
   const [saving, setSaving] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -29,6 +30,13 @@ export function PrimarySetupContent() {
   const [newCode, setNewCode] = useState("");
   const [newFrom, setNewFrom] = useState("P4");
   const [newTo, setNewTo] = useState("P7");
+
+  useEffect(() => {
+    if (!setup) return;
+    setCa(setup.caWeight);
+    setExam(setup.examWeight);
+    setAggregateMode(setup.aggregateMode ?? "ple_points");
+  }, [setup]);
 
   if (!offers) {
     return (
@@ -54,8 +62,12 @@ export function PrimarySetupContent() {
     }
     setSaving(true);
     try {
-      await primaryApi.patchSetup({ caWeight: ca, examWeight: exam });
-      toast.success("Assessment weights updated.");
+      await primaryApi.patchSetup({
+        caWeight: ca,
+        examWeight: exam,
+        aggregateMode,
+      });
+      toast.success("Assessment settings updated.");
       await qc.invalidateQueries({ queryKey: ["primary", "setup"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Update failed.");
@@ -133,7 +145,7 @@ export function PrimarySetupContent() {
                   <input
                     type="number"
                     className="ms-input w-28"
-                    defaultValue={setup.caWeight}
+                    value={ca}
                     onChange={(e) => {
                       const v = Number(e.target.value);
                       setCa(v);
@@ -145,13 +157,27 @@ export function PrimarySetupContent() {
                   <span className="mb-1 block text-xs text-theme-muted">Exam weight %</span>
                   <input type="number" className="ms-input w-28" value={exam} readOnly />
                 </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs text-theme-muted">Exam ranking</span>
+                  <select
+                    className="ms-input"
+                    value={aggregateMode}
+                    onChange={(e) =>
+                      setAggregateMode(e.target.value as "ple_points" | "percent")
+                    }
+                  >
+                    <option value="ple_points">PLE aggregate (D1–F9, best 4–36)</option>
+                    <option value="percent">Average percent (D/C/P/F)</option>
+                  </select>
+                </label>
               </div>
               <p className="text-xs text-theme-muted">
-                Exam marks are graded per exam on their own scores (no averaging across BOT/MID/EOT).
-                CA remains separate continuous assessment.
+                Each exam is graded on its own scores (no averaging across BOT/MID/EOT). CA is
+                continuous assessment stored separately — blend CA + EOT only when you generate an
+                end-of-term report that uses those weights.
               </p>
               <LoadingButton loading={saving} onClick={() => void saveWeights()}>
-                Save weights
+                Save settings
               </LoadingButton>
             </div>
 

@@ -45,4 +45,13 @@ async def get_db() -> AsyncGenerator[asyncpg.Connection, None]:
         yield conn
     finally:
         _request_conn.reset(token)
-        await pool.release(conn)
+        try:
+            # Short timeout: asyncpg cancel opens a new DB connection; on flaky
+            # DNS (Supabase) that can hang or raise gaierror and kill the request.
+            await pool.release(conn, timeout=1.0)
+        except Exception:
+            # Discard the connection so the pool can replace it.
+            try:
+                conn.terminate()
+            except Exception:
+                pass

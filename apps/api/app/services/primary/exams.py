@@ -8,16 +8,19 @@ from typing import Any
 
 import asyncpg
 
-from app.lib.primary_access import fetch_class_level, is_upper_primary, level_in_range
+from app.lib.primary_access import fetch_class_level, is_upper_primary
 from app.lib.primary_exam_access import (
     EXAM_SELECT,
     assert_exam_open,
     assert_teacher_can_edit_marks,
     assert_teacher_can_grade_class,
+    fetch_exam_subject_rows,
     fetch_teacher_submission,
     list_exam_submissions,
     require_exam,
+    resolve_default_exam_subject_ids,
     serialize_exam,
+    set_exam_subjects,
     teacher_assigned_primary_class_ids,
 )
 from app.lib.primary_reports import BULK_MARKS_LIMIT
@@ -200,6 +203,7 @@ async def create_exam(
     name: str | None = None,
     notes: str | None = None,
     open_now: bool = False,
+    subject_ids: list[uuid.UUID] | None = None,
 ) -> dict[str, Any]:
     level = await fetch_class_level(conn, school_id, class_id)
     if not is_upper_primary(level):
@@ -236,6 +240,16 @@ async def create_exam(
     status = "open" if open_now else "draft"
     now = datetime.now(timezone.utc) if open_now else None
 
+    resolved = subject_ids
+    if not resolved:
+        resolved = await resolve_default_exam_subject_ids(
+            conn, school_id, class_id=class_id, level=level
+        )
+    if not resolved:
+        raise ValueError(
+            "No subjects available for this class. Install default subjects on Primary setup first."
+        )
+
     row = await conn.fetchrow(
         """
         INSERT INTO primary_exams (
@@ -256,7 +270,22 @@ async def create_exam(
         actor_id if open_now else None,
         notes,
     )
-    return await require_exam(conn, school_id, row["id"])
+    exam_id = row["id"]
+    await set_exam_subjects(conn, school_id, exam_id, list(resolved))
+    exam = await require_exam(conn, school_id, exam_id)
+    subjects = await fetch_exam_subject_rows(conn, school_id, exam_id)
+    exam["subjects"] = [
+        {
+            "id": str(s["id"]),
+            "name": s["name"],
+            "code": s["code"],
+            "maxMark": float(s["max_mark"]),
+            "isPleSubject": bool(s["is_ple_subject"]),
+        }
+        for s in subjects
+    ]
+    exam["subjectIds"] = [s["id"] for s in exam["subjects"]]
+    return exam
 
 
 async def open_exam(
@@ -351,26 +380,35 @@ async def get_exam_grades_grid(
         if submitted:
             can_edit = False
 
-    subject_rows = await conn.fetch(
-        """
-        SELECT id, name, code, max_mark, display_order, applies_from, applies_to
-        FROM primary_subjects
-        WHERE school_id = $1 AND is_active = true
-          AND subject_type IN ('core', 'elective')
-        ORDER BY display_order, name
-        """,
-        school_id,
-    )
+    subject_rows = await fetch_exam_subject_rows(conn, school_id, exam_id)
+    # Fallback for exams created before migration 050.
+    if not subject_rows:
+        defaults = await resolve_default_exam_subject_ids(
+            conn, school_id, class_id=class_id, level=level
+        )
+        if defaults:
+            await set_exam_subjects(conn, school_id, exam_id, defaults)
+            subject_rows = await fetch_exam_subject_rows(conn, school_id, exam_id)
+
+    exam_subject_ids = {str(s["id"]) for s in subject_rows}
+    if allowed is not None:
+        allowed = allowed & exam_subject_ids
+        if not allowed:
+            raise PermissionError(
+                "None of your assigned subjects are included in this exam. "
+                "Ask an admin to add your subjects to the exam or update teaching load."
+            )
+
     subject_list = [
         {
             "id": str(s["id"]),
             "name": s["name"],
             "code": s["code"],
             "maxMark": float(s["max_mark"]),
+            "isPleSubject": bool(s["is_ple_subject"]),
         }
         for s in subject_rows
-        if level_in_range(level, s["applies_from"], s["applies_to"])
-        and (allowed is None or str(s["id"]) in allowed)
+        if allowed is None or str(s["id"]) in allowed
     ]
 
     students = await conn.fetch(
@@ -474,6 +512,12 @@ async def bulk_save_exam_marks(
     allowed = await assert_teacher_can_grade_class(
         conn, school_id, teacher_id, class_id
     )
+    exam_subject_ids = {str(s["id"]) for s in await fetch_exam_subject_rows(conn, school_id, exam_id)}
+    allowed = allowed & exam_subject_ids
+    if not allowed:
+        raise PermissionError(
+            "None of your assigned subjects are included in this exam."
+        )
 
     term_id = uuid.UUID(exam["termId"])
     year_id = uuid.UUID(exam["academicYearId"])
@@ -487,10 +531,27 @@ async def bulk_save_exam_marks(
             raise PermissionError(
                 "You cannot enter marks for a subject you do not teach."
             )
-        score = float(item["score"]) if item.get("score") is not None else None
+        if str(subj) not in exam_subject_ids:
+            raise ValueError("This subject is not part of the selected exam.")
+        raw_score = item.get("score")
+        score = float(raw_score) if raw_score is not None else None
         max_score = float(item.get("max_score") or 100)
         if score is not None and (score < 0 or score > max_score):
             raise ValueError(f"Score must be between 0 and {max_score}.")
+
+        # Skip empty cells that were never saved — keeps bulk payloads small.
+        if score is None:
+            existing = await conn.fetchval(
+                """
+                SELECT 1 FROM primary_exam_marks
+                WHERE exam_id = $1 AND student_id = $2 AND subject_id = $3
+                """,
+                exam_id,
+                sid,
+                subj,
+            )
+            if not existing:
+                continue
 
         await conn.execute(
             """
@@ -520,15 +581,28 @@ async def bulk_save_exam_marks(
         saved += 1
         touched_subjects.add(subj)
 
-    for subj in touched_subjects:
-        await recalculate_exam_results(
-            conn,
-            school_id,
-            exam_id=exam_id,
-            subject_id=subj,
-        )
+    # Nested savepoint: grading failure must not roll back saved marks.
+    recalc_error: str | None = None
+    if touched_subjects:
+        try:
+            async with conn.transaction():
+                for subj in touched_subjects:
+                    await recalculate_exam_results(
+                        conn,
+                        school_id,
+                        exam_id=exam_id,
+                        subject_id=subj,
+                    )
+        except Exception as exc:  # noqa: BLE001
+            recalc_error = str(exc) or exc.__class__.__name__
 
-    return {"saved": saved}
+    result: dict[str, Any] = {"saved": saved}
+    if recalc_error:
+        result["recalcWarning"] = (
+            "Marks were saved but grading recalculation failed. "
+            f"Ensure migration 050 is applied. ({recalc_error})"
+        )
+    return result
 
 
 async def submit_exam_marks(
@@ -542,6 +616,12 @@ async def submit_exam_marks(
     allowed = await assert_teacher_can_grade_class(
         conn, school_id, teacher_id, class_id
     )
+    exam_subject_ids = {str(s["id"]) for s in await fetch_exam_subject_rows(conn, school_id, exam_id)}
+    allowed = allowed & exam_subject_ids
+    if not allowed:
+        raise PermissionError(
+            "None of your assigned subjects are included in this exam."
+        )
     existing = await fetch_teacher_submission(conn, school_id, exam_id, teacher_id)
     if existing:
         raise ValueError("Marks already submitted for this exam.")
@@ -570,7 +650,12 @@ async def submit_exam_marks(
         exam_id,
         teacher_id,
     )
-    await recalculate_exam_results(conn, school_id, exam_id=exam_id)
+    try:
+        async with conn.transaction():
+            await recalculate_exam_results(conn, school_id, exam_id=exam_id)
+    except Exception:
+        # Submission lock still stands; grades can be recalculated later.
+        pass
     return {"submitted": True, "scoresRecorded": count}
 
 

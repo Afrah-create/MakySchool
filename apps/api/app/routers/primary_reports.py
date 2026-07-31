@@ -47,7 +47,7 @@ def _http(exc: Exception) -> HTTPException:
         )
     if isinstance(exc, ValueError):
         return HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"error": str(exc), "code": "VALIDATION_ERROR"},
         )
     return HTTPException(
@@ -79,6 +79,7 @@ class SetupPatchBody(BaseModel):
     ca_weight: float | None = Field(default=None, ge=0, le=100)
     exam_weight: float | None = Field(default=None, ge=0, le=100)
     allow_thematic_in_p4: bool | None = None
+    aggregate_mode: Literal["ple_points", "percent"] | None = None
     grade_scale: list[dict[str, Any]] | None = None
 
 
@@ -263,6 +264,7 @@ async def patch_setup(
                 ca_weight=body.ca_weight,
                 exam_weight=body.exam_weight,
                 allow_thematic_in_p4=body.allow_thematic_in_p4,
+                aggregate_mode=body.aggregate_mode,
                 grade_scale=body.grade_scale,
             )
         return {"data": data}
@@ -781,6 +783,7 @@ async def generate_primary_report_cards(
     from app.db.pool import get_pool
     from app.lib.alevel_reports import load_school_branding
     from app.lib.primary_pdf import generate_primary_report_pdf_bytes
+    from app.lib.storage_urls import resolve_storage_data_uri
 
     school_id, actor = ctx
     try:
@@ -817,6 +820,14 @@ async def generate_primary_report_cards(
                     data["schoolName"] = branding.get("schoolName")
                     data["logoUrl"] = branding.get("logoUrl")
                     data["stampUrl"] = branding.get("stampUrl")
+                    photo_key = (data.get("student") or {}).get("photoUrl")
+                    if photo_key:
+                        photo_uri = await resolve_storage_data_uri(
+                            photo_key, school_id=school_id
+                        )
+                        data["photoUrl"] = photo_uri
+                        if data.get("student"):
+                            data["student"]["photoUrl"] = photo_uri
                     pdf = await generate_primary_report_pdf_bytes(data)
                     await worker.execute(
                         """
@@ -884,6 +895,7 @@ class ExamCreateBody(BaseModel):
     name: str | None = None
     notes: str | None = None
     open_now: bool = False
+    subject_ids: list[uuid.UUID] | None = None
 
 
 class ExamGradeItem(BaseModel):
@@ -1017,17 +1029,19 @@ async def post_exam(
     school_id, actor = ctx
     try:
         await _gate(conn, school_id, actor, "managePrimarySetup")
-        data = await exams_svc.create_exam(
-            conn,
-            school_id,
-            actor_user_id(actor),
-            class_id=body.class_id,
-            term_id=body.term_id,
-            exam_type_id=body.exam_type_id,
-            name=body.name,
-            notes=body.notes,
-            open_now=body.open_now,
-        )
+        async with conn.transaction():
+            data = await exams_svc.create_exam(
+                conn,
+                school_id,
+                actor_user_id(actor),
+                class_id=body.class_id,
+                term_id=body.term_id,
+                exam_type_id=body.exam_type_id,
+                name=body.name,
+                notes=body.notes,
+                open_now=body.open_now,
+                subject_ids=body.subject_ids,
+            )
         return {"data": data}
     except asyncpg.UniqueViolationError as exc:
         raise _http(

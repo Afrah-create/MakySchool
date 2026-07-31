@@ -46,6 +46,7 @@ export const primaryApi = {
     caWeight?: number;
     examWeight?: number;
     allowThematicInP4?: boolean;
+    aggregateMode?: "ple_points" | "percent";
     gradeScale?: Array<{
       grade: string;
       label: string;
@@ -61,6 +62,7 @@ export const primaryApi = {
         ca_weight: body.caWeight,
         exam_weight: body.examWeight,
         allow_thematic_in_p4: body.allowThematicInP4,
+        aggregate_mode: body.aggregateMode,
         grade_scale: body.gradeScale,
       },
     }).then((r) => r.data);
@@ -364,6 +366,7 @@ export const primaryApi = {
     examTypeId: string;
     name?: string;
     openNow?: boolean;
+    subjectIds?: string[];
   }) {
     return apiClient<PrimaryExam>(`${BASE}/exams`, {
       method: "POST",
@@ -373,6 +376,7 @@ export const primaryApi = {
         exam_type_id: body.examTypeId,
         name: body.name,
         open_now: body.openNow ?? false,
+        subject_ids: body.subjectIds,
       },
     }).then((r) => r.data);
   },

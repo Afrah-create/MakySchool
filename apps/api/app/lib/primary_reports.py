@@ -174,6 +174,21 @@ PLE_GRADE_POINTS = {
     "F9": 9,
 }
 
+# Common Uganda upper-primary / mock-PLE percent → D1–F9 bands.
+DEFAULT_PLE_GRADE_SCALE = [
+    {"grade": "D1", "label": "Distinction 1", "min_percent": 80, "max_percent": 100, "display_order": 1},
+    {"grade": "D2", "label": "Distinction 2", "min_percent": 70, "max_percent": 79, "display_order": 2},
+    {"grade": "C3", "label": "Credit 3", "min_percent": 65, "max_percent": 69, "display_order": 3},
+    {"grade": "C4", "label": "Credit 4", "min_percent": 60, "max_percent": 64, "display_order": 4},
+    {"grade": "C5", "label": "Credit 5", "min_percent": 55, "max_percent": 59, "display_order": 5},
+    {"grade": "C6", "label": "Credit 6", "min_percent": 50, "max_percent": 54, "display_order": 6},
+    {"grade": "P7", "label": "Pass 7", "min_percent": 45, "max_percent": 49, "display_order": 7},
+    {"grade": "P8", "label": "Pass 8", "min_percent": 40, "max_percent": 44, "display_order": 8},
+    {"grade": "F9", "label": "Fail 9", "min_percent": 0, "max_percent": 39, "display_order": 9},
+]
+
+AGGREGATE_MODES = frozenset({"ple_points", "percent"})
+
 PLE_DIVISIONS = [
     {"division": "1", "min_agg": 4, "max_agg": 12, "label": "Division 1"},
     {"division": "2", "min_agg": 13, "max_agg": 23, "label": "Division 2"},
@@ -237,6 +252,26 @@ def ple_points(grade: str) -> int:
     if key not in PLE_GRADE_POINTS:
         raise ValueError(f"Invalid PLE grade '{grade}'. Use D1–F9.")
     return PLE_GRADE_POINTS[key]
+
+
+def ple_points_optional(grade: str | None) -> int | None:
+    if not grade:
+        return None
+    key = grade.strip().upper()
+    return PLE_GRADE_POINTS.get(key)
+
+
+def get_ple_grade_from_percent(percent: float, scale: list[dict] | None = None) -> dict:
+    """Map a percent to D1–F9 using the PLE band table (or a school override)."""
+    active = scale if scale else DEFAULT_PLE_GRADE_SCALE
+    # Prefer bands that look like PLE letters when a mixed scale is passed.
+    ple_bands = [b for b in active if str(b.get("grade", "")).upper() in PLE_GRADE_POINTS]
+    return get_grade_from_percent(percent, ple_bands or DEFAULT_PLE_GRADE_SCALE)
+
+
+def scale_is_ple(scale: list[dict]) -> bool:
+    grades = {str(b.get("grade", "")).upper() for b in scale}
+    return bool(grades & set(PLE_GRADE_POINTS.keys()))
 
 
 def validate_grade_scale(rows: list[dict]) -> str | None:
