@@ -14,6 +14,11 @@ export function schoolOffersPrimary(schoolType: SchoolType | string | null | und
   return schoolType === "primary" || schoolType === "both";
 }
 
+/** Secondary and combined schools offer A-Level (S5/S6). Primary-only schools do not. */
+export function schoolOffersALevel(schoolType: SchoolType | string | null | undefined): boolean {
+  return schoolType === "secondary" || schoolType === "both";
+}
+
 export function isLowerPrimaryLevel(level: string): boolean {
   return level === "P1" || level === "P2" || level === "P3";
 }

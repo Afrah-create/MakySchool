@@ -2,6 +2,9 @@ import { apiClient } from "./client";
 import type {
   PrimaryClassOption,
   PrimaryClassResults,
+  PrimaryExam,
+  PrimaryExamGradesGrid,
+  PrimaryExamTypeOption,
   PrimaryOverview,
   PrimaryRosterStudent,
   PrimarySetup,
@@ -299,6 +302,132 @@ export const primaryApi = {
     return apiClient(`${BASE}/ple/analytics?academic_year_id=${academicYearId}`).then(
       (r) => r.data,
     );
+  },
+
+  installDefaultSubjects() {
+    return apiClient<{
+      created: number;
+      classLinksAdded: number;
+      subjects: PrimarySubject[];
+    }>(`${BASE}/subjects/install-defaults`, { method: "POST" }).then((r) => r.data);
+  },
+
+  createSubject(body: {
+    name: string;
+    code: string;
+    subjectType?: string;
+    appliesFrom?: string;
+    appliesTo?: string;
+    maxMark?: number;
+    isPleSubject?: boolean;
+  }) {
+    return apiClient<PrimarySubject>(`${BASE}/subjects`, {
+      method: "POST",
+      body: {
+        name: body.name,
+        code: body.code,
+        subject_type: body.subjectType ?? "core",
+        applies_from: body.appliesFrom ?? "P4",
+        applies_to: body.appliesTo ?? "P7",
+        max_mark: body.maxMark ?? 100,
+        is_ple_subject: body.isPleSubject ?? false,
+      },
+    }).then((r) => r.data);
+  },
+
+  listExamTypes() {
+    return apiClient<PrimaryExamTypeOption[]>(`${BASE}/exam-types`).then((r) => r.data);
+  },
+
+  createExamType(body: { name: string; code: string; sortOrder?: number }) {
+    return apiClient<PrimaryExamTypeOption>(`${BASE}/exam-types`, {
+      method: "POST",
+      body: {
+        name: body.name,
+        code: body.code,
+        sort_order: body.sortOrder ?? 0,
+      },
+    }).then((r) => r.data);
+  },
+
+  listExams(params?: { classId?: string; termId?: string }) {
+    const q = new URLSearchParams();
+    if (params?.classId) q.set("class_id", params.classId);
+    if (params?.termId) q.set("term_id", params.termId);
+    const qs = q.toString() ? `?${q}` : "";
+    return apiClient<PrimaryExam[]>(`${BASE}/exams${qs}`).then((r) => r.data);
+  },
+
+  createExam(body: {
+    classId: string;
+    termId: string;
+    examTypeId: string;
+    name?: string;
+    openNow?: boolean;
+  }) {
+    return apiClient<PrimaryExam>(`${BASE}/exams`, {
+      method: "POST",
+      body: {
+        class_id: body.classId,
+        term_id: body.termId,
+        exam_type_id: body.examTypeId,
+        name: body.name,
+        open_now: body.openNow ?? false,
+      },
+    }).then((r) => r.data);
+  },
+
+  openExam(examId: string) {
+    return apiClient<PrimaryExam>(`${BASE}/exams/${examId}/open`, {
+      method: "POST",
+    }).then((r) => r.data);
+  },
+
+  closeExam(examId: string) {
+    return apiClient<PrimaryExam>(`${BASE}/exams/${examId}/close`, {
+      method: "POST",
+    }).then((r) => r.data);
+  },
+
+  examGrades(examId: string) {
+    return apiClient<PrimaryExamGradesGrid>(`${BASE}/exams/${examId}/grades`).then(
+      (r) => r.data,
+    );
+  },
+
+  bulkExamGrades(
+    examId: string,
+    marks: Array<{
+      studentId: string;
+      subjectId: string;
+      score: number | null;
+      maxScore?: number;
+    }>,
+  ) {
+    return apiClient(`${BASE}/exams/${examId}/grades/bulk`, {
+      method: "POST",
+      body: {
+        marks: marks.map((m) => ({
+          student_id: m.studentId,
+          subject_id: m.subjectId,
+          score: m.score,
+          max_score: m.maxScore ?? 100,
+        })),
+      },
+    }).then((r) => r.data);
+  },
+
+  submitExam(examId: string) {
+    return apiClient(`${BASE}/exams/${examId}/submit`, { method: "POST" }).then(
+      (r) => r.data,
+    );
+  },
+
+  unlockExamSubmission(examId: string, teacherId: string) {
+    return apiClient(
+      `${BASE}/exams/${examId}/submissions/${teacherId}/unlock`,
+      { method: "POST" },
+    ).then((r) => r.data);
   },
 
   generateReportCards(params: {

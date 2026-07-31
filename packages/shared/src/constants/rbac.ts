@@ -46,7 +46,7 @@ export const CAN = {
   enterALevelGrades: ["teacher"],
   managePrimarySetup: ["admin"],
   viewPrimaryResults: ["admin", "head_teacher"],
-  enterPrimaryMarks: ["admin", "head_teacher", "teacher"],
+  enterPrimaryMarks: ["teacher"],
   managePLEResults: ["admin", "head_teacher"],
   generatePrimaryReports: ["admin", "head_teacher"],
 } as const satisfies Record<string, MakySchoolRole[]>;

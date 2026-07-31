@@ -25,6 +25,7 @@ from app.lib.alevel import (
 )
 from app.lib.alevel_access import (
     EXAM_SELECT,
+    assert_alevel_enabled,
     assert_exam_open,
     assert_teacher_can_edit_marks,
     assert_teacher_can_grade_class,
@@ -39,12 +40,21 @@ from app.lib.classes import A_LEVEL_CLASS_LEVELS
 from app.lib.teacher_assignments import format_class_name
 from app.middleware.subscription_guard import require_tenant_with_subscription
 
-router = APIRouter()
-
 TenantCtx = Annotated[
     tuple[uuid.UUID, dict[str, Any]],
     Depends(require_tenant_with_subscription),
 ]
+
+
+async def _require_alevel_school(
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+) -> None:
+    school_id, _actor = ctx
+    await assert_alevel_enabled(conn, school_id)
+
+
+router = APIRouter(dependencies=[Depends(_require_alevel_school)])
 
 MANAGE_ROLES = {"admin"}
 VIEW_ROLES = {"admin", "head_teacher"}

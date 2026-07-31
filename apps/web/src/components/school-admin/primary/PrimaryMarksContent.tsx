@@ -321,136 +321,23 @@ export function PrimaryMarksContent() {
               </a>
             }
           />
-        ) : rosterLoading ? (
-          <Skeleton className="h-64 w-full" />
-        ) : !subjectId ? (
-          <EmptyState title="Select a subject" description="Choose a subject to enter marks." />
         ) : (
-          <>
-            {mode === "ca" ? (
-              <div className="flex flex-wrap gap-3 rounded-xl border border-theme bg-theme-surface p-4">
-                <label className="block">
-                  <span className="mb-1 block text-xs text-theme-muted">CA title</span>
-                  <input
-                    className="ms-input"
-                    value={caTitle}
-                    onChange={(e) => setCaTitle(e.target.value)}
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs text-theme-muted">Max score</span>
-                  <input
-                    className="ms-input w-24"
-                    value={caMax}
-                    onChange={(e) => setCaMax(e.target.value)}
-                  />
-                </label>
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="block">
-                  <span className="mb-1 block text-xs text-theme-muted">Exam type</span>
-                  <select
-                    className="ms-input"
-                    value={examType}
-                    onChange={(e) => setExamType(e.target.value as PrimaryExamType)}
-                    disabled={locked}
-                  >
-                    <option value="end_of_term">End of term</option>
-                    <option value="mid_term">Mid-term</option>
-                    <option value="mock">Mock</option>
-                    <option value="ple_mock">PLE mock</option>
-                  </select>
-                </label>
-                {locked ? (
-                  <span className="rounded-full bg-theme-raised px-3 py-1 text-xs font-medium text-theme-muted">
-                    Submitted · locked
-                  </span>
-                ) : null}
-              </div>
-            )}
-
-            <div className="overflow-x-auto rounded-xl border border-theme">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-theme-raised/50 text-[11px] uppercase tracking-wider text-theme-muted">
-                  <tr>
-                    <th className="px-3 py-2">Student</th>
-                    <th className="px-3 py-2">Learner ID</th>
-                    <th className="px-3 py-2">Score</th>
-                    {mode === "exam" ? (
-                      <>
-                        <th className="px-3 py-2">CA%</th>
-                        <th className="px-3 py-2">Final%</th>
-                        <th className="px-3 py-2">Grade</th>
-                      </>
-                    ) : null}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-theme">
-                  {rows.map((row) => {
-                    const ex = examLookup.get(row.studentId);
-                    return (
-                      <tr key={row.studentId} className="bg-theme-surface">
-                        <td className="px-3 py-2 font-medium text-theme-primary">
-                          {row.fullName}
-                        </td>
-                        <td className="px-3 py-2 font-mono text-xs text-theme-muted">
-                          {row.learnerId ?? "—"}
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            className="ms-input w-24"
-                            inputMode="decimal"
-                            disabled={locked && mode === "exam"}
-                            value={row.score}
-                            onChange={(e) =>
-                              setRows((prev) =>
-                                prev.map((r) =>
-                                  r.studentId === row.studentId
-                                    ? { ...r, score: e.target.value }
-                                    : r,
-                                ),
-                              )
-                            }
-                          />
-                        </td>
-                        {mode === "exam" ? (
-                          <>
-                            <td className="px-3 py-2 tabular-nums text-theme-muted">
-                              {ex?.caPercentage ?? "—"}
-                            </td>
-                            <td className="px-3 py-2 tabular-nums text-theme-muted">
-                              {ex?.finalPercent ?? "—"}
-                            </td>
-                            <td className="px-3 py-2">{ex?.grade ?? "—"}</td>
-                          </>
-                        ) : null}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <LoadingButton
-                loading={saving}
-                disabled={locked && mode === "exam"}
-                onClick={() => void (mode === "ca" ? saveCa() : saveExamDraft())}
+          <EmptyState
+            title="Use exam grades"
+            description="Admins open an exam for the class. Teachers enter marks under Primary marks / View grades — not this legacy form."
+            action={
+              <a
+                href={
+                  pathname.startsWith("/teacher/")
+                    ? "/teacher/primary/grades"
+                    : "/dashboard/primary/grades"
+                }
+                className="ms-btn-primary"
               >
-                Save {mode === "ca" ? "CA" : "draft"} ({rows.length})
-              </LoadingButton>
-              {mode === "exam" && !locked ? (
-                <button
-                  type="button"
-                  className="ms-btn-secondary"
-                  onClick={() => setSubmitOpen(true)}
-                >
-                  Submit & lock
-                </button>
-              ) : null}
-            </div>
-          </>
+                Open grades
+              </a>
+            }
+          />
         )}
       </div>
 

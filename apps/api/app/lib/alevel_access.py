@@ -8,7 +8,29 @@ from typing import Any
 import asyncpg
 from fastapi import HTTPException, status
 
+from app.lib.classes import get_school_type
+
 EXAM_STATUSES = frozenset({"draft", "open", "closed"})
+
+
+def school_offers_alevel(school_type: str | None) -> bool:
+    return school_type in ("secondary", "both")
+
+
+async def assert_alevel_enabled(conn: asyncpg.Connection, school_id: uuid.UUID) -> str:
+    school_type = await get_school_type(conn, school_id)
+    if not school_offers_alevel(school_type):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": (
+                    "A-Level is only available for schools set up as "
+                    "secondary or both primary and secondary."
+                ),
+                "code": "ALEVEL_NOT_ENABLED",
+            },
+        )
+    return school_type or "secondary"
 
 
 def _serialize_exam(row: asyncpg.Record) -> dict[str, Any]:

@@ -330,3 +330,245 @@ async def recalculate_class_positions(
             """,
             subject_updates,
         )
+
+
+async def _grade_scale_only(
+    conn: asyncpg.Connection, school_id: uuid.UUID
+) -> list[dict[str, Any]]:
+    _, _, scale = await _grading_context(conn, school_id)
+    return scale
+
+
+async def recalculate_exam_results(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    exam_id: uuid.UUID,
+    subject_id: uuid.UUID | None = None,
+) -> None:
+    """Grade each exam on its own scores (no CA mix, no cross-exam average)."""
+    exam = await conn.fetchrow(
+        """
+        SELECT id, class_id, term_id, academic_year_id
+        FROM primary_exams
+        WHERE id = $1 AND school_id = $2
+        """,
+        exam_id,
+        school_id,
+    )
+    if not exam:
+        raise LookupError("Exam not found.")
+
+    scale = await _grade_scale_only(conn, school_id)
+    class_id = exam["class_id"]
+    term_id = exam["term_id"]
+    year_id = exam["academic_year_id"]
+
+    mark_rows = await conn.fetch(
+        """
+        SELECT student_id, subject_id, score, max_score
+        FROM primary_exam_marks
+        WHERE school_id = $1 AND exam_id = $2
+          AND ($3::uuid IS NULL OR subject_id = $3)
+          AND score IS NOT NULL
+        """,
+        school_id,
+        exam_id,
+        subject_id,
+    )
+
+    students_touched: set[uuid.UUID] = set()
+    for m in mark_rows:
+        score = float(m["score"])
+        max_score = float(m["max_score"] or 100)
+        pct = round2(score / max_score * 100) if max_score > 0 else None
+        grade = None
+        grade_label = None
+        if pct is not None and scale:
+            g = get_grade_from_percent(pct, scale)
+            grade = g["grade"]
+            grade_label = g["label"]
+
+        await conn.execute(
+            """
+            INSERT INTO primary_subject_results (
+              school_id, student_id, class_id, subject_id, term_id, academic_year_id,
+              exam_id, ca_total, ca_max, ca_percentage, exam_score, exam_percentage,
+              final_percent, grade, grade_label, calculated_at
+            )
+            VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,NULL,NULL,$8,$9,$9,$10,$11,NOW())
+            ON CONFLICT (exam_id, student_id, subject_id) DO UPDATE SET
+              exam_score = EXCLUDED.exam_score,
+              exam_percentage = EXCLUDED.exam_percentage,
+              final_percent = EXCLUDED.final_percent,
+              grade = EXCLUDED.grade,
+              grade_label = EXCLUDED.grade_label,
+              calculated_at = NOW()
+            """,
+            school_id,
+            m["student_id"],
+            class_id,
+            m["subject_id"],
+            term_id,
+            year_id,
+            exam_id,
+            score,
+            pct,
+            grade,
+            grade_label,
+        )
+        students_touched.add(m["student_id"])
+
+    for sid in students_touched:
+        await recalculate_exam_aggregate(
+            conn,
+            school_id,
+            student_id=sid,
+            class_id=class_id,
+            term_id=term_id,
+            academic_year_id=year_id,
+            exam_id=exam_id,
+        )
+
+    await recalculate_exam_positions(conn, school_id, exam_id=exam_id)
+
+
+async def recalculate_exam_aggregate(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    student_id: uuid.UUID,
+    class_id: uuid.UUID,
+    term_id: uuid.UUID,
+    academic_year_id: uuid.UUID,
+    exam_id: uuid.UUID,
+) -> None:
+    scale = await _grade_scale_only(conn, school_id)
+    row = await conn.fetchrow(
+        """
+        SELECT
+          COALESCE(SUM(final_percent), 0) AS total_marks,
+          COUNT(*) FILTER (WHERE final_percent IS NOT NULL) AS subject_count,
+          AVG(final_percent) FILTER (WHERE final_percent IS NOT NULL) AS average_percent
+        FROM primary_subject_results
+        WHERE school_id = $1 AND student_id = $2 AND exam_id = $3
+        """,
+        school_id,
+        student_id,
+        exam_id,
+    )
+    subject_count = int(row["subject_count"] or 0)
+    average = float(row["average_percent"]) if row["average_percent"] is not None else None
+    total_marks = float(row["total_marks"] or 0)
+    total_possible = float(subject_count * 100) if subject_count else None
+
+    overall_grade = None
+    overall_label = None
+    if average is not None and scale:
+        g = get_grade_from_percent(round2(average), scale)
+        overall_grade = g["grade"]
+        overall_label = g["label"]
+
+    await conn.execute(
+        """
+        INSERT INTO primary_term_results (
+          school_id, student_id, class_id, term_id, academic_year_id, exam_id,
+          total_marks, total_possible, average_percent,
+          overall_grade, overall_grade_label, calculated_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+        ON CONFLICT (exam_id, student_id) DO UPDATE SET
+          total_marks = EXCLUDED.total_marks,
+          total_possible = EXCLUDED.total_possible,
+          average_percent = EXCLUDED.average_percent,
+          overall_grade = EXCLUDED.overall_grade,
+          overall_grade_label = EXCLUDED.overall_grade_label,
+          calculated_at = NOW()
+        """,
+        school_id,
+        student_id,
+        class_id,
+        term_id,
+        academic_year_id,
+        exam_id,
+        total_marks if subject_count else None,
+        total_possible,
+        round2(average) if average is not None else None,
+        overall_grade,
+        overall_label,
+    )
+
+
+async def recalculate_exam_positions(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    exam_id: uuid.UUID,
+) -> None:
+    rows = await conn.fetch(
+        """
+        SELECT id, average_percent
+        FROM primary_term_results
+        WHERE school_id = $1 AND exam_id = $2
+          AND average_percent IS NOT NULL
+        ORDER BY average_percent DESC, student_id
+        """,
+        school_id,
+        exam_id,
+    )
+    total = len(rows)
+    position = 0
+    last_avg: float | None = None
+    updates: list[tuple[int, int, uuid.UUID]] = []
+    for index, row in enumerate(rows, start=1):
+        avg = float(row["average_percent"])
+        if last_avg is None or avg < last_avg:
+            position = index
+            last_avg = avg
+        updates.append((position, total, row["id"]))
+
+    if updates:
+        await conn.executemany(
+            """
+            UPDATE primary_term_results
+            SET class_position = $1, total_students = $2, calculated_at = NOW()
+            WHERE id = $3
+            """,
+            updates,
+        )
+
+    subject_rows = await conn.fetch(
+        """
+        SELECT id, subject_id, final_percent
+        FROM primary_subject_results
+        WHERE school_id = $1 AND exam_id = $2
+          AND final_percent IS NOT NULL
+        ORDER BY subject_id, final_percent DESC, student_id
+        """,
+        school_id,
+        exam_id,
+    )
+    by_subject: dict[uuid.UUID, list[asyncpg.Record]] = {}
+    for row in subject_rows:
+        by_subject.setdefault(row["subject_id"], []).append(row)
+
+    subject_updates: list[tuple[int, uuid.UUID]] = []
+    for group in by_subject.values():
+        position = 0
+        last: float | None = None
+        for index, row in enumerate(group, start=1):
+            pct = float(row["final_percent"])
+            if last is None or pct < last:
+                position = index
+                last = pct
+            subject_updates.append((position, row["id"]))
+
+    if subject_updates:
+        await conn.executemany(
+            """
+            UPDATE primary_subject_results
+            SET position = $1, calculated_at = NOW()
+            WHERE id = $2
+            """,
+            subject_updates,
+        )

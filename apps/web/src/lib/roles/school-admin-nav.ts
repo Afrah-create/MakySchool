@@ -23,7 +23,7 @@ import {
   UserRound,
   UsersRound,
 } from "lucide-react";
-import { can, schoolOffersPrimary, type PermissionAction } from "@makyschool/shared/constants";
+import { can, schoolOffersALevel, schoolOffersPrimary, type PermissionAction } from "@makyschool/shared/constants";
 import type { SchoolType, UserRole } from "@makyschool/shared/types";
 
 export type NavItem = {
@@ -61,10 +61,12 @@ const schoolAdminALevelNavChildren: NavItem[] = [
 
 const schoolAdminPrimaryNavChildren: NavItem[] = [
   { href: "/dashboard/primary", label: "Overview", icon: LayoutDashboard, exact: true, requiredAction: "viewPrimaryResults" },
-  { href: "/dashboard/primary/marks", label: "Marks", icon: ClipboardList, exact: false, requiredAction: "enterPrimaryMarks" },
+  { href: "/dashboard/primary/exams", label: "Exams", icon: ClipboardList, exact: false, requiredAction: "viewPrimaryResults" },
+  { href: "/dashboard/primary/grades", label: "View grades", icon: BookOpenCheck, exact: false, requiredAction: "viewPrimaryResults" },
   { href: "/dashboard/primary/results", label: "Results", icon: Award, exact: false, requiredAction: "viewPrimaryResults" },
   { href: "/dashboard/primary/report-cards", label: "Report cards", icon: FileText, exact: false, requiredAction: "generatePrimaryReports" },
   { href: "/dashboard/primary/ple", label: "PLE", icon: GraduationCap, exact: false, requiredAction: "managePLEResults" },
+  { href: "/dashboard/primary/exam-types", label: "Exam types", icon: ListOrdered, exact: false, requiredAction: "managePrimarySetup" },
   { href: "/dashboard/primary/setup", label: "Setup", icon: Settings2, exact: false, requiredAction: "managePrimarySetup" },
 ];
 
@@ -285,12 +287,16 @@ export function filterNavGroupsBySchoolType(
   schoolType: SchoolType | string | null | undefined,
 ): NavGroup[] {
   const offersPrimary = schoolOffersPrimary(schoolType);
+  const offersALevel = schoolOffersALevel(schoolType);
   return groups
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
         if (item.href === "/dashboard/primary" || item.href.startsWith("/dashboard/primary/")) {
           return offersPrimary;
+        }
+        if (item.href.startsWith("/dashboard/alevel")) {
+          return offersALevel;
         }
         return true;
       }),

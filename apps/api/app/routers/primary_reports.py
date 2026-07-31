@@ -17,6 +17,7 @@ from app.lib.primary_access import (
 )
 from app.lib.primary_reports import BULK_MARKS_LIMIT, PLE_GRADE_POINTS
 from app.middleware.subscription_guard import require_tenant_with_subscription
+from app.services.primary import exams as exams_svc
 from app.services.primary import marks as marks_svc
 from app.services.primary import ple as ple_svc
 from app.services.primary import results as results_svc
@@ -276,7 +277,12 @@ async def patch_setup(
 async def primary_classes(ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)):
     school_id, actor = ctx
     try:
-        await _gate(conn, school_id, actor, "enterPrimaryMarks")
+        await assert_primary_enabled(conn, school_id)
+        role = (actor.get("role") or "").lower()
+        if role == "teacher":
+            require_primary_action(actor, "enterPrimaryMarks")
+        else:
+            require_primary_action(actor, "viewPrimaryResults")
         return {"data": await subjects_svc.list_primary_classes(conn, school_id)}
     except Exception as exc:
         raise _http(exc) from exc
@@ -304,12 +310,33 @@ async def list_subjects(
 ):
     school_id, actor = ctx
     try:
-        await _gate(conn, school_id, actor, "viewPrimaryResults")
+        await assert_primary_enabled(conn, school_id)
+        role = (actor.get("role") or "").lower()
+        if role == "teacher":
+            require_primary_action(actor, "enterPrimaryMarks")
+        else:
+            require_primary_action(actor, "viewPrimaryResults")
         return {
             "data": await subjects_svc.list_subjects(
                 conn, school_id, class_level=class_level
             )
         }
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/subjects/install-defaults")
+async def install_default_subjects(
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        async with conn.transaction():
+            data = await subjects_svc.install_default_subjects(conn, school_id)
+            await exams_svc.ensure_default_exam_types(conn, school_id)
+        return {"data": data}
     except Exception as exc:
         raise _http(exc) from exc
 
@@ -487,24 +514,17 @@ async def bulk_exams(
     ctx: TenantCtx,
     conn: asyncpg.Connection = Depends(get_db),
 ):
-    school_id, actor = ctx
-    try:
-        await _gate(conn, school_id, actor, "enterPrimaryMarks")
-        async with conn.transaction():
-            data = await marks_svc.bulk_upsert_exams(
-                conn,
-                school_id,
-                actor_user_id(actor),
-                class_id=body.class_id,
-                subject_id=body.subject_id,
-                exam_type=body.exam_type,
-                max_score=body.max_score,
-                term_id=body.term_id,
-                marks=[m.model_dump() for m in body.marks],
-            )
-        return {"data": data}
-    except Exception as exc:
-        raise _http(exc) from exc
+    """Deprecated: use POST /exams/{id}/grades/bulk (teacher-only, exam instances)."""
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail={
+            "error": (
+                "Legacy exam mark entry is retired. Admins create/open an exam; "
+                "teachers enter marks under Primary → Grades."
+            ),
+            "code": "USE_EXAM_GRADES",
+        },
+    )
 
 
 @router.post("/marks/exams/submit")
@@ -839,3 +859,339 @@ async def generate_primary_report_cards(
         )
     except Exception as exc:
         raise _http(exc) from exc
+
+
+# ── Exam types & exams (A-Level-aligned) ─────────────────────────────────────
+
+
+class ExamTypeBody(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    code: str = Field(min_length=1, max_length=20)
+    sort_order: int = 0
+
+
+class ExamTypePatchBody(BaseModel):
+    name: str | None = None
+    code: str | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
+
+
+class ExamCreateBody(BaseModel):
+    class_id: uuid.UUID
+    term_id: uuid.UUID
+    exam_type_id: uuid.UUID
+    name: str | None = None
+    notes: str | None = None
+    open_now: bool = False
+
+
+class ExamGradeItem(BaseModel):
+    student_id: uuid.UUID
+    subject_id: uuid.UUID
+    score: float | None = None
+    max_score: float = Field(default=100, gt=0)
+
+
+class ExamGradesBulkBody(BaseModel):
+    marks: list[ExamGradeItem] = Field(min_length=1, max_length=BULK_MARKS_LIMIT)
+
+
+def _require_teacher(actor: dict[str, Any]) -> None:
+    if (actor.get("role") or "").lower() != "teacher":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "Only teachers can enter or submit primary exam marks.",
+                "code": "TEACHER_ONLY",
+            },
+        )
+
+
+@router.get("/exam-types")
+async def get_exam_types(
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "viewPrimaryResults")
+        data = await exams_svc.ensure_default_exam_types(conn, school_id)
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/exam-types")
+async def post_exam_type(
+    body: ExamTypeBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        data = await exams_svc.create_exam_type(
+            conn,
+            school_id,
+            name=body.name,
+            code=body.code,
+            sort_order=body.sort_order,
+        )
+        return {"data": data}
+    except asyncpg.UniqueViolationError as exc:
+        raise _http(ValueError("Exam type code or name already exists.")) from exc
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.patch("/exam-types/{exam_type_id}")
+async def patch_exam_type(
+    exam_type_id: uuid.UUID,
+    body: ExamTypePatchBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        data = await exams_svc.update_exam_type(
+            conn, school_id, exam_type_id, body.model_dump(exclude_unset=True)
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.delete("/exam-types/{exam_type_id}")
+async def delete_exam_type(
+    exam_type_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        await exams_svc.delete_exam_type(conn, school_id, exam_type_id)
+        return {"data": {"ok": True}}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.get("/exams")
+async def get_exams(
+    ctx: TenantCtx,
+    class_id: uuid.UUID | None = Query(None),
+    term_id: uuid.UUID | None = Query(None),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await assert_primary_enabled(conn, school_id)
+        role = (actor.get("role") or "").lower()
+        if role == "teacher":
+            require_primary_action(actor, "enterPrimaryMarks")
+            data = await exams_svc.list_exams(
+                conn,
+                school_id,
+                class_id=class_id,
+                term_id=term_id,
+                teacher_id=actor_user_id(actor),
+            )
+        else:
+            require_primary_action(actor, "viewPrimaryResults")
+            data = await exams_svc.list_exams(
+                conn, school_id, class_id=class_id, term_id=term_id
+            )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/exams")
+async def post_exam(
+    body: ExamCreateBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        data = await exams_svc.create_exam(
+            conn,
+            school_id,
+            actor_user_id(actor),
+            class_id=body.class_id,
+            term_id=body.term_id,
+            exam_type_id=body.exam_type_id,
+            name=body.name,
+            notes=body.notes,
+            open_now=body.open_now,
+        )
+        return {"data": data}
+    except asyncpg.UniqueViolationError as exc:
+        raise _http(
+            ValueError("An exam of this type already exists for this class and term.")
+        ) from exc
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/exams/{exam_id}/open")
+async def open_exam(
+    exam_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "viewPrimaryResults")
+        data = await exams_svc.open_exam(
+            conn, school_id, exam_id, actor_user_id(actor)
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/exams/{exam_id}/close")
+async def close_exam(
+    exam_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "viewPrimaryResults")
+        data = await exams_svc.close_exam(
+            conn, school_id, exam_id, actor_user_id(actor)
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.delete("/exams/{exam_id}")
+async def delete_exam(
+    exam_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        await exams_svc.delete_exam(conn, school_id, exam_id)
+        return {"data": {"ok": True}}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.get("/exams/{exam_id}/grades")
+async def get_exam_grades(
+    exam_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await assert_primary_enabled(conn, school_id)
+        role = (actor.get("role") or "").lower()
+        is_teacher = role == "teacher"
+        if is_teacher:
+            require_primary_action(actor, "enterPrimaryMarks")
+            data = await exams_svc.get_exam_grades_grid(
+                conn,
+                school_id,
+                exam_id,
+                teacher_id=actor_user_id(actor),
+                is_teacher=True,
+            )
+        else:
+            require_primary_action(actor, "viewPrimaryResults")
+            data = await exams_svc.get_exam_grades_grid(
+                conn, school_id, exam_id, is_teacher=False
+            )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/exams/{exam_id}/grades/bulk")
+async def bulk_exam_grades(
+    exam_id: uuid.UUID,
+    body: ExamGradesBulkBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await assert_primary_enabled(conn, school_id)
+        _require_teacher(actor)
+        require_primary_action(actor, "enterPrimaryMarks")
+        async with conn.transaction():
+            data = await exams_svc.bulk_save_exam_marks(
+                conn,
+                school_id,
+                actor_user_id(actor),
+                exam_id=exam_id,
+                marks=[m.model_dump() for m in body.marks],
+            )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/exams/{exam_id}/submit")
+async def submit_exam_grades(
+    exam_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await assert_primary_enabled(conn, school_id)
+        _require_teacher(actor)
+        require_primary_action(actor, "enterPrimaryMarks")
+        async with conn.transaction():
+            data = await exams_svc.submit_exam_marks(
+                conn, school_id, actor_user_id(actor), exam_id
+            )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.get("/exams/{exam_id}/submissions")
+async def get_exam_submissions(
+    exam_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "viewPrimaryResults")
+        from app.lib.primary_exam_access import list_exam_submissions
+
+        data = await list_exam_submissions(conn, school_id, exam_id)
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/exams/{exam_id}/submissions/{teacher_id}/unlock")
+async def unlock_exam_submission(
+    exam_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "viewPrimaryResults")
+        data = await exams_svc.unlock_teacher_submission(
+            conn, school_id, exam_id, teacher_id
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+

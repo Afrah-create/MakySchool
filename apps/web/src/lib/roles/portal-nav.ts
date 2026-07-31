@@ -44,11 +44,13 @@ export function filterPortalNavGroupsBySchoolType(
   schoolType: string | null | undefined,
 ): PortalNavGroup[] {
   const offersPrimary = schoolType === "primary" || schoolType === "both";
+  const offersALevel = schoolType === "secondary" || schoolType === "both";
   return groups
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
         if (item.href.startsWith("/teacher/primary")) return offersPrimary;
+        if (item.href.startsWith("/teacher/alevel")) return offersALevel;
         return true;
       }),
     }))

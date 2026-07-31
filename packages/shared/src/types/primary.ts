@@ -43,6 +43,63 @@ export interface PrimarySubject {
   isPleSubject: boolean;
   isActive: boolean;
   displayOrder: number;
+  schoolSubjectId?: string | null;
+}
+
+export type PrimaryExamStatus = "draft" | "open" | "closed";
+
+export interface PrimaryExamTypeOption {
+  id: string;
+  name: string;
+  code: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface PrimaryExam {
+  id: string;
+  schoolId: string;
+  classId: string;
+  termId: string;
+  academicYearId: string;
+  examTypeId: string;
+  examTypeName?: string | null;
+  examTypeCode?: string | null;
+  name: string;
+  status: PrimaryExamStatus;
+  isOpen: boolean;
+  isLocked: boolean;
+  className?: string | null;
+  classLevel?: string | null;
+  termName?: string | null;
+  notes?: string | null;
+}
+
+export interface PrimaryExamGradesGrid {
+  exam: PrimaryExam;
+  subjects: Array<{ id: string; name: string; code: string; maxMark: number }>;
+  students: Array<{
+    studentId: string;
+    fullName: string;
+    learnerId: string | null;
+    scores: Record<
+      string,
+      {
+        score: number | null;
+        maxScore: number;
+        finalPercent: number | null;
+        grade: string | null;
+        gradeLabel: string | null;
+      }
+    >;
+  }>;
+  canEdit: boolean;
+  submitted: boolean;
+  submissions: Array<{
+    teacherId: string;
+    teacherName: string;
+    submittedAt: string;
+  }>;
 }
 
 export interface PrimaryTheme {

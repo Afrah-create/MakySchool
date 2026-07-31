@@ -60,8 +60,8 @@ export const teacherNavGroups: PortalNavGroup[] = [
         roles: teacherRole,
       },
       {
-        id: "teacher-primary-marks",
-        href: "/teacher/primary/marks",
+        id: "teacher-primary-grades",
+        href: "/teacher/primary/grades",
         label: "Primary marks",
         icon: ClipboardList,
         exact: false,

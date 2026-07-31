@@ -62,6 +62,7 @@ export {
   isLevelAllowedForSchoolType,
   isLowerPrimaryLevel,
   isUpperPrimaryLevel,
+  schoolOffersALevel,
   schoolOffersPrimary,
   sortClasses,
 } from "./classes";

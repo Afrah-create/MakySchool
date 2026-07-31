@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
 import { LoadingButton } from "@makyschool/ui/components/ui/LoadingButton";
 import { schoolOffersPrimary } from "@makyschool/shared";
 import { useSchool } from "@/providers/SchoolProvider";
 import { useToast } from "@/providers/ToastProvider";
-import { useEnsurePrimarySetup, usePrimarySetup } from "@/hooks/usePrimary";
+import { useEnsurePrimarySetup, usePrimarySetup, usePrimarySubjects } from "@/hooks/usePrimary";
 import { primaryApi } from "@/lib/api/primary";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -17,10 +18,17 @@ export function PrimarySetupContent() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const { data: setup, isPending } = usePrimarySetup(offers);
+  const { data: subjects = [] } = usePrimarySubjects(undefined, offers);
   const ensure = useEnsurePrimarySetup();
   const [ca, setCa] = useState(30);
   const [exam, setExam] = useState(70);
   const [saving, setSaving] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newCode, setNewCode] = useState("");
+  const [newFrom, setNewFrom] = useState("P4");
+  const [newTo, setNewTo] = useState("P7");
 
   if (!offers) {
     return (
@@ -56,98 +64,175 @@ export function PrimarySetupContent() {
     }
   }
 
+  async function installSubjects() {
+    setInstalling(true);
+    try {
+      const result = await primaryApi.installDefaultSubjects();
+      toast.success(
+        `Subjects ready (${result.created} new). Assign teachers on Teaching load.`,
+      );
+      await qc.invalidateQueries({ queryKey: ["primary", "subjects"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Install failed.");
+    } finally {
+      setInstalling(false);
+    }
+  }
+
+  async function addSubject() {
+    if (!newName.trim() || !newCode.trim()) {
+      toast.error("Name and code are required.");
+      return;
+    }
+    setAdding(true);
+    try {
+      await primaryApi.createSubject({
+        name: newName.trim(),
+        code: newCode.trim().toUpperCase(),
+        appliesFrom: newFrom,
+        appliesTo: newTo,
+        subjectType: "core",
+      });
+      toast.success("Subject added to Primary and the school catalogue.");
+      setNewName("");
+      setNewCode("");
+      await qc.invalidateQueries({ queryKey: ["primary", "subjects"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add subject.");
+    } finally {
+      setAdding(false);
+    }
+  }
+
   return (
     <DashboardPage
       embedded
       maxWidth="5xl"
       eyebrow="Primary"
       title="Setup"
-      description="Grading weights, scale, and default subjects for P1–P7."
+      description="Install default subjects (including Literacy & Numeracy), grading, and custom subjects."
     >
       <div className="space-y-6">
         {!setup && !isPending ? (
           <div className="rounded-xl border border-theme bg-theme-surface p-5 space-y-4">
             <p className="text-sm text-theme-muted">
-              First-time setup seeds the default Ugandan D/C/P/F scale, core subjects, and
-              thematic themes.
+              First-time setup seeds the D/C/P/F scale and themes. Then install subjects into
+              the school catalogue so Teaching load can assign teachers.
             </p>
-            <div className="flex flex-wrap gap-3">
-              <label className="block">
-                <span className="mb-1 block text-xs text-theme-muted">CA weight %</span>
-                <input
-                  type="number"
-                  className="ms-input w-28"
-                  value={ca}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setCa(v);
-                    setExam(100 - v);
-                  }}
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs text-theme-muted">Exam weight %</span>
-                <input type="number" className="ms-input w-28" value={exam} readOnly />
-              </label>
-            </div>
             <LoadingButton loading={ensure.isPending} onClick={() => void bootstrap()}>
               Create primary setup
             </LoadingButton>
           </div>
         ) : setup ? (
-          <div className="space-y-4 rounded-xl border border-theme bg-theme-surface p-5">
-            <h2 className="font-semibold text-theme-primary">{setup.name}</h2>
-            <div className="flex flex-wrap gap-3">
-              <label className="block">
-                <span className="mb-1 block text-xs text-theme-muted">CA weight %</span>
-                <input
-                  type="number"
-                  className="ms-input w-28"
-                  defaultValue={setup.caWeight}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setCa(v);
-                    setExam(100 - v);
-                  }}
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs text-theme-muted">Exam weight %</span>
-                <input
-                  type="number"
-                  className="ms-input w-28"
-                  value={exam === 70 && setup ? 100 - ca : exam}
-                  readOnly
-                />
-              </label>
+          <>
+            <div className="space-y-4 rounded-xl border border-theme bg-theme-surface p-5">
+              <h2 className="font-semibold text-theme-primary">Grading · {setup.name}</h2>
+              <div className="flex flex-wrap gap-3">
+                <label className="block">
+                  <span className="mb-1 block text-xs text-theme-muted">CA weight %</span>
+                  <input
+                    type="number"
+                    className="ms-input w-28"
+                    defaultValue={setup.caWeight}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setCa(v);
+                      setExam(100 - v);
+                    }}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs text-theme-muted">Exam weight %</span>
+                  <input type="number" className="ms-input w-28" value={exam} readOnly />
+                </label>
+              </div>
+              <p className="text-xs text-theme-muted">
+                Exam marks are graded per exam on their own scores (no averaging across BOT/MID/EOT).
+                CA remains separate continuous assessment.
+              </p>
+              <LoadingButton loading={saving} onClick={() => void saveWeights()}>
+                Save weights
+              </LoadingButton>
             </div>
-            <LoadingButton loading={saving} onClick={() => void saveWeights()}>
-              Save weights
-            </LoadingButton>
 
-            <div className="overflow-x-auto pt-4">
-              <table className="min-w-full text-sm">
-                <thead className="text-[11px] uppercase text-theme-muted">
-                  <tr>
-                    <th className="px-2 py-1 text-left">Grade</th>
-                    <th className="px-2 py-1 text-left">Label</th>
-                    <th className="px-2 py-1 text-left">Range</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {setup.gradeScale.map((g) => (
-                    <tr key={g.grade} className="border-t border-theme">
-                      <td className="px-2 py-2 font-medium">{g.grade}</td>
-                      <td className="px-2 py-2">{g.label}</td>
-                      <td className="px-2 py-2 tabular-nums text-theme-muted">
-                        {g.minPercent}–{g.maxPercent}%
-                      </td>
-                    </tr>
+            <div className="space-y-4 rounded-xl border border-theme bg-theme-surface p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-semibold text-theme-primary">Subjects</h2>
+                  <p className="mt-1 text-sm text-theme-muted">
+                    Install LIT/NUM (P1–P3) and core P4–P7 subjects into Subjects + Teaching load.
+                    Then assign teachers under{" "}
+                    <Link href="/dashboard/teaching-load" className="text-theme-accent underline">
+                      Teaching load
+                    </Link>
+                    .
+                  </p>
+                </div>
+                <LoadingButton loading={installing} onClick={() => void installSubjects()}>
+                  Install default subjects
+                </LoadingButton>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-4">
+                <input
+                  className="ms-input sm:col-span-2"
+                  placeholder="Subject name"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
+                <input
+                  className="ms-input"
+                  placeholder="Code"
+                  value={newCode}
+                  onChange={(e) => setNewCode(e.target.value)}
+                />
+                <LoadingButton loading={adding} onClick={() => void addSubject()}>
+                  Add subject
+                </LoadingButton>
+                <select className="ms-input" value={newFrom} onChange={(e) => setNewFrom(e.target.value)}>
+                  {["P1", "P2", "P3", "P4", "P5", "P6", "P7"].map((l) => (
+                    <option key={l} value={l}>
+                      From {l}
+                    </option>
                   ))}
-                </tbody>
-              </table>
+                </select>
+                <select className="ms-input" value={newTo} onChange={(e) => setNewTo(e.target.value)}>
+                  {["P1", "P2", "P3", "P4", "P5", "P6", "P7"].map((l) => (
+                    <option key={l} value={l}>
+                      To {l}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="text-[11px] uppercase text-theme-muted">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Code</th>
+                      <th className="px-2 py-1 text-left">Name</th>
+                      <th className="px-2 py-1 text-left">Levels</th>
+                      <th className="px-2 py-1 text-left">Catalogue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {subjects.map((s) => (
+                      <tr key={s.id} className="border-t border-theme">
+                        <td className="px-2 py-2 font-mono text-xs">{s.code}</td>
+                        <td className="px-2 py-2">{s.name}</td>
+                        <td className="px-2 py-2 text-theme-muted">
+                          {s.appliesFrom}–{s.appliesTo}
+                        </td>
+                        <td className="px-2 py-2 text-theme-muted">
+                          {s.schoolSubjectId ? "Linked" : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          </>
         ) : null}
       </div>
     </DashboardPage>

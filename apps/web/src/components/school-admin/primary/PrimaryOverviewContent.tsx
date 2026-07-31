@@ -13,7 +13,8 @@ import { useCurrentTerm } from "@/hooks/useCurrentTerm";
 import { useEnsurePrimarySetup, usePrimaryOverview, usePrimarySetup } from "@/hooks/usePrimary";
 
 const LINKS = [
-  { href: "/dashboard/primary/marks", label: "Marks entry", icon: ClipboardList },
+  { href: "/dashboard/primary/exams", label: "Exams", icon: ClipboardList },
+  { href: "/dashboard/primary/grades", label: "View grades", icon: FileText },
   { href: "/dashboard/primary/results", label: "Results", icon: FileText },
   { href: "/dashboard/primary/report-cards", label: "Report cards", icon: BookOpen },
   { href: "/dashboard/primary/ple", label: "PLE results", icon: GraduationCap },
