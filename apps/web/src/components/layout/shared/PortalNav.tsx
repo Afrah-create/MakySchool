@@ -14,9 +14,11 @@ import { performLogout } from "@/lib/auth/logout";
 import { isBursarFeesPath } from "@/lib/roles/fees-nav";
 import {
   filterPortalNavGroupsByRole,
+  filterPortalNavGroupsBySchoolType,
   portalGroupsToGrouped,
   type PortalNavGroup,
 } from "@/lib/roles/portal-nav";
+import { useOptionalSchool } from "@/providers/SchoolProvider";
 
 type PortalNavProps = {
   schoolName?: string | null;
@@ -26,9 +28,17 @@ type PortalNavProps = {
 };
 
 function useGroupedPortalNav(navGroups: PortalNavGroup[], role: UserRole) {
+  const schoolCtx = useOptionalSchool();
+  const schoolType = schoolCtx?.school?.school_type;
   return useMemo(
-    () => portalGroupsToGrouped(filterPortalNavGroupsByRole(navGroups, role)),
-    [navGroups, role],
+    () =>
+      portalGroupsToGrouped(
+        filterPortalNavGroupsBySchoolType(
+          filterPortalNavGroupsByRole(navGroups, role),
+          schoolType,
+        ),
+      ),
+    [navGroups, role, schoolType],
   );
 }
 

@@ -13,11 +13,13 @@ import { isFeesPath } from "@/lib/roles/fees-nav";
 import { isSettingsPath } from "@/lib/roles/settings-nav";
 import {
   filterNavGroupsByRole,
+  filterNavGroupsBySchoolType,
   schoolAdminNavGroups,
   schoolAdminSetupNav,
   type NavGroup,
   type NavItem,
 } from "@/lib/roles/school-admin-nav";
+import { useOptionalSchool } from "@/providers/SchoolProvider";
 
 function toGroupedItem(item: NavItem): GroupedNavItem {
   return {
@@ -38,30 +40,16 @@ function toGroupedGroups(groups: NavGroup[]): GroupedNavGroup[] {
   }));
 }
 
-export function SchoolAdminSidebarNav({
-  role,
-  setupMode = false,
-  billingEnabled = true,
-}: {
-  role: UserRole;
-  setupMode?: boolean;
-  billingEnabled?: boolean;
-}) {
-  const groups = useMemo(() => {
-    if (setupMode) {
-      const setupItem = schoolAdminSetupNav[0];
-      return toGroupedGroups([
-        {
-          id: "setup",
-          label: "Setup",
-          icon: setupItem.icon ?? LayoutDashboard,
-          items: schoolAdminSetupNav,
-        },
-      ]);
-    }
+function useFilteredAdminNavGroups(role: UserRole, billingEnabled: boolean) {
+  const schoolCtx = useOptionalSchool();
+  const schoolType = schoolCtx?.school?.school_type;
 
+  return useMemo(() => {
     return toGroupedGroups(
-      filterNavGroupsByRole(schoolAdminNavGroups, role)
+      filterNavGroupsBySchoolType(
+        filterNavGroupsByRole(schoolAdminNavGroups, role),
+        schoolType,
+      )
         .filter((group) => {
           if (group.id !== "finance") return true;
           return group.items.some((item) => item.href !== "/dashboard/billing" || billingEnabled);
@@ -71,16 +59,43 @@ export function SchoolAdminSidebarNav({
           items: group.items.filter((item) => item.href !== "/dashboard/billing" || billingEnabled),
         })),
     );
-  }, [billingEnabled, role, setupMode]);
+  }, [billingEnabled, role, schoolType]);
+}
+
+export function SchoolAdminSidebarNav({
+  role,
+  setupMode = false,
+  billingEnabled = true,
+}: {
+  role: UserRole;
+  setupMode?: boolean;
+  billingEnabled?: boolean;
+}) {
+  const groups = useFilteredAdminNavGroups(role, billingEnabled);
+
+  const setupGroups = useMemo(() => {
+    if (!setupMode) return null;
+    const setupItem = schoolAdminSetupNav[0];
+    return toGroupedGroups([
+      {
+        id: "setup",
+        label: "Setup",
+        icon: setupItem.icon ?? LayoutDashboard,
+        items: schoolAdminSetupNav,
+      },
+    ]);
+  }, [setupMode]);
 
   return (
     <GroupedSidebarNav
-      groups={groups}
+      groups={setupGroups ?? groups}
       storagePrefix="school-admin"
       expandItemWhen={(pathname) => {
         const expanded: string[] = [];
         if (isFeesPath(pathname)) expanded.push("/dashboard/fees");
         if (isSettingsPath(pathname)) expanded.push("/dashboard/settings");
+        if (pathname.startsWith("/dashboard/primary")) expanded.push("/dashboard/primary");
+        if (pathname.startsWith("/dashboard/alevel")) expanded.push("/dashboard/alevel/exams");
         return expanded;
       }}
     />
@@ -96,25 +111,19 @@ export function SchoolAdminMobileNavLinks({
   setupMode?: boolean;
   billingEnabled?: boolean;
 }) {
-  const groups = useMemo(() => {
-    if (setupMode) {
-      return toGroupedGroups([
-        {
-          id: "setup",
-          label: "Setup",
-          icon: schoolAdminSetupNav[0].icon ?? LayoutDashboard,
-          items: schoolAdminSetupNav,
-        },
-      ]);
-    }
+  const groups = useFilteredAdminNavGroups(role, billingEnabled);
 
-    return toGroupedGroups(
-      filterNavGroupsByRole(schoolAdminNavGroups, role).map((group) => ({
-        ...group,
-        items: group.items.filter((item) => item.href !== "/dashboard/billing" || billingEnabled),
-      })),
-    );
-  }, [billingEnabled, role, setupMode]);
+  const setupGroups = useMemo(() => {
+    if (!setupMode) return null;
+    return toGroupedGroups([
+      {
+        id: "setup",
+        label: "Setup",
+        icon: schoolAdminSetupNav[0].icon ?? LayoutDashboard,
+        items: schoolAdminSetupNav,
+      },
+    ]);
+  }, [setupMode]);
 
-  return <GroupedMobileNavLinks groups={groups} />;
+  return <GroupedMobileNavLinks groups={setupGroups ?? groups} />;
 }

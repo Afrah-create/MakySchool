@@ -33,6 +33,8 @@ export type StudentClassHistory = {
 
 export type StudentDetail = StudentListItem & {
   current_class_id: string | null;
+  level?: string | null;
+  stream?: string | null;
   withdrawal_reason: string | null;
   withdrawn_at: string | null;
   updated_at: string;

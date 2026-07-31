@@ -45,7 +45,7 @@ async def get_current_term(
     # (teacher, admin, head_teacher, bursar) needs to know the current term.
     row = await conn.fetchrow(
         """
-        SELECT id, name, start_date, end_date, is_current
+        SELECT id, name, start_date, end_date, is_current, academic_year_id
         FROM terms
         WHERE school_id = $1
         ORDER BY
@@ -65,6 +65,7 @@ async def get_current_term(
             "startDate": row["start_date"].isoformat() if row["start_date"] else None,
             "endDate": row["end_date"].isoformat() if row["end_date"] else None,
             "isCurrent": row["is_current"],
+            "academicYearId": str(row["academic_year_id"]) if row["academic_year_id"] else None,
         }
     }
 

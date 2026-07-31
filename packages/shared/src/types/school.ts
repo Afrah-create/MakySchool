@@ -70,6 +70,7 @@ export interface TermSettings {
   startDate: string | null;
   endDate: string | null;
   isCurrent?: boolean;
+  academicYearId?: string | null;
 }
 
 export interface AcademicYearSettings {

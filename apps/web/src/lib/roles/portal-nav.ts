@@ -38,6 +38,23 @@ export function filterPortalNavGroupsByRole(groups: PortalNavGroup[], role: User
     .filter((group) => group.items.length > 0);
 }
 
+/** Hide programme-specific teacher links when school_type does not offer them. */
+export function filterPortalNavGroupsBySchoolType(
+  groups: PortalNavGroup[],
+  schoolType: string | null | undefined,
+): PortalNavGroup[] {
+  const offersPrimary = schoolType === "primary" || schoolType === "both";
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => {
+        if (item.href.startsWith("/teacher/primary")) return offersPrimary;
+        return true;
+      }),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
 export function portalItemToGrouped(item: PortalNavItem): GroupedNavItem {
   return {
     href: item.href,

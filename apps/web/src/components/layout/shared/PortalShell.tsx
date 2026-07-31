@@ -10,9 +10,11 @@ import { bursarNavGroups, learnerNavGroups, teacherNavGroups } from "@/lib/roles
 import { getPortalMobileTabs } from "@/lib/roles/mobile-tab-configs";
 import {
   filterPortalNavGroupsByRole,
+  filterPortalNavGroupsBySchoolType,
   portalGroupsToGrouped,
   type PortalNavGroup,
 } from "@/lib/roles/portal-nav";
+import { useOptionalSchool } from "@/providers/SchoolProvider";
 
 const navByPortal = {
   teacher: { groups: teacherNavGroups, storagePrefix: "portal-teacher" },
@@ -33,9 +35,17 @@ export function PortalShell({
 }) {
   const { groups, storagePrefix } = navByPortal[portal];
   const tabs = getPortalMobileTabs(portal);
+  const schoolCtx = useOptionalSchool();
+  const schoolType = schoolCtx?.school?.school_type;
   const navGroups = useMemo(
-    () => portalGroupsToGrouped(filterPortalNavGroupsByRole(groups, role)),
-    [groups, role],
+    () =>
+      portalGroupsToGrouped(
+        filterPortalNavGroupsBySchoolType(
+          filterPortalNavGroupsByRole(groups, role),
+          schoolType,
+        ),
+      ),
+    [groups, role, schoolType],
   );
 
   return (

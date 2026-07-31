@@ -10,6 +10,18 @@ export function isALevelClassLevel(level: string): boolean {
   return (A_LEVEL_CLASS_LEVELS as readonly string[]).includes(level);
 }
 
+export function schoolOffersPrimary(schoolType: SchoolType | string | null | undefined): boolean {
+  return schoolType === "primary" || schoolType === "both";
+}
+
+export function isLowerPrimaryLevel(level: string): boolean {
+  return level === "P1" || level === "P2" || level === "P3";
+}
+
+export function isUpperPrimaryLevel(level: string): boolean {
+  return level === "P4" || level === "P5" || level === "P6" || level === "P7";
+}
+
 export function getLevelsForSchoolType(schoolType: SchoolType | string | null): string[] {
   if (schoolType === "secondary") {
     return [...SECONDARY_CLASS_LEVELS];

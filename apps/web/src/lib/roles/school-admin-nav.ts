@@ -23,8 +23,8 @@ import {
   UserRound,
   UsersRound,
 } from "lucide-react";
-import { can, type PermissionAction } from "@makyschool/shared/constants";
-import type { UserRole } from "@makyschool/shared/types";
+import { can, schoolOffersPrimary, type PermissionAction } from "@makyschool/shared/constants";
+import type { SchoolType, UserRole } from "@makyschool/shared/types";
 
 export type NavItem = {
   href: string;
@@ -57,6 +57,15 @@ const schoolAdminALevelNavChildren: NavItem[] = [
   { href: "/dashboard/alevel/setup/enrollments", label: "Enrollments", icon: UsersRound, exact: false, requiredAction: "manageALevel" },
   { href: "/dashboard/alevel/setup/exam-types", label: "Exam types", icon: ListOrdered, exact: false, requiredAction: "manageALevel" },
   { href: "/dashboard/alevel/setup/grading", label: "Grading scale", icon: ListOrdered, exact: false, requiredAction: "manageALevel" },
+];
+
+const schoolAdminPrimaryNavChildren: NavItem[] = [
+  { href: "/dashboard/primary", label: "Overview", icon: LayoutDashboard, exact: true, requiredAction: "viewPrimaryResults" },
+  { href: "/dashboard/primary/marks", label: "Marks", icon: ClipboardList, exact: false, requiredAction: "enterPrimaryMarks" },
+  { href: "/dashboard/primary/results", label: "Results", icon: Award, exact: false, requiredAction: "viewPrimaryResults" },
+  { href: "/dashboard/primary/report-cards", label: "Report cards", icon: FileText, exact: false, requiredAction: "generatePrimaryReports" },
+  { href: "/dashboard/primary/ple", label: "PLE", icon: GraduationCap, exact: false, requiredAction: "managePLEResults" },
+  { href: "/dashboard/primary/setup", label: "Setup", icon: Settings2, exact: false, requiredAction: "managePrimarySetup" },
 ];
 
 const schoolAdminSettingsNavChildren: NavItem[] = [
@@ -172,6 +181,14 @@ export const schoolAdminNavGroups: NavGroup[] = [
         requiredAction: "viewAllClasses",
       },
       {
+        href: "/dashboard/primary",
+        label: "Primary",
+        icon: BookOpenCheck,
+        exact: false,
+        requiredAction: "viewPrimaryResults",
+        children: schoolAdminPrimaryNavChildren,
+      },
+      {
         href: "/dashboard/alevel/exams",
         label: "A-Level",
         icon: GraduationCap,
@@ -258,6 +275,25 @@ export function filterNavGroupsByRole(groups: NavGroup[], role: UserRole): NavGr
     .map((group) => ({
       ...group,
       items: filterNavByRole(group.items, role),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
+/** Hide Primary / A-Level when school_type does not offer that programme. */
+export function filterNavGroupsBySchoolType(
+  groups: NavGroup[],
+  schoolType: SchoolType | string | null | undefined,
+): NavGroup[] {
+  const offersPrimary = schoolOffersPrimary(schoolType);
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => {
+        if (item.href === "/dashboard/primary" || item.href.startsWith("/dashboard/primary/")) {
+          return offersPrimary;
+        }
+        return true;
+      }),
     }))
     .filter((group) => group.items.length > 0);
 }

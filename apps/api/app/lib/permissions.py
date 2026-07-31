@@ -35,6 +35,11 @@ CAN: dict[str, list[str]] = {
     "manageALevel": ["admin"],
     "viewALevel": ["admin", "head_teacher"],
     "enterALevelGrades": ["admin", "head_teacher", "teacher"],
+    "managePrimarySetup": ["admin"],
+    "viewPrimaryResults": ["admin", "head_teacher"],
+    "enterPrimaryMarks": ["admin", "head_teacher", "teacher"],
+    "managePLEResults": ["admin", "head_teacher"],
+    "generatePrimaryReports": ["admin", "head_teacher"],
 }
 
 

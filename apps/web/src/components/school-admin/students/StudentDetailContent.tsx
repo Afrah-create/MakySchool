@@ -10,6 +10,7 @@ import { StudentTableSkeleton } from "@/components/school-admin/students/Student
 import { StudentFeesTab } from "@/components/fees/StudentFeesTab";
 import { StudentAttendancePanel } from "@/components/attendance/StudentAttendancePanel";
 import { StudentDisciplinePanel } from "@/components/discipline/StudentDisciplinePanel";
+import { StudentPrimaryResultsPanel } from "@/components/school-admin/students/StudentPrimaryResultsPanel";
 import { TransferClassDialog } from "@/components/school-admin/students/TransferClassDialog";
 import { WithdrawStudentDialog } from "@/components/school-admin/students/WithdrawStudentDialog";
 import { ResetStudentPortalPasswordDialog } from "@/components/school-admin/students/ResetStudentPortalPasswordDialog";
@@ -320,12 +321,7 @@ export function StudentDetailContent({ studentId }: { studentId: string }) {
               ) : null}
 
               {tab === "results" ? (
-                <div className="rounded-xl border border-dashed border-theme bg-theme-surface p-6 text-center">
-                  <p className="text-sm font-medium text-theme-primary">Academic results</p>
-                  <p className="mt-2 text-sm text-theme-muted">
-                    Term results and report cards will appear here when marks are published.
-                  </p>
-                </div>
+                <StudentPrimaryResultsPanel studentId={student.id} classLevel={student.level} />
               ) : null}
 
               {tab === "attendance" ? <StudentAttendancePanel studentId={student.id} /> : null}

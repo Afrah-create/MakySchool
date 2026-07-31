@@ -304,6 +304,8 @@ async def _fetch_student_detail(
         "current_class_id": str(student["current_class_id"]) if student["current_class_id"] else None,
         "class_id": str(student["class_id"]) if student["class_id"] else None,
         "class_name": class_name,
+        "level": student["level"],
+        "stream": student["stream"],
         "withdrawal_reason": student["withdrawal_reason"],
         "withdrawn_at": student["withdrawn_at"],
         "created_at": student["created_at"],
