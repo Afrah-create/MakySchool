@@ -122,7 +122,7 @@ export function PrimaryGradesContent({ portal = "admin" }: { portal?: "admin" | 
         const next = Number(raw);
         if (Number.isNaN(next)) {
           toast.error(`Invalid score for ${st.fullName} · ${subj.code}`);
-          return;
+          return false;
         }
         // Always re-send filled scores so save is reliable even if drafts/grid drift.
         marks.push({
