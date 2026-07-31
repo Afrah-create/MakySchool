@@ -16,8 +16,10 @@ export const primaryKeys = {
   subjects: (level?: string) => ["primary", "subjects", level ?? ""] as const,
   themes: (level?: string) => ["primary", "themes", level ?? ""] as const,
   roster: (classId: string) => ["primary", "roster", classId] as const,
-  classResults: (classId: string, termId: string) =>
-    ["primary", "results", classId, termId] as const,
+  classResults: (classId: string, termId: string, examId?: string) =>
+    ["primary", "results", classId, termId, examId ?? ""] as const,
+  reportCard: (studentId: string, examId: string) =>
+    ["primary", "reportCard", studentId, examId] as const,
   exams: (filters: PrimaryExamFilters = {}) =>
     [
       "primary",
@@ -86,12 +88,83 @@ export function usePrimaryClassResults(
   classId: string,
   termId: string,
   enabled = true,
+  examId?: string,
 ) {
   return useQuery({
-    queryKey: primaryKeys.classResults(classId, termId),
-    queryFn: () => primaryApi.classResults(classId, termId),
+    queryKey: primaryKeys.classResults(classId, termId, examId),
+    queryFn: () => primaryApi.classResults(classId, termId, examId),
     enabled: enabled && !!classId && !!termId,
     staleTime: 15_000,
+  });
+}
+
+export function usePrimaryReportCard(
+  studentId: string,
+  examId: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: primaryKeys.reportCard(studentId, examId),
+    queryFn: () => primaryApi.getReportCard(studentId, examId),
+    enabled: enabled && !!studentId && !!examId,
+    staleTime: 15_000,
+  });
+}
+
+export function useSavePrimaryReportComment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      studentId: string;
+      examId: string;
+      classTeacherComment?: string | null;
+      headTeacherComment?: string | null;
+      approve?: boolean;
+    }) =>
+      primaryApi.saveReportComment(args.studentId, args.examId, {
+        classTeacherComment: args.classTeacherComment,
+        headTeacherComment: args.headTeacherComment,
+        approve: args.approve,
+      }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({
+        queryKey: primaryKeys.reportCard(vars.studentId, vars.examId),
+      });
+      qc.invalidateQueries({ queryKey: ["primary", "results"] });
+    },
+  });
+}
+
+export function useBulkSavePrimaryReportComments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      examId: string;
+      studentIds: string[];
+      classTeacherComment?: string | null;
+      headTeacherComment?: string | null;
+      approve?: boolean;
+    }) => primaryApi.bulkSaveReportComments(payload),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["primary", "reportCard"] });
+      qc.invalidateQueries({ queryKey: ["primary", "results"] });
+      for (const studentId of vars.studentIds) {
+        qc.invalidateQueries({
+          queryKey: primaryKeys.reportCard(studentId, vars.examId),
+        });
+      }
+    },
+  });
+}
+
+export function useGeneratePrimaryReportCards() {
+  return useMutation({
+    mutationFn: (params: {
+      examId?: string;
+      classId?: string;
+      termId?: string;
+      studentId?: string;
+    }) => primaryApi.generateReportCards(params),
   });
 }
 

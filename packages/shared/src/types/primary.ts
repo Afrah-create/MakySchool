@@ -196,6 +196,7 @@ export interface PrimaryClassResults {
   className: string;
   termId: string;
   termName: string | null;
+  examId?: string | null;
   isLowerPrimary: boolean;
   students: Array<{
     studentId: string;
@@ -213,10 +214,92 @@ export interface PrimaryClassResults {
       string,
       { grade: string | null; finalPercent: number | null; gradePoints?: number | null }
     >;
+    classTeacherComment?: string | null;
+    headTeacherComment?: string | null;
+    approvedAt?: string | null;
+    reportGenerated?: boolean;
     thematicCount?: number;
     averageLevel?: number | null;
     isLowerPrimary: boolean;
   }>;
+}
+
+export interface PrimaryReportCard {
+  studentId?: string;
+  studentName?: string;
+  learnerId?: string | null;
+  className?: string | null;
+  photoUrl?: string | null;
+  studentInitials?: string;
+  student: {
+    id: string;
+    fullName: string;
+    learnerId: string | null;
+    className: string | null;
+    classId: string | null;
+    photoUrl: string | null;
+    gender?: string | null;
+    dateOfBirth?: string | null;
+  };
+  termId: string;
+  termName: string;
+  academicYear: string | number | null;
+  examId: string | null;
+  examName: string | null;
+  examTypeName: string | null;
+  isLowerPrimary: boolean;
+  subjectResults?: Array<{
+    subjectName: string;
+    subjectCode: string;
+    isPleSubject: boolean;
+    caPercentage: number | null;
+    examScore: number | null;
+    examPercentage: number | null;
+    finalPercent: number | null;
+    grade: string | null;
+    gradeLabel: string | null;
+    gradePoints: number | null;
+    position: number | null;
+    teacherComment: string | null;
+  }>;
+  totals: {
+    totalMarks: number | null;
+    totalPossible: number | null;
+    averagePercent: number | null;
+    overallGrade: string | null;
+    overallGradeLabel: string | null;
+    aggregate: number | null;
+    division: string | null;
+    classPosition: number | null;
+    totalStudents: number | null;
+    attendanceDays: number | null;
+    presentDays: number | null;
+    attendancePercent: number | null;
+  } | null;
+  classTeacherComment: string | null;
+  headTeacherComment: string | null;
+  approvedAt: string | null;
+  approvedByName: string | null;
+  reportGenerated?: boolean;
+}
+
+export interface PrimaryApprovedReportSummary {
+  examId: string;
+  examName: string;
+  examTypeName: string | null;
+  termId: string;
+  termName: string;
+  academicYear: string | number | null;
+  academicYearLabel: string | null;
+  approvedAt: string | null;
+  aggregate: number | null;
+  division: string | null;
+  averagePercent: number | null;
+  overallGrade: string | null;
+  classPosition: number | null;
+  totalStudents: number | null;
+  hasClassTeacherComment: boolean;
+  hasHeadTeacherComment: boolean;
 }
 
 export interface PleResult {

@@ -360,3 +360,115 @@ async def learner_alevel_report_card_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/primary/report-cards")
+async def learner_primary_report_cards(
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """List approved Primary report cards for the linked learner only."""
+    school_id, actor = ctx
+    user_id = _require_learner(actor)
+    student = await _linked_student(conn, school_id, user_id)
+
+    from app.lib.primary_access import assert_primary_enabled
+    from app.services.primary import results as results_svc
+
+    await assert_primary_enabled(conn, school_id)
+    items = await results_svc.list_approved_report_summaries(
+        conn, school_id, student["id"]
+    )
+    return {"data": {"reports": items}}
+
+
+@router.get("/primary/report-cards/{exam_id}")
+async def learner_primary_report_card_detail(
+    exam_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    user_id = _require_learner(actor)
+    student = await _linked_student(conn, school_id, user_id)
+
+    from app.lib.primary_access import assert_primary_enabled
+    from app.lib.primary_exam_access import require_exam
+    from app.services.primary import results as results_svc
+
+    await assert_primary_enabled(conn, school_id)
+    exam = await require_exam(conn, school_id, exam_id)
+    data = await results_svc.student_result(
+        conn,
+        school_id,
+        student_id=student["id"],
+        term_id=uuid.UUID(exam["termId"]),
+        exam_id=exam_id,
+        require_approved=True,
+    )
+    return {"data": data}
+
+
+@router.get("/primary/report-cards/{exam_id}/pdf")
+async def learner_primary_report_card_pdf(
+    exam_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    from fastapi.responses import Response
+
+    school_id, actor = ctx
+    user_id = _require_learner(actor)
+    student = await _linked_student(conn, school_id, user_id)
+
+    from app.lib.alevel_reports import load_school_branding
+    from app.lib.primary_access import assert_primary_enabled
+    from app.lib.primary_exam_access import require_exam
+    from app.lib.primary_pdf import generate_primary_report_pdf_bytes
+    from app.lib.storage_urls import resolve_storage_data_uri
+    from app.services.primary import results as results_svc
+
+    await assert_primary_enabled(conn, school_id)
+    exam = await require_exam(conn, school_id, exam_id)
+    branding = await load_school_branding(conn, school_id, for_pdf=True)
+    data = await results_svc.student_result(
+        conn,
+        school_id,
+        student_id=student["id"],
+        term_id=uuid.UUID(exam["termId"]),
+        exam_id=exam_id,
+        require_approved=True,
+    )
+    data["schoolName"] = branding.get("schoolName")
+    data["schoolAddress"] = branding.get("schoolAddress")
+    data["schoolPhone"] = branding.get("schoolPhone")
+    data["schoolEmail"] = branding.get("schoolEmail")
+
+    logo = branding.get("logoUrl")
+    stamp = branding.get("stampUrl")
+    if logo and not str(logo).startswith("data:"):
+        logo = await resolve_storage_data_uri(logo, school_id=school_id)
+    if stamp and not str(stamp).startswith("data:"):
+        stamp = await resolve_storage_data_uri(stamp, school_id=school_id)
+    data["logoUrl"] = logo if logo and str(logo).startswith("data:") else None
+    data["stampUrl"] = stamp if stamp and str(stamp).startswith("data:") else None
+
+    photo_key = (data.get("student") or {}).get("photoUrl") or data.get("photoUrl")
+    photo_uri = None
+    if photo_key:
+        if str(photo_key).startswith("data:"):
+            photo_uri = photo_key
+        else:
+            photo_uri = await resolve_storage_data_uri(photo_key, school_id=school_id)
+    data["photoUrl"] = photo_uri
+    if data.get("student"):
+        data["student"]["photoUrl"] = photo_uri
+
+    pdf = await generate_primary_report_pdf_bytes(data)
+    learner_id = (data.get("student") or {}).get("learnerId") or student["id"]
+    filename = f"{learner_id}-primary-report.pdf".replace(" ", "_")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

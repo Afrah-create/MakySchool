@@ -6,6 +6,7 @@ import type {
   PrimaryExamGradesGrid,
   PrimaryExamTypeOption,
   PrimaryOverview,
+  PrimaryReportCard,
   PrimaryRosterStudent,
   PrimarySetup,
   PrimarySubject,
@@ -252,16 +253,60 @@ export const primaryApi = {
     }).then((r) => r.data);
   },
 
-  classResults(classId: string, termId: string) {
+  classResults(classId: string, termId: string, examId?: string) {
+    const q = new URLSearchParams({ term_id: termId });
+    if (examId) q.set("exam_id", examId);
     return apiClient<PrimaryClassResults>(
-      `${BASE}/results/class/${classId}?term_id=${termId}`,
+      `${BASE}/results/class/${classId}?${q.toString()}`,
     ).then((r) => r.data);
   },
 
-  studentResult(studentId: string, termId: string) {
-    return apiClient(`${BASE}/results/student/${studentId}?term_id=${termId}`).then(
-      (r) => r.data,
-    );
+  studentResult(studentId: string, termId: string, examId?: string) {
+    const q = new URLSearchParams({ term_id: termId });
+    if (examId) q.set("exam_id", examId);
+    return apiClient<PrimaryReportCard>(
+      `${BASE}/results/student/${studentId}?${q.toString()}`,
+    ).then((r) => r.data);
+  },
+
+  getReportCard(studentId: string, examId: string) {
+    const q = new URLSearchParams({ exam_id: examId });
+    return apiClient<PrimaryReportCard>(
+      `${BASE}/report-card/${studentId}?${q.toString()}`,
+    ).then((r) => r.data);
+  },
+
+  saveReportComment(
+    studentId: string,
+    examId: string,
+    payload: {
+      classTeacherComment?: string | null;
+      headTeacherComment?: string | null;
+      approve?: boolean;
+    },
+  ) {
+    const q = new URLSearchParams({ exam_id: examId });
+    return apiClient<{ ok: boolean; approved: boolean }>(
+      `${BASE}/report-card/${studentId}/comment?${q.toString()}`,
+      { method: "POST", body: payload },
+    ).then((r) => r.data);
+  },
+
+  bulkSaveReportComments(payload: {
+    examId: string;
+    studentIds: string[];
+    classTeacherComment?: string | null;
+    headTeacherComment?: string | null;
+    approve?: boolean;
+  }) {
+    return apiClient<{
+      saved: number;
+      skippedApproved: number;
+      skippedNotEnrolled: number;
+    }>(`${BASE}/report-cards/comments/bulk`, {
+      method: "POST",
+      body: payload,
+    }).then((r) => r.data);
   },
 
   refreshPositions(classId: string, termId: string) {
@@ -511,14 +556,15 @@ export const primaryApi = {
   },
 
   generateReportCards(params: {
-    classId: string;
-    termId: string;
+    examId?: string;
+    classId?: string;
+    termId?: string;
     studentId?: string;
   }) {
-    const q = new URLSearchParams({
-      class_id: params.classId,
-      term_id: params.termId,
-    });
+    const q = new URLSearchParams();
+    if (params.examId) q.set("exam_id", params.examId);
+    if (params.classId) q.set("class_id", params.classId);
+    if (params.termId) q.set("term_id", params.termId);
     if (params.studentId) q.set("student_id", params.studentId);
     return import("@/lib/api/downloadBinary").then(({ downloadBinaryFile }) =>
       downloadBinaryFile(`${BASE}/report-cards/generate?${q.toString()}`, {

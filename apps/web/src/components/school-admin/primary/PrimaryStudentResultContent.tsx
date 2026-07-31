@@ -23,6 +23,7 @@ type ResultPayload = {
     classId?: string | null;
   };
   termName?: string;
+  examId?: string | null;
   examName?: string | null;
   examTypeName?: string | null;
   isLowerPrimary?: boolean;
@@ -79,15 +80,17 @@ export function PrimaryStudentResultContent({ studentId }: { studentId: string }
 
   async function downloadPdf() {
     const classId = data?.student?.classId;
-    if (!classId || !termId) {
-      toast.error("Missing class or term for PDF generation.");
+    const examId = data?.examId ?? undefined;
+    if ((!classId || !termId) && !examId) {
+      toast.error("Missing class, term, or exam for PDF generation.");
       return;
     }
     setBusy(true);
     try {
       const result = await primaryApi.generateReportCards({
-        classId,
-        termId,
+        examId,
+        classId: classId || undefined,
+        termId: termId || undefined,
         studentId,
       });
       toast.success(`Downloaded ${result.filename}`);

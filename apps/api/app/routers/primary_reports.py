@@ -162,12 +162,27 @@ class BulkThematicBody(BaseModel):
 class CommentItem(BaseModel):
     student_id: uuid.UUID
     term_id: uuid.UUID
+    exam_id: uuid.UUID | None = None
     class_teacher_comment: str | None = None
     head_teacher_comment: str | None = None
 
 
 class CommentsBody(BaseModel):
     comments: list[CommentItem] = Field(min_length=1, max_length=BULK_MARKS_LIMIT)
+
+
+class ReportCommentBody(BaseModel):
+    classTeacherComment: str | None = None
+    headTeacherComment: str | None = None
+    approve: bool = False
+
+
+class BulkReportCommentBody(BaseModel):
+    examId: uuid.UUID
+    studentIds: list[uuid.UUID] = Field(min_length=1, max_length=BULK_MARKS_LIMIT)
+    classTeacherComment: str | None = None
+    headTeacherComment: str | None = None
+    approve: bool = False
 
 
 class PositionsBody(BaseModel):
@@ -629,13 +644,18 @@ async def results_class(
     class_id: uuid.UUID,
     ctx: TenantCtx,
     term_id: uuid.UUID = Query(...),
+    exam_id: uuid.UUID | None = Query(None),
     conn: asyncpg.Connection = Depends(get_db),
 ):
     school_id, actor = ctx
     try:
         await _gate(conn, school_id, actor, "viewPrimaryResults")
         data = await results_svc.class_results(
-            conn, school_id, class_id=class_id, term_id=term_id
+            conn,
+            school_id,
+            class_id=class_id,
+            term_id=term_id,
+            exam_id=exam_id,
         )
         return {"data": data}
     except Exception as exc:
@@ -647,13 +667,18 @@ async def results_student(
     student_id: uuid.UUID,
     ctx: TenantCtx,
     term_id: uuid.UUID = Query(...),
+    exam_id: uuid.UUID | None = Query(None),
     conn: asyncpg.Connection = Depends(get_db),
 ):
     school_id, actor = ctx
     try:
         await _gate(conn, school_id, actor, "viewPrimaryResults")
         data = await results_svc.student_result(
-            conn, school_id, student_id=student_id, term_id=term_id
+            conn,
+            school_id,
+            student_id=student_id,
+            term_id=term_id,
+            exam_id=exam_id,
         )
         return {"data": data}
     except Exception as exc:
@@ -671,6 +696,109 @@ async def results_comments(
         await _gate(conn, school_id, actor, "viewPrimaryResults")
         data = await results_svc.save_comments(
             conn, school_id, comments=[c.model_dump() for c in body.comments]
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.get("/report-card/{student_id}")
+async def get_report_card(
+    student_id: uuid.UUID,
+    ctx: TenantCtx,
+    exam_id: uuid.UUID = Query(...),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "viewPrimaryResults")
+        from app.lib.primary_exam_access import require_exam
+
+        exam = await require_exam(conn, school_id, exam_id)
+        data = await results_svc.student_result(
+            conn,
+            school_id,
+            student_id=student_id,
+            term_id=uuid.UUID(exam["termId"]),
+            exam_id=exam_id,
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/report-card/{student_id}/comment")
+async def save_report_comment(
+    student_id: uuid.UUID,
+    body: ReportCommentBody,
+    ctx: TenantCtx,
+    exam_id: uuid.UUID = Query(...),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "viewPrimaryResults")
+        if body.approve and (actor.get("role") or "").lower() not in {
+            "head_teacher",
+            "admin",
+        }:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "Only the head teacher or admin can approve."},
+            )
+        data = await results_svc.upsert_report_comment(
+            conn,
+            school_id,
+            student_id=student_id,
+            exam_id=exam_id,
+            class_teacher_comment=body.classTeacherComment,
+            head_teacher_comment=body.headTeacherComment,
+            approve=body.approve,
+            actor_id=actor_user_id(actor),
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/report-cards/comments/bulk")
+async def bulk_save_report_comments(
+    body: BulkReportCommentBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "viewPrimaryResults")
+        if (
+            body.classTeacherComment is None
+            and body.headTeacherComment is None
+            and not body.approve
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Provide a class teacher comment, head teacher comment, or approve.",
+                    "code": "EMPTY_COMMENT",
+                },
+            )
+        if body.approve and (actor.get("role") or "").lower() not in {
+            "head_teacher",
+            "admin",
+        }:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "Only the head teacher or admin can approve."},
+            )
+        data = await results_svc.bulk_upsert_report_comments(
+            conn,
+            school_id,
+            exam_id=body.examId,
+            student_ids=body.studentIds,
+            class_teacher_comment=body.classTeacherComment,
+            head_teacher_comment=body.headTeacherComment,
+            approve=body.approve,
+            actor_id=actor_user_id(actor),
         )
         return {"data": data}
     except Exception as exc:
@@ -772,13 +900,14 @@ async def get_ple_analytics(
 async def generate_primary_report_cards(
     ctx: TenantCtx,
     conn: asyncpg.Connection = Depends(get_db),
-    class_id: uuid.UUID = Query(...),
-    term_id: uuid.UUID = Query(...),
-    student_id: uuid.UUID | None = Query(None),
     exam_id: uuid.UUID | None = Query(None),
+    class_id: uuid.UUID | None = Query(None),
+    term_id: uuid.UUID | None = Query(None),
+    student_id: uuid.UUID | None = Query(None),
 ):
     """Generate primary PDF report card(s). Single PDF or ZIP for the class.
 
+    Prefer exam_id (A-Level-aligned). class_id + term_id remain for legacy clients.
     Bulk class generation uses a bounded semaphore and separate pool connections
     so large classes do not exhaust the DB pool or time out the proxy.
     """
@@ -789,6 +918,7 @@ async def generate_primary_report_cards(
 
     from app.db.pool import get_pool
     from app.lib.alevel_reports import load_school_branding
+    from app.lib.primary_exam_access import require_exam
     from app.lib.primary_pdf import generate_primary_report_pdf_bytes
     from app.lib.storage_urls import resolve_storage_data_uri
 
@@ -796,6 +926,14 @@ async def generate_primary_report_cards(
     school_id, actor = ctx
     try:
         await _gate(conn, school_id, actor, "generatePrimaryReports")
+
+        resolved_exam_id = exam_id
+        if resolved_exam_id:
+            exam = await require_exam(conn, school_id, resolved_exam_id)
+            class_id = uuid.UUID(exam["classId"])
+            term_id = uuid.UUID(exam["termId"])
+        elif not class_id or not term_id:
+            raise ValueError("Provide exam_id, or both class_id and term_id.")
 
         branding = await load_school_branding(conn, school_id, for_pdf=True)
 
@@ -827,8 +965,8 @@ async def generate_primary_report_cards(
                             worker,
                             school_id,
                             student_id=sid,
-                            term_id=term_id,
-                            exam_id=exam_id,
+                            term_id=term_id,  # type: ignore[arg-type]
+                            exam_id=resolved_exam_id,
                         )
                         data["schoolName"] = branding.get("schoolName")
                         data["schoolAddress"] = branding.get("schoolAddress")
@@ -880,16 +1018,32 @@ async def generate_primary_report_cards(
                             data["student"]["photoUrl"] = photo_uri
 
                         pdf = await generate_primary_report_pdf_bytes(data)
-                        await worker.execute(
-                            """
-                            UPDATE primary_term_results
-                            SET report_generated = true, calculated_at = NOW()
-                            WHERE school_id = $1 AND student_id = $2 AND term_id = $3
-                            """,
-                            school_id,
-                            sid,
-                            term_id,
-                        )
+                        if resolved_exam_id:
+                            await worker.execute(
+                                """
+                                UPDATE primary_term_results
+                                SET report_generated = true,
+                                    report_generated_at = COALESCE(report_generated_at, NOW()),
+                                    calculated_at = NOW()
+                                WHERE school_id = $1 AND student_id = $2 AND exam_id = $3
+                                """,
+                                school_id,
+                                sid,
+                                resolved_exam_id,
+                            )
+                        else:
+                            await worker.execute(
+                                """
+                                UPDATE primary_term_results
+                                SET report_generated = true,
+                                    report_generated_at = COALESCE(report_generated_at, NOW()),
+                                    calculated_at = NOW()
+                                WHERE school_id = $1 AND student_id = $2 AND term_id = $3
+                                """,
+                                school_id,
+                                sid,
+                                term_id,
+                            )
                         learner = (data.get("student") or {}).get("learnerId") or str(sid)
                         safe = "".join(
                             c if c.isalnum() or c in "-_" else "_" for c in str(learner)

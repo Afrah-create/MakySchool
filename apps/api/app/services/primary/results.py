@@ -19,6 +19,7 @@ async def class_results(
     *,
     class_id: uuid.UUID,
     term_id: uuid.UUID,
+    exam_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     level = await fetch_class_level(conn, school_id, class_id)
     class_row = await conn.fetchrow(
@@ -76,28 +77,76 @@ async def class_results(
             "className": format_class_name(class_row["level"], class_row["stream"]),
             "termId": str(term_id),
             "termName": term["name"] if term else None,
+            "examId": str(exam_id) if exam_id else None,
             "isLowerPrimary": True,
             "students": items,
         }
 
-    rows = await conn.fetch(
-        """
-        SELECT DISTINCT ON (tr.student_id)
-          tr.student_id, s.full_name, s.learner_id,
-          tr.average_percent, tr.overall_grade, tr.overall_grade_label,
-          tr.class_position, tr.total_students,
-          tr.aggregate, tr.division, tr.exam_id,
-          tr.class_teacher_comment, tr.head_teacher_comment
-        FROM primary_term_results tr
-        JOIN students s ON s.id = tr.student_id
-        WHERE tr.school_id = $1 AND tr.class_id = $2 AND tr.term_id = $3
-          AND tr.exam_id IS NOT NULL
-        ORDER BY tr.student_id, tr.calculated_at DESC NULLS LAST
-        """,
-        school_id,
-        class_id,
-        term_id,
-    )
+    if exam_id:
+        rows = await conn.fetch(
+            """
+            SELECT
+              tr.student_id, s.full_name, s.learner_id,
+              tr.average_percent, tr.overall_grade, tr.overall_grade_label,
+              tr.class_position, tr.total_students,
+              tr.aggregate, tr.division, tr.exam_id,
+              tr.class_teacher_comment, tr.head_teacher_comment,
+              tr.approved_at, tr.report_generated
+            FROM primary_term_results tr
+            JOIN students s ON s.id = tr.student_id
+            WHERE tr.school_id = $1 AND tr.class_id = $2 AND tr.exam_id = $3
+            ORDER BY tr.class_position NULLS LAST, s.full_name
+            """,
+            school_id,
+            class_id,
+            exam_id,
+        )
+        subject_grades = await conn.fetch(
+            """
+            SELECT sr.student_id, ps.code, sr.grade, sr.final_percent, sr.grade_points
+            FROM primary_subject_results sr
+            JOIN primary_subjects ps ON ps.id = sr.subject_id
+            WHERE sr.school_id = $1 AND sr.exam_id = $2
+            ORDER BY ps.display_order, ps.code
+            """,
+            school_id,
+            exam_id,
+        )
+    else:
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT ON (tr.student_id)
+              tr.student_id, s.full_name, s.learner_id,
+              tr.average_percent, tr.overall_grade, tr.overall_grade_label,
+              tr.class_position, tr.total_students,
+              tr.aggregate, tr.division, tr.exam_id,
+              tr.class_teacher_comment, tr.head_teacher_comment,
+              tr.approved_at, tr.report_generated
+            FROM primary_term_results tr
+            JOIN students s ON s.id = tr.student_id
+            WHERE tr.school_id = $1 AND tr.class_id = $2 AND tr.term_id = $3
+              AND tr.exam_id IS NOT NULL
+            ORDER BY tr.student_id, tr.calculated_at DESC NULLS LAST
+            """,
+            school_id,
+            class_id,
+            term_id,
+        )
+        subject_grades = await conn.fetch(
+            """
+            SELECT DISTINCT ON (sr.student_id, ps.code)
+              sr.student_id, ps.code, sr.grade, sr.final_percent, sr.grade_points
+            FROM primary_subject_results sr
+            JOIN primary_subjects ps ON ps.id = sr.subject_id
+            WHERE sr.school_id = $1 AND sr.class_id = $2 AND sr.term_id = $3
+              AND sr.exam_id IS NOT NULL
+            ORDER BY sr.student_id, ps.code, sr.calculated_at DESC NULLS LAST
+            """,
+            school_id,
+            class_id,
+            term_id,
+        )
+
     rows = sorted(
         rows,
         key=lambda r: (
@@ -107,20 +156,6 @@ async def class_results(
         ),
     )
 
-    subject_grades = await conn.fetch(
-        """
-        SELECT DISTINCT ON (sr.student_id, ps.code)
-          sr.student_id, ps.code, sr.grade, sr.final_percent, sr.grade_points
-        FROM primary_subject_results sr
-        JOIN primary_subjects ps ON ps.id = sr.subject_id
-        WHERE sr.school_id = $1 AND sr.class_id = $2 AND sr.term_id = $3
-          AND sr.exam_id IS NOT NULL
-        ORDER BY sr.student_id, ps.code, sr.calculated_at DESC NULLS LAST
-        """,
-        school_id,
-        class_id,
-        term_id,
-    )
     grades_map: dict[str, dict[str, Any]] = {}
     for g in subject_grades:
         sid = str(g["student_id"])
@@ -135,6 +170,7 @@ async def class_results(
         "className": format_class_name(class_row["level"], class_row["stream"]),
         "termId": str(term_id),
         "termName": term["name"] if term else None,
+        "examId": str(exam_id) if exam_id else None,
         "isLowerPrimary": False,
         "students": [
             {
@@ -154,6 +190,8 @@ async def class_results(
                 "subjectGrades": grades_map.get(str(r["student_id"]), {}),
                 "classTeacherComment": r["class_teacher_comment"],
                 "headTeacherComment": r["head_teacher_comment"],
+                "approvedAt": r["approved_at"].isoformat() if r.get("approved_at") else None,
+                "reportGenerated": bool(r.get("report_generated")),
                 "isLowerPrimary": False,
             }
             for r in rows
@@ -168,6 +206,7 @@ async def student_result(
     student_id: uuid.UUID,
     term_id: uuid.UUID,
     exam_id: uuid.UUID | None = None,
+    require_approved: bool = False,
 ) -> dict[str, Any]:
     student = await conn.fetchrow(
         """
@@ -389,11 +428,227 @@ async def student_result(
         }
         base["classTeacherComment"] = term_row["class_teacher_comment"]
         base["headTeacherComment"] = term_row["head_teacher_comment"]
+        approved_at = term_row.get("approved_at")
+        if require_approved and not approved_at:
+            raise LookupError("This report card is not approved yet.")
+        base["approvedAt"] = approved_at.isoformat() if approved_at else None
+        approved_by = term_row.get("approved_by")
+        if approved_by:
+            name = await conn.fetchval(
+                "SELECT full_name FROM users WHERE id = $1",
+                approved_by,
+            )
+            base["approvedByName"] = name
+        else:
+            base["approvedByName"] = None
+        base["reportGenerated"] = bool(term_row.get("report_generated"))
+        # Top-level mirrors for staff/learner UIs (A-Level-aligned).
+        base["studentId"] = base["student"]["id"]
+        base["studentName"] = base["student"]["fullName"]
+        base["learnerId"] = base["student"]["learnerId"]
+        base["className"] = base["student"]["className"]
+        base["photoUrl"] = base["student"]["photoUrl"]
     else:
+        if require_approved:
+            raise LookupError("This report card is not approved yet.")
         base["totals"] = None
         base["classTeacherComment"] = None
         base["headTeacherComment"] = None
+        base["approvedAt"] = None
+        base["approvedByName"] = None
+        base["reportGenerated"] = False
     return base
+
+
+async def upsert_report_comment(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    student_id: uuid.UUID,
+    exam_id: uuid.UUID,
+    class_teacher_comment: str | None,
+    head_teacher_comment: str | None,
+    approve: bool,
+    actor_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Insert or update comments/approval on the exam-scoped term result row."""
+    from app.lib.primary_exam_access import require_exam
+
+    exam = await require_exam(conn, school_id, exam_id)
+    existing = await conn.fetchrow(
+        """
+        SELECT approved_at FROM primary_term_results
+        WHERE school_id = $1 AND student_id = $2 AND exam_id = $3
+        """,
+        school_id,
+        student_id,
+        exam_id,
+    )
+    if existing and existing["approved_at"] and not approve:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "This report card is approved. Comments are locked.",
+                "code": "APPROVED",
+            },
+        )
+
+    approved_by = actor_id if approve else None
+    await conn.execute(
+        """
+        INSERT INTO primary_term_results (
+          school_id, student_id, class_id, term_id, academic_year_id, exam_id,
+          class_teacher_comment, head_teacher_comment,
+          approved_by, approved_at, calculated_at
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9::uuid,
+          CASE WHEN $9::uuid IS NOT NULL THEN NOW() ELSE NULL END,
+          NOW()
+        )
+        ON CONFLICT (exam_id, student_id)
+        DO UPDATE SET
+          class_teacher_comment = COALESCE(
+            EXCLUDED.class_teacher_comment, primary_term_results.class_teacher_comment
+          ),
+          head_teacher_comment = COALESCE(
+            EXCLUDED.head_teacher_comment, primary_term_results.head_teacher_comment
+          ),
+          approved_by = COALESCE(
+            EXCLUDED.approved_by, primary_term_results.approved_by
+          ),
+          approved_at = COALESCE(
+            EXCLUDED.approved_at, primary_term_results.approved_at
+          ),
+          calculated_at = NOW()
+        """,
+        school_id,
+        student_id,
+        uuid.UUID(exam["classId"]),
+        uuid.UUID(exam["termId"]),
+        uuid.UUID(exam["academicYearId"]),
+        exam_id,
+        class_teacher_comment,
+        head_teacher_comment,
+        approved_by,
+    )
+    return {"ok": True, "approved": approve}
+
+
+async def bulk_upsert_report_comments(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    exam_id: uuid.UUID,
+    student_ids: list[uuid.UUID],
+    class_teacher_comment: str | None,
+    head_teacher_comment: str | None,
+    approve: bool,
+    actor_id: uuid.UUID,
+) -> dict[str, Any]:
+    from app.lib.primary_exam_access import require_exam
+
+    exam = await require_exam(conn, school_id, exam_id)
+    class_id = uuid.UUID(exam["classId"])
+
+    roster = await conn.fetch(
+        """
+        SELECT id FROM students
+        WHERE school_id = $1 AND current_class_id = $2 AND status = 'active'
+        """,
+        school_id,
+        class_id,
+    )
+    enrolled = {r["id"] for r in roster}
+
+    approved_rows = await conn.fetch(
+        """
+        SELECT student_id FROM primary_term_results
+        WHERE school_id = $1 AND exam_id = $2 AND approved_at IS NOT NULL
+        """,
+        school_id,
+        exam_id,
+    )
+    already_approved = {r["student_id"] for r in approved_rows}
+
+    saved = 0
+    skipped_approved = 0
+    skipped_not_enrolled = 0
+    for sid in student_ids:
+        if sid not in enrolled:
+            skipped_not_enrolled += 1
+            continue
+        if sid in already_approved and not approve:
+            skipped_approved += 1
+            continue
+        await upsert_report_comment(
+            conn,
+            school_id,
+            student_id=sid,
+            exam_id=exam_id,
+            class_teacher_comment=class_teacher_comment,
+            head_teacher_comment=head_teacher_comment,
+            approve=approve,
+            actor_id=actor_id,
+        )
+        saved += 1
+    return {
+        "saved": saved,
+        "skippedApproved": skipped_approved,
+        "skippedNotEnrolled": skipped_not_enrolled,
+    }
+
+
+async def list_approved_report_summaries(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    student_id: uuid.UUID,
+) -> list[dict[str, Any]]:
+    rows = await conn.fetch(
+        """
+        SELECT
+          tr.exam_id, tr.term_id, tr.approved_at, tr.aggregate, tr.division,
+          tr.average_percent, tr.overall_grade, tr.class_position, tr.total_students,
+          tr.class_teacher_comment, tr.head_teacher_comment,
+          e.name AS exam_name, et.name AS exam_type_name,
+          t.name AS term_name, ay.year AS academic_year
+        FROM primary_term_results tr
+        JOIN primary_exams e ON e.id = tr.exam_id
+        JOIN primary_exam_types et ON et.id = e.exam_type_id
+        JOIN terms t ON t.id = tr.term_id
+        JOIN academic_years ay ON ay.id = tr.academic_year_id
+        WHERE tr.school_id = $1 AND tr.student_id = $2
+          AND tr.approved_at IS NOT NULL AND tr.exam_id IS NOT NULL
+        ORDER BY tr.approved_at DESC
+        """,
+        school_id,
+        student_id,
+    )
+    return [
+        {
+            "examId": str(r["exam_id"]),
+            "examName": r["exam_name"],
+            "examTypeName": r["exam_type_name"],
+            "termId": str(r["term_id"]),
+            "termName": r["term_name"],
+            "academicYear": r["academic_year"],
+            "academicYearLabel": str(r["academic_year"]) if r["academic_year"] is not None else None,
+            "approvedAt": r["approved_at"].isoformat() if r["approved_at"] else None,
+            "aggregate": r["aggregate"],
+            "division": r["division"],
+            "averagePercent": float(r["average_percent"])
+            if r["average_percent"] is not None
+            else None,
+            "overallGrade": r["overall_grade"],
+            "classPosition": r["class_position"],
+            "totalStudents": r["total_students"],
+            "hasClassTeacherComment": bool(r["class_teacher_comment"]),
+            "hasHeadTeacherComment": bool(r["head_teacher_comment"]),
+        }
+        for r in rows
+    ]
 
 
 async def save_comments(
@@ -402,24 +657,44 @@ async def save_comments(
     *,
     comments: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    """Legacy term-scoped comment update (kept for older clients)."""
     updated = 0
     for item in comments:
         student_id = uuid.UUID(str(item["student_id"]))
         term_id = uuid.UUID(str(item["term_id"]))
-        result = await conn.execute(
-            """
-            UPDATE primary_term_results SET
-              class_teacher_comment = COALESCE($4, class_teacher_comment),
-              head_teacher_comment = COALESCE($5, head_teacher_comment),
-              calculated_at = NOW()
-            WHERE school_id = $1 AND student_id = $2 AND term_id = $3
-            """,
-            school_id,
-            student_id,
-            term_id,
-            item.get("class_teacher_comment"),
-            item.get("head_teacher_comment"),
-        )
+        exam_id = item.get("exam_id")
+        if exam_id:
+            result = await conn.execute(
+                """
+                UPDATE primary_term_results SET
+                  class_teacher_comment = COALESCE($4, class_teacher_comment),
+                  head_teacher_comment = COALESCE($5, head_teacher_comment),
+                  calculated_at = NOW()
+                WHERE school_id = $1 AND student_id = $2 AND exam_id = $3
+                  AND approved_at IS NULL
+                """,
+                school_id,
+                student_id,
+                uuid.UUID(str(exam_id)),
+                item.get("class_teacher_comment"),
+                item.get("head_teacher_comment"),
+            )
+        else:
+            result = await conn.execute(
+                """
+                UPDATE primary_term_results SET
+                  class_teacher_comment = COALESCE($4, class_teacher_comment),
+                  head_teacher_comment = COALESCE($5, head_teacher_comment),
+                  calculated_at = NOW()
+                WHERE school_id = $1 AND student_id = $2 AND term_id = $3
+                  AND approved_at IS NULL
+                """,
+                school_id,
+                student_id,
+                term_id,
+                item.get("class_teacher_comment"),
+                item.get("head_teacher_comment"),
+            )
         if result != "UPDATE 0":
             updated += 1
     return {"updated": updated}
