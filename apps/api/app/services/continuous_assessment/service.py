@@ -136,3 +136,45 @@ async def get_assessment(
         assessment=AssessmentResponse(**dict(assessment)),
         scores=[ScoreResponse(**dict(s)) for s in scores],
     )
+
+
+async def submit_assessment(
+    conn: asyncpg.Connection,
+    assessment_id: UUID,
+    submitted_by: UUID,
+):
+    return await conn.fetchrow(
+        """
+        UPDATE continuous_assessments
+        SET
+            status='submitted',
+            submitted_at=NOW(),
+            submitted_by=$2,
+            updated_at=NOW()
+        WHERE id=$1
+        RETURNING *
+        """,
+        assessment_id,
+        submitted_by,
+    )
+
+
+async def unlock_assessment(
+    conn: asyncpg.Connection,
+    assessment_id: UUID,
+    unlocked_by: UUID,
+):
+    return await conn.fetchrow(
+        """
+        UPDATE continuous_assessments
+        SET
+            status='draft',
+            unlocked_at=NOW(),
+            unlocked_by=$2,
+            updated_at=NOW()
+        WHERE id=$1
+        RETURNING *
+        """,
+        assessment_id,
+        unlocked_by,
+    )
