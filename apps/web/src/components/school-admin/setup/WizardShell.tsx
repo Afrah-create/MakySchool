@@ -16,8 +16,8 @@ type WizardState = {
     name: string;
     logo: File | null;
     stamp: File | null;
-    email: string;
-    phone: string;
+    emails: string[];
+    phones: string[];
     address: string;
     schoolType: string;
   };
@@ -37,14 +37,26 @@ function draftKey(schoolId: string) {
 }
 
 function initialState(school?: SchoolRecord | null): WizardState {
+  const emails =
+    school?.emails?.length
+      ? school.emails
+      : school?.email
+        ? [school.email]
+        : [""];
+  const phones =
+    school?.phones?.length
+      ? school.phones
+      : school?.phone
+        ? [school.phone]
+        : [""];
   return {
     step: 1,
     profile: {
       name: school?.name ?? "",
       logo: null,
       stamp: null,
-      email: school?.email ?? "",
-      phone: school?.phone ?? "",
+      emails,
+      phones,
       address: school?.address ?? "",
       schoolType: school?.school_type ?? "primary",
     },
@@ -80,11 +92,28 @@ function loadWizardState(schoolId: string, school?: SchoolRecord | null): Wizard
   }
 
   try {
-    const parsed = JSON.parse(saved) as Partial<WizardState>;
+    const parsed = JSON.parse(saved) as Partial<WizardState> & {
+      profile?: Partial<WizardState["profile"]> & { email?: string; phone?: string };
+    };
+    const mergedProfile = {
+      ...base.profile,
+      ...parsed.profile,
+      logo: null as File | null,
+      stamp: null as File | null,
+    };
+    // Migrate older drafts that stored single email/phone.
+    if (!mergedProfile.emails?.length && parsed.profile?.email) {
+      mergedProfile.emails = [parsed.profile.email];
+    }
+    if (!mergedProfile.phones?.length && parsed.profile?.phone) {
+      mergedProfile.phones = [parsed.profile.phone];
+    }
+    if (!mergedProfile.emails?.length) mergedProfile.emails = [""];
+    if (!mergedProfile.phones?.length) mergedProfile.phones = [""];
     return {
       ...base,
       ...parsed,
-      profile: { ...base.profile, ...parsed.profile, logo: null, stamp: null },
+      profile: mergedProfile,
     };
   } catch {
     window.localStorage.removeItem(draftKey(schoolId));
@@ -95,7 +124,7 @@ function loadWizardState(schoolId: string, school?: SchoolRecord | null): Wizard
 function validateStep(state: WizardState, step: number) {
   if (step === 1) {
     if (!state.profile.name.trim()) return "School name is required";
-    if (!state.profile.email.trim()) return "Official email is required";
+    if (!state.profile.emails.some((e) => e.trim())) return "At least one email is required";
     if (!state.profile.schoolType) return "School type is required";
   }
 
@@ -217,15 +246,24 @@ export function WizardShell({
         }
 
         if (response.data.school) {
+          const sch = response.data.school;
           setState((current) => ({
             ...current,
             profile: {
               ...current.profile,
-              name: response.data.school?.name ?? current.profile.name,
-              email: response.data.school?.email ?? current.profile.email,
-              phone: response.data.school?.phone ?? current.profile.phone,
-              address: response.data.school?.address ?? current.profile.address,
-              schoolType: response.data.school?.school_type ?? current.profile.schoolType,
+              name: sch.name ?? current.profile.name,
+              emails: sch.emails?.length
+                ? sch.emails
+                : sch.email
+                  ? [sch.email]
+                  : current.profile.emails,
+              phones: sch.phones?.length
+                ? sch.phones
+                : sch.phone
+                  ? [sch.phone]
+                  : current.profile.phones,
+              address: sch.address ?? current.profile.address,
+              schoolType: sch.school_type ?? current.profile.schoolType,
             },
           }));
         }
@@ -239,10 +277,12 @@ export function WizardShell({
 
   async function persistStep(step: number) {
     if (step === 1) {
+      const emails = state.profile.emails.map((e) => e.trim()).filter(Boolean);
+      const phones = state.profile.phones.map((p) => p.trim()).filter(Boolean);
       const profileData = new FormData();
       profileData.set("name", state.profile.name);
-      profileData.set("email", state.profile.email);
-      profileData.set("phone", state.profile.phone);
+      profileData.set("emails", JSON.stringify(emails));
+      profileData.set("phones", JSON.stringify(phones));
       profileData.set("address", state.profile.address);
       profileData.set("school_type", state.profile.schoolType);
       if (state.profile.logo) profileData.set("logo", state.profile.logo);

@@ -1,8 +1,8 @@
 type ReviewData = {
   profile: {
     name: string;
-    email: string;
-    phone: string;
+    emails: string[];
+    phones: string[];
     address: string;
     schoolType: string;
   };
@@ -25,12 +25,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export function ReviewStep({ data }: { data: ReviewData }) {
+  const emails = data.profile.emails.map((e) => e.trim()).filter(Boolean);
+  const phones = data.profile.phones.map((p) => p.trim()).filter(Boolean);
+
   return (
     <div className="space-y-4">
       <Section title="School profile">
         <p>{data.profile.name || "—"}</p>
-        <p>{data.profile.email || "—"}</p>
-        <p>{data.profile.phone || "—"}</p>
+        <p>{emails.length ? emails.join(" · ") : "—"}</p>
+        <p>{phones.length ? phones.join(" · ") : "—"}</p>
         <p>{data.profile.address || "—"}</p>
         <p className="capitalize">{data.profile.schoolType || "—"}</p>
       </Section>

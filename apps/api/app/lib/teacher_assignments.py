@@ -54,16 +54,9 @@ async def get_current_term_id(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
 ) -> uuid.UUID | None:
-    row = await conn.fetchrow(
-        """
-        SELECT id FROM terms
-        WHERE school_id = $1 AND is_current = true
-        ORDER BY id ASC
-        LIMIT 1
-        """,
-        school_id,
-    )
-    return row["id"] if row else None
+    from app.lib.terms import get_current_term_id as resolve_current_term_id
+
+    return await resolve_current_term_id(conn, school_id)
 
 
 async def _fetch_existing_assignments(

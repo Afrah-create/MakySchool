@@ -58,7 +58,7 @@ async def load_school_branding(
 ) -> dict[str, Any]:
     school = await conn.fetchrow(
         """
-        SELECT name, logo_url, stamp_url, address, phone, email
+        SELECT name, logo_url, stamp_url, address, phone, email, phones, emails
         FROM schools WHERE id = $1
         """,
         school_id,
@@ -100,8 +100,14 @@ async def load_school_branding(
         "logoUrl": logo,
         "stampUrl": stamp,
         "schoolAddress": school["address"],
-        "schoolPhone": school["phone"],
-        "schoolEmail": school["email"],
+        "schoolPhone": " · ".join(
+            p for p in (list(school["phones"] or []) or ([school["phone"]] if school["phone"] else [])) if p
+        )
+        or None,
+        "schoolEmail": " · ".join(
+            e for e in (list(school["emails"] or []) or ([school["email"]] if school["email"] else [])) if e
+        )
+        or None,
     }
 
 

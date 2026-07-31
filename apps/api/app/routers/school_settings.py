@@ -43,31 +43,12 @@ async def get_current_term(
     school_id, actor = ctx
     # No _require_manage_school here — any authenticated tenant role
     # (teacher, admin, head_teacher, bursar) needs to know the current term.
-    row = await conn.fetchrow(
-        """
-        SELECT id, name, start_date, end_date, is_current, academic_year_id
-        FROM terms
-        WHERE school_id = $1
-        ORDER BY
-          is_current DESC,
-          (start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE) DESC,
-          start_date DESC NULLS LAST
-        LIMIT 1
-        """,
-        school_id,
-    )
+    from app.lib.terms import fetch_current_term, serialize_term_row
+
+    row = await fetch_current_term(conn, school_id)
     if not row:
         return {"data": None}
-    return {
-        "data": {
-            "id": str(row["id"]),
-            "name": row["name"],
-            "startDate": row["start_date"].isoformat() if row["start_date"] else None,
-            "endDate": row["end_date"].isoformat() if row["end_date"] else None,
-            "isCurrent": row["is_current"],
-            "academicYearId": str(row["academic_year_id"]) if row["academic_year_id"] else None,
-        }
-    }
+    return {"data": serialize_term_row(row)}
 
 
 @router.get("")
@@ -87,6 +68,8 @@ async def patch_profile(
     name: str | None = Form(None),
     email: str | None = Form(None),
     phone: str | None = Form(None),
+    emails: str | None = Form(None),
+    phones: str | None = Form(None),
     address: str | None = Form(None),
     school_type: str | None = Form(None),
     logo: UploadFile | None = File(None),
@@ -95,27 +78,54 @@ async def patch_profile(
     school_id, actor = ctx
     _require_manage_school(actor)
 
+    from app.lib.school_contacts import contacts_from_form, primary_contact
+
+    current = await conn.fetchrow(
+        """
+        SELECT logo_url, stamp_url, school_type, setup_completed_at, status
+        FROM schools WHERE id = $1
+        """,
+        school_id,
+    )
+    if not current:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "School not found.", "code": "NOT_FOUND"},
+        )
+
+    setup_done = bool(current["setup_completed_at"]) or (
+        (current["status"] or "").lower() != "setup"
+    )
     if school_type and school_type not in ("primary", "secondary", "both"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error": "Invalid school type.", "code": "VALIDATION_ERROR"},
         )
-
-    current = await conn.fetchrow(
-        "SELECT logo_url, stamp_url FROM schools WHERE id = $1",
-        school_id,
-    )
+    resolved_school_type = school_type
+    if setup_done:
+        if school_type and school_type != current["school_type"]:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "School type is set during setup and cannot be changed afterwards.",
+                    "code": "SCHOOL_TYPE_LOCKED",
+                },
+            )
+        resolved_school_type = None
 
     logo_key = None
     stamp_key = None
     if logo and logo.filename:
         logo_key = await save_school_image(school_id, logo, category="logo")
-        if current and current["logo_url"]:
+        if current["logo_url"]:
             await delete_stored_object(school_id, current["logo_url"])
     if stamp and stamp.filename:
         stamp_key = await save_school_image(school_id, stamp, category="stamp")
-        if current and current["stamp_url"]:
+        if current["stamp_url"]:
             await delete_stored_object(school_id, current["stamp_url"])
+
+    email_list = contacts_from_form(list_raw=emails, single=email)
+    phone_list = contacts_from_form(list_raw=phones, single=phone)
 
     row = await conn.fetchrow(
         """
@@ -123,20 +133,26 @@ async def patch_profile(
         SET name = COALESCE($1, name),
             logo_url = COALESCE($2, logo_url),
             stamp_url = COALESCE($3, stamp_url),
-            email = COALESCE($4, email),
-            phone = COALESCE($5, phone),
-            address = COALESCE($6, address),
-            school_type = COALESCE($7, school_type)
-        WHERE id = $8
+            email = CASE WHEN $4::boolean THEN $5 ELSE email END,
+            phone = CASE WHEN $6::boolean THEN $7 ELSE phone END,
+            emails = CASE WHEN $4::boolean THEN COALESCE($8::text[], '{}') ELSE emails END,
+            phones = CASE WHEN $6::boolean THEN COALESCE($9::text[], '{}') ELSE phones END,
+            address = COALESCE($10, address),
+            school_type = COALESCE($11, school_type)
+        WHERE id = $12
         RETURNING *
         """,
         name.strip() if name else None,
         logo_key,
         stamp_key,
-        email.strip() if email else None,
-        phone.strip() if phone else None,
+        email_list is not None,
+        primary_contact(email_list),
+        phone_list is not None,
+        primary_contact(phone_list),
+        email_list,
+        phone_list,
         address.strip() if address else None,
-        school_type,
+        resolved_school_type,
         school_id,
     )
 
@@ -195,6 +211,10 @@ async def update_academic_year(
                 term.startDate,
                 term.endDate,
             )
+
+        from app.lib.terms import sync_term_current_flags
+
+        await sync_term_current_flags(conn, school_id)
 
     return {"data": {"id": str(academic_year_id)}}
 

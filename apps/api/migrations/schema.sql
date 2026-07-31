@@ -839,6 +839,8 @@ CREATE TABLE public.schools (
   learner_id_prefix text,
   learner_id_suffix_length integer NOT NULL DEFAULT 6 CHECK (learner_id_suffix_length >= 4 AND learner_id_suffix_length <= 10),
   learner_id_mode text NOT NULL DEFAULT 'sequential'::text CHECK (learner_id_mode = ANY (ARRAY['sequential'::text, 'random'::text])),
+  phones ARRAY NOT NULL DEFAULT '{}'::text[],
+  emails ARRAY NOT NULL DEFAULT '{}'::text[],
   CONSTRAINT schools_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.submissions (
@@ -1125,11 +1127,16 @@ CREATE TABLE public.fee_structures (
   created_by uuid,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  locked_at timestamp with time zone,
+  locked_reason text,
+  deleted_at timestamp with time zone,
+  deleted_by uuid,
   CONSTRAINT fee_structures_pkey PRIMARY KEY (id),
   CONSTRAINT fee_structures_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
   CONSTRAINT fee_structures_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
   CONSTRAINT fee_structures_term_id_fkey FOREIGN KEY (term_id) REFERENCES public.terms(id),
-  CONSTRAINT fee_structures_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id)
+  CONSTRAINT fee_structures_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id),
+  CONSTRAINT fee_structures_deleted_by_fkey FOREIGN KEY (deleted_by) REFERENCES public.users(id)
 );
 CREATE TABLE public.student_fee_accounts (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -1527,6 +1534,7 @@ CREATE TABLE public.alevel_grades (
   entered_by uuid,
   entered_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  exam_id uuid NOT NULL,
   CONSTRAINT alevel_grades_pkey PRIMARY KEY (id),
   CONSTRAINT alevel_grades_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
   CONSTRAINT alevel_grades_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id),
@@ -1534,7 +1542,8 @@ CREATE TABLE public.alevel_grades (
   CONSTRAINT alevel_grades_term_id_fkey FOREIGN KEY (term_id) REFERENCES public.terms(id),
   CONSTRAINT alevel_grades_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id),
   CONSTRAINT alevel_grades_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
-  CONSTRAINT alevel_grades_entered_by_fkey FOREIGN KEY (entered_by) REFERENCES public.users(id)
+  CONSTRAINT alevel_grades_entered_by_fkey FOREIGN KEY (entered_by) REFERENCES public.users(id),
+  CONSTRAINT alevel_grades_exam_id_fkey FOREIGN KEY (exam_id) REFERENCES public.alevel_exams(id)
 );
 CREATE TABLE public.alevel_grade_bands (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -1552,21 +1561,6 @@ CREATE TABLE public.alevel_config (
   CONSTRAINT alevel_config_pkey PRIMARY KEY (school_id),
   CONSTRAINT alevel_config_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id)
 );
-CREATE TABLE public.alevel_term_locks (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  school_id uuid NOT NULL,
-  class_id uuid NOT NULL,
-  term_id uuid NOT NULL,
-  academic_year_id uuid NOT NULL,
-  locked_at timestamp with time zone NOT NULL DEFAULT now(),
-  locked_by uuid,
-  CONSTRAINT alevel_term_locks_pkey PRIMARY KEY (id),
-  CONSTRAINT alevel_term_locks_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id),
-  CONSTRAINT alevel_term_locks_locked_by_fkey FOREIGN KEY (locked_by) REFERENCES public.users(id),
-  CONSTRAINT alevel_term_locks_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
-  CONSTRAINT alevel_term_locks_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
-  CONSTRAINT alevel_term_locks_term_id_fkey FOREIGN KEY (term_id) REFERENCES public.terms(id)
-);
 CREATE TABLE public.alevel_report_metadata (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   school_id uuid NOT NULL,
@@ -1579,11 +1573,147 @@ CREATE TABLE public.alevel_report_metadata (
   approved_by uuid,
   approved_at timestamp with time zone,
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  exam_id uuid NOT NULL,
   CONSTRAINT alevel_report_metadata_pkey PRIMARY KEY (id),
   CONSTRAINT alevel_report_metadata_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
   CONSTRAINT alevel_report_metadata_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id),
   CONSTRAINT alevel_report_metadata_term_id_fkey FOREIGN KEY (term_id) REFERENCES public.terms(id),
   CONSTRAINT alevel_report_metadata_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id),
   CONSTRAINT alevel_report_metadata_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
-  CONSTRAINT alevel_report_metadata_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.users(id)
+  CONSTRAINT alevel_report_metadata_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.users(id),
+  CONSTRAINT alevel_report_metadata_exam_id_fkey FOREIGN KEY (exam_id) REFERENCES public.alevel_exams(id)
+);
+CREATE TABLE public.alevel_exam_types (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL,
+  name text NOT NULL,
+  code text NOT NULL,
+  sort_order smallint NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT alevel_exam_types_pkey PRIMARY KEY (id),
+  CONSTRAINT alevel_exam_types_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id)
+);
+CREATE TABLE public.alevel_exams (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL,
+  class_id uuid NOT NULL,
+  term_id uuid NOT NULL,
+  academic_year_id uuid NOT NULL,
+  exam_type_id uuid NOT NULL,
+  name text NOT NULL,
+  status text NOT NULL DEFAULT 'draft'::text CHECK (status = ANY (ARRAY['draft'::text, 'open'::text, 'closed'::text])),
+  opened_at timestamp with time zone,
+  opened_by uuid,
+  closed_at timestamp with time zone,
+  closed_by uuid,
+  notes text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT alevel_exams_pkey PRIMARY KEY (id),
+  CONSTRAINT alevel_exams_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
+  CONSTRAINT alevel_exams_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
+  CONSTRAINT alevel_exams_term_id_fkey FOREIGN KEY (term_id) REFERENCES public.terms(id),
+  CONSTRAINT alevel_exams_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id),
+  CONSTRAINT alevel_exams_exam_type_id_fkey FOREIGN KEY (exam_type_id) REFERENCES public.alevel_exam_types(id),
+  CONSTRAINT alevel_exams_opened_by_fkey FOREIGN KEY (opened_by) REFERENCES public.users(id),
+  CONSTRAINT alevel_exams_closed_by_fkey FOREIGN KEY (closed_by) REFERENCES public.users(id)
+);
+CREATE TABLE public.alevel_mark_submissions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL,
+  exam_id uuid NOT NULL,
+  teacher_id uuid NOT NULL,
+  submitted_at timestamp with time zone NOT NULL DEFAULT now(),
+  unlocked_at timestamp with time zone,
+  unlocked_by uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT alevel_mark_submissions_pkey PRIMARY KEY (id),
+  CONSTRAINT alevel_mark_submissions_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
+  CONSTRAINT alevel_mark_submissions_exam_id_fkey FOREIGN KEY (exam_id) REFERENCES public.alevel_exams(id),
+  CONSTRAINT alevel_mark_submissions_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES public.users(id),
+  CONSTRAINT alevel_mark_submissions_unlocked_by_fkey FOREIGN KEY (unlocked_by) REFERENCES public.users(id)
+);
+CREATE TABLE public.fee_structure_items (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL,
+  fee_structure_id uuid NOT NULL,
+  account_id uuid,
+  description text NOT NULL,
+  amount bigint NOT NULL CHECK (amount > 0),
+  sort_order integer NOT NULL DEFAULT 0,
+  is_optional boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT fee_structure_items_pkey PRIMARY KEY (id),
+  CONSTRAINT fee_structure_items_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
+  CONSTRAINT fee_structure_items_fee_structure_id_fkey FOREIGN KEY (fee_structure_id) REFERENCES public.fee_structures(id),
+  CONSTRAINT fee_structure_items_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id)
+);
+CREATE TABLE public.fee_payment_allocations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL,
+  payment_id uuid NOT NULL,
+  invoice_id uuid NOT NULL,
+  invoice_item_id uuid NOT NULL,
+  amount bigint NOT NULL CHECK (amount > 0),
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT fee_payment_allocations_pkey PRIMARY KEY (id),
+  CONSTRAINT fee_payment_allocations_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
+  CONSTRAINT fee_payment_allocations_payment_id_fkey FOREIGN KEY (payment_id) REFERENCES public.fee_payments(id),
+  CONSTRAINT fee_payment_allocations_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id),
+  CONSTRAINT fee_payment_allocations_invoice_item_id_fkey FOREIGN KEY (invoice_item_id) REFERENCES public.invoice_items(id)
+);
+CREATE TABLE public.continuous_assessments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL,
+  class_id uuid NOT NULL,
+  subject_id uuid NOT NULL,
+  teacher_id uuid NOT NULL,
+  term_id uuid NOT NULL,
+  title text NOT NULL,
+  assessment_type text NOT NULL CHECK (assessment_type = ANY (ARRAY['assignment'::text, 'project'::text, 'group_work'::text, 'practical'::text, 'participation'::text, 'presentation'::text, 'test'::text])),
+  assessment_date date NOT NULL,
+  max_score numeric NOT NULL CHECK (max_score > 0::numeric),
+  status text NOT NULL DEFAULT 'draft'::text CHECK (status = ANY (ARRAY['draft'::text, 'submitted'::text])),
+  submitted_at timestamp with time zone,
+  submitted_by uuid,
+  unlocked_at timestamp with time zone,
+  unlocked_by uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT continuous_assessments_pkey PRIMARY KEY (id),
+  CONSTRAINT continuous_assessments_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
+  CONSTRAINT continuous_assessments_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
+  CONSTRAINT continuous_assessments_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES public.school_subjects(id),
+  CONSTRAINT continuous_assessments_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES public.users(id),
+  CONSTRAINT continuous_assessments_term_id_fkey FOREIGN KEY (term_id) REFERENCES public.terms(id),
+  CONSTRAINT continuous_assessments_submitted_by_fkey FOREIGN KEY (submitted_by) REFERENCES public.users(id),
+  CONSTRAINT continuous_assessments_unlocked_by_fkey FOREIGN KEY (unlocked_by) REFERENCES public.users(id)
+);
+CREATE TABLE public.assessment_scores (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  assessment_id uuid NOT NULL,
+  student_id uuid NOT NULL,
+  score numeric NOT NULL CHECK (score >= 0::numeric),
+  remarks text,
+  entered_by uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT assessment_scores_pkey PRIMARY KEY (id),
+  CONSTRAINT assessment_scores_assessment_id_fkey FOREIGN KEY (assessment_id) REFERENCES public.continuous_assessments(id),
+  CONSTRAINT assessment_scores_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id),
+  CONSTRAINT assessment_scores_entered_by_fkey FOREIGN KEY (entered_by) REFERENCES public.users(id)
+);
+CREATE TABLE public.cbc_learning_areas (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  school_id uuid NOT NULL,
+  school_subject_id uuid NOT NULL,
+  code text NOT NULL,
+  is_core boolean NOT NULL DEFAULT true,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT cbc_learning_areas_pkey PRIMARY KEY (id),
+  CONSTRAINT cbc_learning_areas_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
+  CONSTRAINT cbc_learning_areas_school_subject_id_fkey FOREIGN KEY (school_subject_id) REFERENCES public.school_subjects(id)
 );

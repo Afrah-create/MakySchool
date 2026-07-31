@@ -136,6 +136,9 @@ async def list_current_year_terms(
 ):
     """Terms for the current academic year — available to staff and learners."""
     school_id, _actor = ctx
+    from app.lib.terms import sync_term_current_flags, term_is_current_by_dates
+
+    await sync_term_current_flags(conn, school_id)
     year = await conn.fetchrow(
         """
         SELECT id FROM academic_years
@@ -164,7 +167,8 @@ async def list_current_year_terms(
                 "name": r["name"],
                 "startDate": r["start_date"].isoformat() if r["start_date"] else None,
                 "endDate": r["end_date"].isoformat() if r["end_date"] else None,
-                "isCurrent": bool(r["is_current"]),
+                "isCurrent": term_is_current_by_dates(r["start_date"], r["end_date"])
+                or bool(r["is_current"]),
             }
             for r in rows
         ]

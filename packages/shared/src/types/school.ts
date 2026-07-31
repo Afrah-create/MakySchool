@@ -10,6 +10,8 @@ export interface SchoolRecord {
   stamp_url: string | null;
   email: string | null;
   phone: string | null;
+  emails?: string[];
+  phones?: string[];
   address: string | null;
   school_type: SchoolType | null;
   status: SchoolStatus;

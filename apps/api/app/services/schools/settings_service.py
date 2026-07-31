@@ -16,7 +16,7 @@ async def fetch_school_settings(
 ) -> dict[str, Any]:
     school = await conn.fetchrow(
         """
-        SELECT id, slug, name, logo_url, stamp_url, email, phone, address, school_type,
+        SELECT id, slug, name, logo_url, stamp_url, email, phone, emails, phones, address, school_type,
                status, learner_id_prefix, learner_id_suffix_length, learner_id_mode,
                setup_completed_at, created_at
         FROM schools WHERE id = $1 LIMIT 1
@@ -25,6 +25,10 @@ async def fetch_school_settings(
     )
     if not school:
         raise ValueError("School not found")
+
+    from app.lib.terms import sync_term_current_flags, term_is_current_by_dates
+
+    await sync_term_current_flags(conn, school_id)
 
     year_row = await conn.fetchrow(
         """
@@ -63,6 +67,15 @@ async def fetch_school_settings(
     school_payload = jsonable_encoder(dict(school))
     if isinstance(school_payload, dict):
         school_payload = await enrich_school_media(school_payload, school_id)
+        # Ensure arrays always present for the client.
+        emails = list(school_payload.get("emails") or [])
+        phones = list(school_payload.get("phones") or [])
+        if not emails and school_payload.get("email"):
+            emails = [school_payload["email"]]
+        if not phones and school_payload.get("phone"):
+            phones = [school_payload["phone"]]
+        school_payload["emails"] = emails
+        school_payload["phones"] = phones
 
     return {
         "profile": school_payload,
@@ -75,7 +88,10 @@ async def fetch_school_settings(
                     "name": term["name"],
                     "startDate": term["start_date"].isoformat() if term["start_date"] else None,
                     "endDate": term["end_date"].isoformat() if term["end_date"] else None,
-                    "isCurrent": term["is_current"],
+                    "isCurrent": term_is_current_by_dates(
+                        term["start_date"], term["end_date"]
+                    )
+                    or bool(term["is_current"]),
                 }
                 for term in terms
             ],

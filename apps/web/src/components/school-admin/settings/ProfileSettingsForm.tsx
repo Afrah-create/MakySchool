@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { ImageIcon } from "lucide-react";
 import type { SchoolRecord, SchoolSettingsResponse } from "@makyschool/shared/types";
-import { ProfileStep } from "@/components/school-admin/setup/steps/ProfileStep";
+import {
+  ProfileStep,
+  type ProfileValue,
+} from "@/components/school-admin/setup/steps/ProfileStep";
 import {
   SettingsFormFooter,
   SettingsSection,
@@ -23,6 +26,22 @@ function MediaPreviewCard({ label, src, alt }: { label: string; src: string; alt
   );
 }
 
+function contactsFromProfile(profile: SchoolRecord): Pick<ProfileValue, "emails" | "phones"> {
+  const emails =
+    profile.emails?.length
+      ? profile.emails
+      : profile.email
+        ? [profile.email]
+        : [""];
+  const phones =
+    profile.phones?.length
+      ? profile.phones
+      : profile.phone
+        ? [profile.phone]
+        : [""];
+  return { emails, phones };
+}
+
 export function ProfileSettingsForm({
   settings,
   onSaved,
@@ -32,12 +51,13 @@ export function ProfileSettingsForm({
 }) {
   const { toast } = useToast();
   const profile = settings.profile;
-  const [value, setValue] = useState({
+  const initialContacts = contactsFromProfile(profile);
+  const [value, setValue] = useState<ProfileValue>({
     name: profile.name ?? "",
-    logo: null as File | null,
-    stamp: null as File | null,
-    email: profile.email ?? "",
-    phone: profile.phone ?? "",
+    logo: null,
+    stamp: null,
+    emails: initialContacts.emails,
+    phones: initialContacts.phones,
     address: profile.address ?? "",
     schoolType: (profile.school_type ?? "primary") as string,
   });
@@ -81,12 +101,15 @@ export function ProfileSettingsForm({
     setSaving(true);
     setError(null);
 
+    const emails = value.emails.map((e) => e.trim()).filter(Boolean);
+    const phones = value.phones.map((p) => p.trim()).filter(Boolean);
+
     const formData = new FormData();
     formData.append("name", value.name.trim());
-    formData.append("email", value.email.trim());
-    formData.append("phone", value.phone.trim());
+    formData.append("emails", JSON.stringify(emails));
+    formData.append("phones", JSON.stringify(phones));
     formData.append("address", value.address.trim());
-    formData.append("school_type", value.schoolType);
+    // School type is locked post-setup — do not send changes.
     if (value.logo) formData.append("logo", value.logo);
     if (value.stamp) formData.append("stamp", value.stamp);
 
@@ -99,7 +122,21 @@ export function ProfileSettingsForm({
         logo: response.data.logo_url ?? mediaUrls.logo,
         stamp: response.data.stamp_url ?? mediaUrls.stamp,
       });
-      setValue((current) => ({ ...current, logo: null, stamp: null }));
+      setValue((current) => ({
+        ...current,
+        logo: null,
+        stamp: null,
+        emails: response.data.emails?.length
+          ? response.data.emails
+          : response.data.email
+            ? [response.data.email]
+            : [""],
+        phones: response.data.phones?.length
+          ? response.data.phones
+          : response.data.phone
+            ? [response.data.phone]
+            : [""],
+      }));
       toast.success("School profile saved.");
       onSaved();
     } catch (err) {
@@ -116,7 +153,7 @@ export function ProfileSettingsForm({
       <SettingsSection
         icon={ImageIcon}
         title="Branding & contact"
-        description="Logo, stamp, and school contact information."
+        description="Logo, stamp, and school contact information. You can add multiple emails and phone numbers."
       >
         {(logoPreview || stampPreview) && (
           <div className="mb-6 grid gap-4 sm:grid-cols-2">
@@ -124,7 +161,11 @@ export function ProfileSettingsForm({
             {stampPreview ? <MediaPreviewCard label="Stamp preview" src={stampPreview} alt="School stamp" /> : null}
           </div>
         )}
-        <ProfileStep value={value} onChange={(next) => setValue(next)} />
+        <ProfileStep
+          value={value}
+          onChange={(next) => setValue(next)}
+          lockSchoolType
+        />
       </SettingsSection>
 
       {error ? (

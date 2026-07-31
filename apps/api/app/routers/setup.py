@@ -63,7 +63,7 @@ async def get_setup_status(
 
     school = await conn.fetchrow(
         """
-        SELECT id, slug, name, logo_url, stamp_url, email, phone, address, school_type,
+        SELECT id, slug, name, logo_url, stamp_url, email, phone, emails, phones, address, school_type,
                status, subscription_status, subscription_term, subscription_year,
                schoolpay_code, setup_completed_at, created_at
         FROM schools WHERE id = $1
@@ -106,11 +106,15 @@ async def _save_profile(
     name: str | None,
     email: str | None,
     phone: str | None,
+    emails: str | None,
+    phones: str | None,
     address: str | None,
     school_type: str | None,
     logo: UploadFile | None,
     stamp: UploadFile | None,
 ):
+    from app.lib.school_contacts import contacts_from_form, primary_contact
+
     current = await conn.fetchrow(
         "SELECT logo_url, stamp_url FROM schools WHERE id = $1",
         school_id,
@@ -127,24 +131,33 @@ async def _save_profile(
         if current and current["stamp_url"]:
             await delete_stored_object(school_id, current["stamp_url"])
 
+    email_list = contacts_from_form(list_raw=emails, single=email)
+    phone_list = contacts_from_form(list_raw=phones, single=phone)
+
     row = await conn.fetchrow(
         """
         UPDATE schools
         SET name = COALESCE($1, name),
             logo_url = COALESCE($2, logo_url),
             stamp_url = COALESCE($3, stamp_url),
-            email = COALESCE($4, email),
-            phone = COALESCE($5, phone),
-            address = COALESCE($6, address),
-            school_type = COALESCE($7, school_type)
-        WHERE id = $8
+            email = CASE WHEN $4::boolean THEN $5 ELSE email END,
+            phone = CASE WHEN $6::boolean THEN $7 ELSE phone END,
+            emails = CASE WHEN $4::boolean THEN COALESCE($8::text[], '{}') ELSE emails END,
+            phones = CASE WHEN $6::boolean THEN COALESCE($9::text[], '{}') ELSE phones END,
+            address = COALESCE($10, address),
+            school_type = COALESCE($11, school_type)
+        WHERE id = $12
         RETURNING *
         """,
         name,
         logo_key,
         stamp_key,
-        email,
-        phone,
+        email_list is not None,
+        primary_contact(email_list),
+        phone_list is not None,
+        primary_contact(phone_list),
+        email_list,
+        phone_list,
         address,
         school_type,
         school_id,
@@ -162,6 +175,8 @@ async def post_profile(
     name: str | None = Form(None),
     email: str | None = Form(None),
     phone: str | None = Form(None),
+    emails: str | None = Form(None),
+    phones: str | None = Form(None),
     address: str | None = Form(None),
     school_type: str | None = Form(None),
     logo: UploadFile | None = File(None),
@@ -174,6 +189,8 @@ async def post_profile(
         name=name,
         email=email,
         phone=phone,
+        emails=emails,
+        phones=phones,
         address=address,
         school_type=school_type,
         logo=logo,
@@ -188,6 +205,8 @@ async def patch_profile(
     name: str | None = Form(None),
     email: str | None = Form(None),
     phone: str | None = Form(None),
+    emails: str | None = Form(None),
+    phones: str | None = Form(None),
     address: str | None = Form(None),
     school_type: str | None = Form(None),
     logo: UploadFile | None = File(None),
@@ -200,6 +219,8 @@ async def patch_profile(
         name=name,
         email=email,
         phone=phone,
+        emails=emails,
+        phones=phones,
         address=address,
         school_type=school_type,
         logo=logo,
@@ -253,6 +274,10 @@ async def create_academic_year(
                 term.startDate,
                 term.endDate,
             )
+
+        from app.lib.terms import sync_term_current_flags
+
+        await sync_term_current_flags(conn, school_id)
 
     return {"data": {"id": str(academic_year_id)}}
 
