@@ -167,6 +167,7 @@ async def student_result(
     *,
     student_id: uuid.UUID,
     term_id: uuid.UUID,
+    exam_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     student = await conn.fetchrow(
         """
@@ -257,25 +258,28 @@ async def student_result(
         ]
         return base
 
-    # Prefer the latest exam-scoped result set for this term.
-    latest_exam = await conn.fetchrow(
-        """
-        SELECT exam_id FROM primary_term_results
-        WHERE school_id = $1 AND student_id = $2 AND term_id = $3
-          AND exam_id IS NOT NULL
-        ORDER BY calculated_at DESC NULLS LAST
-        LIMIT 1
-        """,
-        school_id,
-        student_id,
-        term_id,
-    )
-    exam_id = latest_exam["exam_id"] if latest_exam else None
+    # Prefer an explicit exam, else the latest exam-scoped result for this term.
+    resolved_exam_id = exam_id
+    if resolved_exam_id is None:
+        latest_exam = await conn.fetchrow(
+            """
+            SELECT exam_id FROM primary_term_results
+            WHERE school_id = $1 AND student_id = $2 AND term_id = $3
+              AND exam_id IS NOT NULL
+            ORDER BY calculated_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            school_id,
+            student_id,
+            term_id,
+        )
+        resolved_exam_id = latest_exam["exam_id"] if latest_exam else None
+
     has_gp = await _has_column(conn, "primary_subject_results", "grade_points")
     gp_select = "sr.grade_points" if has_gp else "NULL::int AS grade_points"
     has_agg = await _has_column(conn, "primary_term_results", "aggregate")
 
-    if exam_id:
+    if resolved_exam_id:
         subject_rows = await conn.fetch(
             f"""
             SELECT
@@ -290,7 +294,7 @@ async def student_result(
             """,
             school_id,
             student_id,
-            exam_id,
+            resolved_exam_id,
         )
         term_row = await conn.fetchrow(
             """
@@ -302,7 +306,7 @@ async def student_result(
             """,
             school_id,
             student_id,
-            exam_id,
+            resolved_exam_id,
         )
     else:
         subject_rows = await conn.fetch(
@@ -333,7 +337,7 @@ async def student_result(
             term_id,
         )
 
-    base["examId"] = str(exam_id) if exam_id else None
+    base["examId"] = str(resolved_exam_id) if resolved_exam_id else None
     base["examName"] = term_row["exam_name"] if term_row and "exam_name" in term_row.keys() else None
     base["examTypeName"] = (
         term_row["exam_type_name"] if term_row and "exam_type_name" in term_row.keys() else None

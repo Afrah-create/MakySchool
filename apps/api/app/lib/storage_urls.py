@@ -76,6 +76,77 @@ async def resolve_storage_url(
         return None
 
 
+def _bytes_to_data_uri(data: bytes, content_type: str | None, *, hint: str | None = None) -> str | None:
+    if not data:
+        return None
+    mime = (content_type or "").split(";")[0].strip().lower()
+    if not mime or mime == "application/octet-stream":
+        guessed, _ = mimetypes.guess_type(hint or "")
+        mime = guessed or "image/jpeg"
+
+    # WeasyPrint WebP support is inconsistent — convert to PNG when possible.
+    if mime == "image/webp" or (hint or "").lower().endswith(".webp"):
+        try:
+            from io import BytesIO
+
+            from PIL import Image
+
+            img = Image.open(BytesIO(data))
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGBA")
+            buf = BytesIO()
+            img.save(buf, format="PNG")
+            data = buf.getvalue()
+            mime = "image/png"
+        except Exception:
+            logger.warning("WebP→PNG conversion failed hint=%s", hint, exc_info=True)
+
+    if mime not in {"image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"}:
+        mime = "image/jpeg"
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
+
+
+def _key_from_http_url(url: str, school_id: uuid.UUID) -> str | None:
+    """Best-effort extract of schools/{id}/... from a signed or public object URL."""
+    marker = f"schools/{school_id}/"
+    idx = url.find(marker)
+    if idx < 0:
+        # Some CDNs URL-encode the path.
+        marker_enc = f"schools%2F{school_id}%2F"
+        idx = url.find(marker_enc)
+        if idx < 0:
+            return None
+        rest = url[idx:].split("?", 1)[0]
+        from urllib.parse import unquote
+
+        return unquote(rest)
+    return url[idx:].split("?", 1)[0]
+
+
+async def _download_http_to_data_uri(url: str) -> str | None:
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            resp = await client.get(url)
+            if resp.status_code >= 400:
+                logger.warning(
+                    "Failed to embed http image status=%s url=%s",
+                    resp.status_code,
+                    url[:120],
+                )
+                return None
+            return _bytes_to_data_uri(
+                resp.content,
+                resp.headers.get("content-type"),
+                hint=url.split("?", 1)[0],
+            )
+    except Exception:
+        logger.warning("Failed to embed http image url=%s", url[:120], exc_info=True)
+        return None
+
+
 async def resolve_storage_data_uri(
     stored_value: str | None,
     *,
@@ -89,32 +160,33 @@ async def resolve_storage_data_uri(
     if value.startswith("data:"):
         return value
 
-    # Absolute http(s) URLs are not downloaded here — omit to avoid WeasyPrint fetches.
+    # Absolute http(s): prefer extracting the object key, else download the URL.
     if value.startswith("http://") or value.startswith("https://"):
-        return None
+        key_from_url = _key_from_http_url(value, school_id)
+        if key_from_url:
+            embedded = await resolve_storage_data_uri(key_from_url, school_id=school_id)
+            if embedded:
+                return embedded
+        return await _download_http_to_data_uri(value)
 
     key = _stored_value_to_key(value, school_id)
     if not key:
+        logger.warning("Cannot embed storage value (unrecognised key) value=%s", value[:120])
         return None
 
     storage = get_tenant_storage()
     try:
-        if not await storage.exists(school_id, key):
-            return None
         data, content_type = await storage.download_bytes(school_id, key)
     except (StorageNotFoundError, StorageError):
         logger.warning("Failed to embed storage object key=%s", key, exc_info=True)
-        return None
+        # Last resort: try a short-lived signed URL download.
+        try:
+            signed = await storage.presigned_download_url(school_id, key)
+            return await _download_http_to_data_uri(signed)
+        except Exception:
+            return None
 
-    if not data:
-        return None
-
-    mime = (content_type or "").split(";")[0].strip().lower()
-    if not mime or mime == "application/octet-stream":
-        guessed, _ = mimetypes.guess_type(key)
-        mime = guessed or "image/jpeg"
-    encoded = base64.b64encode(data).decode("ascii")
-    return f"data:{mime};base64,{encoded}"
+    return _bytes_to_data_uri(data, content_type, hint=key)
 
 
 async def enrich_school_media(record: dict, school_id: uuid.UUID) -> dict:

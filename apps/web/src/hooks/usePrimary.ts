@@ -54,12 +54,16 @@ export function usePrimarySubjects(classLevel?: string, enabled = true) {
   });
 }
 
+const EMPTY_ROSTER: Awaited<ReturnType<typeof primaryApi.roster>> = [];
+
 export function usePrimaryRoster(classId: string, enabled = true) {
   return useQuery({
     queryKey: primaryKeys.roster(classId),
     queryFn: () => primaryApi.roster(classId),
     enabled: enabled && !!classId,
     staleTime: 30_000,
+    // Stable empty list avoids `data ?? []` new-array identity loops in effects.
+    placeholderData: EMPTY_ROSTER,
   });
 }
 

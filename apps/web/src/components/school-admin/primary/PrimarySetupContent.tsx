@@ -173,8 +173,8 @@ export function PrimarySetupContent() {
               </div>
               <p className="text-xs text-theme-muted">
                 Each exam is graded on its own scores (no averaging across BOT/MID/EOT). CA is
-                continuous assessment stored separately — blend CA + EOT only when you generate an
-                end-of-term report that uses those weights.
+                continuous assessment entered separately — weights apply only if you later generate
+                an optional end-of-term combined report. Exam report cards never require CA.
               </p>
               <LoadingButton loading={saving} onClick={() => void saveWeights()}>
                 Save settings

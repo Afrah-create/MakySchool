@@ -23,10 +23,15 @@ type ResultPayload = {
     classId?: string | null;
   };
   termName?: string;
+  examName?: string | null;
+  examTypeName?: string | null;
   isLowerPrimary?: boolean;
   totals?: {
     averagePercent?: number | null;
     overallGrade?: string | null;
+    overallGradeLabel?: string | null;
+    aggregate?: number | null;
+    division?: string | null;
     classPosition?: number | null;
     totalStudents?: number | null;
   } | null;
@@ -37,11 +42,13 @@ type ResultPayload = {
   subjectResults?: Array<{
     subjectName: string;
     subjectCode: string;
-    caPercentage: number | null;
+    isPleSubject?: boolean;
+    examScore?: number | null;
     examPercentage: number | null;
     finalPercent: number | null;
     grade: string | null;
     gradeLabel: string | null;
+    gradePoints?: number | null;
   }>;
   classTeacherComment?: string | null;
   headTeacherComment?: string | null;
@@ -91,13 +98,17 @@ export function PrimaryStudentResultContent({ studentId }: { studentId: string }
     }
   }
 
+  const examLabel = [data?.examTypeName, data?.examName, data?.termName]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <DashboardPage
       embedded
       maxWidth="5xl"
       eyebrow="Primary"
       title={data?.student?.fullName || "Student result"}
-      description="Term report detail"
+      description="Exam report (scores for this sitting — CA is tracked separately)."
       actions={
         <div className="flex flex-wrap gap-2">
           <LoadingButton
@@ -128,12 +139,19 @@ export function PrimaryStudentResultContent({ studentId }: { studentId: string }
           <div className="rounded-xl border border-theme bg-theme-surface p-4 text-sm">
             <p className="font-medium text-theme-primary">{data.student?.fullName}</p>
             <p className="text-theme-muted">
-              {data.student?.learnerId || "—"} · {data.student?.className || "—"} ·{" "}
-              {data.termName || ""}
+              {data.student?.learnerId || "—"} · {data.student?.className || "—"}
+              {examLabel ? ` · ${examLabel}` : ""}
             </p>
             {data.totals ? (
               <p className="mt-2 text-theme-muted">
-                Avg {data.totals.averagePercent ?? "—"}% · {data.totals.overallGrade ?? "—"}
+                {data.totals.aggregate != null ? (
+                  <>
+                    Aggregate {data.totals.aggregate}
+                    {data.totals.division ? ` · Div ${data.totals.division}` : ""}
+                    {" · "}
+                  </>
+                ) : null}
+                Avg {data.totals.averagePercent ?? "—"}%
                 {data.totals.classPosition && data.totals.totalStudents
                   ? ` · Pos ${data.totals.classPosition}/${data.totals.totalStudents}`
                   : ""}
@@ -173,23 +191,30 @@ export function PrimaryStudentResultContent({ studentId }: { studentId: string }
                 <thead className="bg-theme-raised/50 text-[11px] uppercase text-theme-muted">
                   <tr>
                     <th className="px-3 py-2 text-left">Subject</th>
-                    <th className="px-3 py-2 text-left">CA %</th>
-                    <th className="px-3 py-2 text-left">Exam %</th>
-                    <th className="px-3 py-2 text-left">Final %</th>
+                    <th className="px-3 py-2 text-left">Score</th>
+                    <th className="px-3 py-2 text-left">%</th>
                     <th className="px-3 py-2 text-left">Grade</th>
+                    <th className="px-3 py-2 text-left">Pts</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-theme">
                   {(data.subjectResults ?? []).map((s) => (
                     <tr key={s.subjectCode}>
-                      <td className="px-3 py-2 font-medium">{s.subjectName}</td>
-                      <td className="px-3 py-2 tabular-nums">{s.caPercentage ?? "—"}</td>
-                      <td className="px-3 py-2 tabular-nums">{s.examPercentage ?? "—"}</td>
-                      <td className="px-3 py-2 tabular-nums">{s.finalPercent ?? "—"}</td>
+                      <td className="px-3 py-2 font-medium">
+                        {s.subjectName}
+                        {s.isPleSubject ? (
+                          <span className="ml-1 text-[10px] uppercase text-theme-muted">agg</span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 tabular-nums">{s.examScore ?? "—"}</td>
+                      <td className="px-3 py-2 tabular-nums">
+                        {s.finalPercent ?? s.examPercentage ?? "—"}
+                      </td>
                       <td className="px-3 py-2">
                         {s.grade ?? "—"}
                         {s.gradeLabel ? ` · ${s.gradeLabel}` : ""}
                       </td>
+                      <td className="px-3 py-2 tabular-nums">{s.gradePoints ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>

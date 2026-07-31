@@ -298,7 +298,12 @@ async def class_roster(
 ):
     school_id, actor = ctx
     try:
-        await _gate(conn, school_id, actor, "enterPrimaryMarks")
+        await assert_primary_enabled(conn, school_id)
+        role = (actor.get("role") or "").lower()
+        if role == "teacher":
+            require_primary_action(actor, "enterPrimaryMarks")
+        else:
+            require_primary_action(actor, "viewPrimaryResults")
         return {"data": await subjects_svc.list_class_roster(conn, school_id, class_id)}
     except Exception as exc:
         raise _http(exc) from exc
@@ -770,6 +775,7 @@ async def generate_primary_report_cards(
     class_id: uuid.UUID = Query(...),
     term_id: uuid.UUID = Query(...),
     student_id: uuid.UUID | None = Query(None),
+    exam_id: uuid.UUID | None = Query(None),
 ):
     """Generate primary PDF report card(s). Single PDF or ZIP for the class.
 
@@ -778,6 +784,7 @@ async def generate_primary_report_cards(
     """
     import asyncio
     import io
+    import logging
     import zipfile
 
     from app.db.pool import get_pool
@@ -785,6 +792,7 @@ async def generate_primary_report_cards(
     from app.lib.primary_pdf import generate_primary_report_pdf_bytes
     from app.lib.storage_urls import resolve_storage_data_uri
 
+    log = logging.getLogger(__name__)
     school_id, actor = ctx
     try:
         await _gate(conn, school_id, actor, "generatePrimaryReports")
@@ -814,35 +822,90 @@ async def generate_primary_report_cards(
         async def one(sid: uuid.UUID) -> tuple[str, bytes]:
             async with sem:
                 async with pool.acquire() as worker:
-                    data = await results_svc.student_result(
-                        worker, school_id, student_id=sid, term_id=term_id
-                    )
-                    data["schoolName"] = branding.get("schoolName")
-                    data["logoUrl"] = branding.get("logoUrl")
-                    data["stampUrl"] = branding.get("stampUrl")
-                    photo_key = (data.get("student") or {}).get("photoUrl")
-                    if photo_key:
-                        photo_uri = await resolve_storage_data_uri(
-                            photo_key, school_id=school_id
+                    try:
+                        data = await results_svc.student_result(
+                            worker,
+                            school_id,
+                            student_id=sid,
+                            term_id=term_id,
+                            exam_id=exam_id,
                         )
+                        data["schoolName"] = branding.get("schoolName")
+                        data["schoolAddress"] = branding.get("schoolAddress")
+                        data["schoolPhone"] = branding.get("schoolPhone")
+                        data["schoolEmail"] = branding.get("schoolEmail")
+
+                        # Only embed data URIs — WeasyPrint must not fetch remote URLs.
+                        logo = branding.get("logoUrl")
+                        stamp = branding.get("stampUrl")
+                        if logo and not str(logo).startswith("data:"):
+                            logo = await resolve_storage_data_uri(
+                                logo, school_id=school_id
+                            )
+                        if stamp and not str(stamp).startswith("data:"):
+                            stamp = await resolve_storage_data_uri(
+                                stamp, school_id=school_id
+                            )
+                        data["logoUrl"] = (
+                            logo if logo and str(logo).startswith("data:") else None
+                        )
+                        data["stampUrl"] = (
+                            stamp if stamp and str(stamp).startswith("data:") else None
+                        )
+
+                        photo_key = (data.get("student") or {}).get("photoUrl")
+                        photo_uri = None
+                        if photo_key:
+                            if str(photo_key).startswith("data:"):
+                                photo_uri = photo_key
+                            else:
+                                try:
+                                    photo_uri = await resolve_storage_data_uri(
+                                        photo_key, school_id=school_id
+                                    )
+                                except Exception:
+                                    log.exception(
+                                        "primary report photo embed failed student=%s",
+                                        sid,
+                                    )
+                                    photo_uri = None
+                            if not photo_uri:
+                                log.warning(
+                                    "primary report photo missing student=%s stored=%s",
+                                    sid,
+                                    str(photo_key)[:120],
+                                )
                         data["photoUrl"] = photo_uri
                         if data.get("student"):
                             data["student"]["photoUrl"] = photo_uri
-                    pdf = await generate_primary_report_pdf_bytes(data)
-                    await worker.execute(
-                        """
-                        UPDATE primary_term_results
-                        SET report_generated = true, calculated_at = NOW()
-                        WHERE school_id = $1 AND student_id = $2 AND term_id = $3
-                        """,
-                        school_id,
-                        sid,
-                        term_id,
-                    )
-                    learner = (data.get("student") or {}).get("learnerId") or str(sid)
-                    safe = str(learner).replace(" ", "_")
-                    name = f"{safe}-{str(sid)[:8]}-primary-report.pdf"
-                    return name, pdf
+
+                        pdf = await generate_primary_report_pdf_bytes(data)
+                        await worker.execute(
+                            """
+                            UPDATE primary_term_results
+                            SET report_generated = true, calculated_at = NOW()
+                            WHERE school_id = $1 AND student_id = $2 AND term_id = $3
+                            """,
+                            school_id,
+                            sid,
+                            term_id,
+                        )
+                        learner = (data.get("student") or {}).get("learnerId") or str(sid)
+                        safe = "".join(
+                            c if c.isalnum() or c in "-_" else "_" for c in str(learner)
+                        )
+                        name = f"{safe}-{str(sid)[:8]}-primary-report.pdf"
+                        return name, pdf
+                    except Exception as exc:
+                        log.exception(
+                            "primary report PDF failed student=%s class=%s term=%s",
+                            sid,
+                            class_id,
+                            term_id,
+                        )
+                        raise ValueError(
+                            f"Could not generate report for student {sid}: {exc}"
+                        ) from exc
 
         generated = await asyncio.gather(*[one(s) for s in targets])
 

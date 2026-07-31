@@ -14,6 +14,15 @@ import { primaryApi } from "@/lib/api/primary";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const PLE_GRADES: PleGrade[] = ["D1", "D2", "C3", "C4", "C5", "C6", "P7", "P8", "F9"];
+const EMPTY_ROSTER: Array<{ id: string; fullName: string; learnerId: string | null }> = [];
+
+type PleDraft = {
+  indexNumber: string;
+  english: PleGrade;
+  math: PleGrade;
+  science: PleGrade;
+  sst: PleGrade;
+};
 
 export function PrimaryPleContent() {
   const { school } = useSchool();
@@ -25,25 +34,15 @@ export function PrimaryPleContent() {
   const { data: classes = [] } = usePrimaryClasses(offers);
   const p7 = useMemo(() => classes.filter((c) => c.level === "P7"), [classes]);
   const [classId, setClassId] = useState("");
-  const [drafts, setDrafts] = useState<
-    Record<
-      string,
-      {
-        indexNumber: string;
-        english: PleGrade;
-        math: PleGrade;
-        science: PleGrade;
-        sst: PleGrade;
-      }
-    >
-  >({});
+  const [drafts, setDrafts] = useState<Record<string, PleDraft>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!classId && p7[0]) setClassId(p7[0].id);
   }, [p7, classId]);
 
-  const { data: roster = [] } = usePrimaryRoster(classId, offers && !!classId);
+  const { data: rosterData } = usePrimaryRoster(classId, offers && !!classId);
+  const roster = rosterData ?? EMPTY_ROSTER;
   const { data: pleRows = [], isPending } = useQuery({
     queryKey: primaryKeys.ple(yearId),
     queryFn: () => primaryApi.listPle(yearId),
@@ -63,20 +62,49 @@ export function PrimaryPleContent() {
     return m;
   }, [pleRows]);
 
+  const rosterKey = useMemo(() => roster.map((s) => s.id).join("|"), [roster]);
+  const pleKey = useMemo(
+    () =>
+      pleRows
+        .map(
+          (r) =>
+            `${r.studentId}:${r.indexNumber ?? ""}:${r.englishGrade}:${r.mathGrade}:${r.scienceGrade}:${r.sstGrade}`,
+        )
+        .join("|"),
+    [pleRows],
+  );
+
   useEffect(() => {
-    const next: typeof drafts = {};
-    for (const s of roster) {
-      const row = existing.get(s.id);
-      next[s.id] = {
-        indexNumber: row?.indexNumber ?? "",
-        english: (row?.englishGrade as PleGrade) || "C4",
-        math: (row?.mathGrade as PleGrade) || "C4",
-        science: (row?.scienceGrade as PleGrade) || "C4",
-        sst: (row?.sstGrade as PleGrade) || "C4",
-      };
-    }
-    setDrafts(next);
-  }, [roster, existing]);
+    setDrafts((prev) => {
+      const next: Record<string, PleDraft> = {};
+      let changed = Object.keys(prev).length !== roster.length;
+      for (const s of roster) {
+        const row = existing.get(s.id);
+        const draft: PleDraft = {
+          indexNumber: row?.indexNumber ?? "",
+          english: (row?.englishGrade as PleGrade) || "C4",
+          math: (row?.mathGrade as PleGrade) || "C4",
+          science: (row?.scienceGrade as PleGrade) || "C4",
+          sst: (row?.sstGrade as PleGrade) || "C4",
+        };
+        next[s.id] = draft;
+        const old = prev[s.id];
+        if (
+          !old ||
+          old.indexNumber !== draft.indexNumber ||
+          old.english !== draft.english ||
+          old.math !== draft.math ||
+          old.science !== draft.science ||
+          old.sst !== draft.sst
+        ) {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    // rosterKey / pleKey are stable fingerprints; avoid depending on new [] defaults.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rosterKey, pleKey]);
 
   if (!offers) {
     return (

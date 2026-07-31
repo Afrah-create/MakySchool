@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
@@ -12,6 +13,8 @@ from app.lib.alevel import compute_student_totals, grade_descriptor
 from app.lib.alevel_access import require_exam
 from app.lib.storage_urls import resolve_storage_data_uri, resolve_storage_url
 from app.lib.teacher_assignments import format_class_name
+
+logger = logging.getLogger(__name__)
 
 
 SUBJECT_COLUMNS = """
@@ -54,15 +57,37 @@ async def load_school_branding(
     for_pdf: bool = False,
 ) -> dict[str, Any]:
     school = await conn.fetchrow(
-        "SELECT name, logo_url, stamp_url FROM schools WHERE id = $1",
+        """
+        SELECT name, logo_url, stamp_url, address, phone, email
+        FROM schools WHERE id = $1
+        """,
         school_id,
     )
     if not school:
-        return {"schoolName": None, "logoUrl": None, "stampUrl": None}
+        return {
+            "schoolName": None,
+            "logoUrl": None,
+            "stampUrl": None,
+            "schoolAddress": None,
+            "schoolPhone": None,
+            "schoolEmail": None,
+        }
 
     if for_pdf:
         logo = await resolve_storage_data_uri(school["logo_url"], school_id=school_id)
         stamp = await resolve_storage_data_uri(school["stamp_url"], school_id=school_id)
+        if school["logo_url"] and not logo:
+            logger.warning(
+                "PDF logo embed failed school=%s stored=%s",
+                school_id,
+                str(school["logo_url"])[:120],
+            )
+        if school["stamp_url"] and not stamp:
+            logger.warning(
+                "PDF stamp embed failed school=%s stored=%s",
+                school_id,
+                str(school["stamp_url"])[:120],
+            )
     else:
         logo = await resolve_storage_url(
             school["logo_url"], school_id=school_id, require_exists=True
@@ -74,6 +99,9 @@ async def load_school_branding(
         "schoolName": school["name"],
         "logoUrl": logo,
         "stampUrl": stamp,
+        "schoolAddress": school["address"],
+        "schoolPhone": school["phone"],
+        "schoolEmail": school["email"],
     }
 
 
