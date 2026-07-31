@@ -138,7 +138,7 @@ export const primaryApi = {
     }).then((r) => r.data);
   },
 
-  listExams(params: {
+  listExamMarks(params: {
     classId: string;
     subjectId: string;
     termId: string;

@@ -67,7 +67,7 @@ export function PrimaryMarksContent() {
   const { data: existingExams } = useQuery({
     queryKey: primaryKeys.exams(examsKey),
     queryFn: () =>
-      primaryApi.listExams({
+      primaryApi.listExamMarks({
         classId,
         subjectId,
         termId: term!.id!,
