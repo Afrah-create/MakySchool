@@ -116,11 +116,15 @@ export async function apiClient<T>(
       fields?: Record<string, string>;
       failed?: Array<{ index: number; student_id: string; error: string }>;
       preview?: unknown;
+      distance_metres?: number;
+      allowed_metres?: number;
     };
     requestError.code = error.code;
     requestError.fields = error.fields;
     requestError.failed = (error as { failed?: typeof requestError.failed }).failed;
     requestError.preview = error.preview;
+    requestError.distance_metres = (error as { distance_metres?: number }).distance_metres;
+    requestError.allowed_metres = (error as { allowed_metres?: number }).allowed_metres;
     if (error.redirectUrl) {
       (requestError as Error & { redirectUrl?: string }).redirectUrl = error.redirectUrl;
     }

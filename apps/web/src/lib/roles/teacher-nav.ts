@@ -83,9 +83,17 @@ export const teacherNavGroups: PortalNavGroup[] = [
     icon: CalendarDays,
     items: [
       {
+        id: "teacher-my-attendance",
+        href: "/teacher/my-attendance",
+        label: "My check-in",
+        icon: Clock3,
+        exact: false,
+        roles: teacherRole,
+      },
+      {
         id: "teacher-attendance",
         href: "/teacher/attendance",
-        label: "Attendance",
+        label: "Class attendance",
         icon: CalendarDays,
         exact: false,
         roles: teacherRole,

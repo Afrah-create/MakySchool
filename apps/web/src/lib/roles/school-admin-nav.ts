@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   Library,
   ListOrdered,
+  MapPin,
   Receipt,
   Settings2,
   Shield,
@@ -75,6 +76,13 @@ const schoolAdminSettingsNavChildren: NavItem[] = [
   { href: "/dashboard/settings/academic", label: "Academic year", icon: CalendarDays, exact: false, requiredAction: "manageSchool" },
   { href: "/dashboard/settings/grading", label: "Grading scale", icon: ListOrdered, exact: false, requiredAction: "manageSchool" },
   { href: "/dashboard/settings/students", label: "Student IDs", icon: Hash, exact: false, requiredAction: "manageSchool" },
+  {
+    href: "/dashboard/settings/teacher-attendance",
+    label: "Teacher attendance",
+    icon: MapPin,
+    exact: false,
+    requiredAction: "manageAttendanceSettings",
+  },
   { href: "/dashboard/settings/accounts", label: "Chart of accounts", icon: Landmark, exact: false, requiredAction: "viewAccounts" },
 ];
 
@@ -167,6 +175,13 @@ export const schoolAdminNavGroups: NavGroup[] = [
         icon: ClipboardCheck,
         exact: true,
         requiredAction: "viewAllClasses",
+      },
+      {
+        href: "/dashboard/teacher-attendance",
+        label: "Teacher Attendance",
+        icon: MapPin,
+        exact: false,
+        requiredAction: "viewTeacherAttendance",
       },
       {
         href: "/dashboard/discipline",

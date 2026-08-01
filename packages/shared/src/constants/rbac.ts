@@ -49,6 +49,9 @@ export const CAN = {
   enterPrimaryMarks: ["teacher"],
   managePLEResults: ["admin", "head_teacher"],
   generatePrimaryReports: ["admin", "head_teacher"],
+  manageAttendanceSettings: ["admin"],
+  viewTeacherAttendance: ["admin", "head_teacher"],
+  manualMarkAttendance: ["admin", "head_teacher"],
 } as const satisfies Record<string, MakySchoolRole[]>;
 
 export type PermissionAction = keyof typeof CAN;

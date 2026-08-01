@@ -40,6 +40,9 @@ CAN: dict[str, list[str]] = {
     "enterPrimaryMarks": ["teacher"],
     "managePLEResults": ["admin", "head_teacher"],
     "generatePrimaryReports": ["admin", "head_teacher"],
+    "manageAttendanceSettings": ["admin"],
+    "viewTeacherAttendance": ["admin", "head_teacher"],
+    "manualMarkAttendance": ["admin", "head_teacher"],
 }
 
 

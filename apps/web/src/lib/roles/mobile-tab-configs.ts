@@ -29,6 +29,13 @@ export const teacherMobileTabs: MobileTab[] = [
     matchPrefixes: ["/teacher/classes"],
   },
   {
+    id: "check-in",
+    href: "/teacher/my-attendance",
+    label: "Check-in",
+    icon: CalendarDays,
+    matchPrefixes: ["/teacher/my-attendance", "/teacher/attendance"],
+  },
+  {
     id: "profile",
     href: "/teacher/profile",
     label: "Profile",
