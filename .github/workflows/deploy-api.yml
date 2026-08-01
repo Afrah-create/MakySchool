@@ -87,54 +87,84 @@ jobs:
             $COMPOSE_CMD down || true
             $COMPOSE_CMD up -d --build
 
-            # Caddy install
-            if ! command -v caddy &> /dev/null; then
-              apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
-              curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-              curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
-              apt-get update && apt-get install -y caddy
-            fi
-
-            # Firewall
-            if command -v ufw &> /dev/null; then
-              ufw allow 80/tcp || true
-              ufw allow 443/tcp || true
-            fi
-
-            # Caddy config
+            # ── Reverse proxy (shared VPS) ──────────────────────────────────
+            # Other APIs already own :443. We only drop a site fragment and soft-
+            # reload. Never start/unmask systemd caddy when :443 is busy.
             mkdir -p /etc/caddy/conf.d
-            echo 'school-api.makylegacy.com {' > /etc/caddy/conf.d/makyschool-api.caddy
-            echo '  reverse_proxy localhost:4000' >> /etc/caddy/conf.d/makyschool-api.caddy
-            echo '}' >> /etc/caddy/conf.d/makyschool-api.caddy
-            python3 -c "open('/etc/caddy/Caddyfile','w').write('{\n  email admin@makylegacy.com\n}\n\nimport /etc/caddy/conf.d/*.caddy\n')"
+            printf '%s\n' \
+              'school-api.makylegacy.com {' \
+              '  reverse_proxy localhost:4000' \
+              '}' \
+              > /etc/caddy/conf.d/makyschool-api.caddy
+            echo "Wrote /etc/caddy/conf.d/makyschool-api.caddy"
 
-            caddy validate --config /etc/caddy/Caddyfile
+            port_443_busy=false
+            if command -v ss >/dev/null 2>&1 && ss -tln | grep -qE ':443\b'; then
+              port_443_busy=true
+            elif command -v netstat >/dev/null 2>&1 && netstat -tln | grep -qE ':443\b'; then
+              port_443_busy=true
+            fi
 
-            # Unit may be masked on the VPS (manual disable / prior install). Unmask before enable.
-            if systemctl is-enabled caddy 2>&1 | grep -qi masked; then
-              echo "Caddy unit is masked — unmasking"
-              systemctl unmask caddy
-            fi
-            systemctl daemon-reload || true
-            systemctl enable caddy || true
-            if ! systemctl reload caddy; then
-              systemctl restart caddy
-            fi
-            sleep 3
-            if systemctl is-active --quiet caddy; then
-              echo "Caddy running"
+            if [ "$port_443_busy" = true ]; then
+              echo "Port 443 already in use — will not start a second Caddy"
+
+              # Append conf.d import only; never overwrite the shared Caddyfile.
+              if [ -f /etc/caddy/Caddyfile ] && ! grep -qE 'conf\.d/\*\.caddy' /etc/caddy/Caddyfile; then
+                printf '\n# MakySchool API\nimport /etc/caddy/conf.d/*.caddy\n' >> /etc/caddy/Caddyfile
+                echo "Appended conf.d import to existing Caddyfile"
+              fi
+
+              # Soft reload via admin API — does not re-bind :443.
+              if command -v caddy >/dev/null 2>&1 \
+                && [ -f /etc/caddy/Caddyfile ] \
+                && caddy validate --config /etc/caddy/Caddyfile \
+                && caddy reload --config /etc/caddy/Caddyfile; then
+                echo "Existing Caddy reloaded with MakySchool site"
+              else
+                echo "WARNING: automatic reload failed or skipped."
+                echo "Site fragment is at /etc/caddy/conf.d/makyschool-api.caddy"
+                echo "Reload the process that owns :443 manually."
+                echo "Do NOT run: systemctl start caddy"
+                ss -tlnp 2>/dev/null | grep -E ':443\b' || true
+              fi
+
+              # Keep systemd unit from fighting for :443 (other API's proxy).
+              systemctl stop caddy 2>/dev/null || true
+              systemctl mask caddy 2>/dev/null || true
+              echo "systemd caddy.service left masked"
             else
-              journalctl -u caddy --no-pager -n 30 || true
-              # Last-resort: start without relying on enable state
-              systemctl start caddy || true
-              sleep 2
-              systemctl is-active --quiet caddy && echo "Caddy running after start" || {
+              echo "Port 443 free — configuring systemd caddy for this host only"
+              if ! command -v caddy >/dev/null 2>&1; then
+                apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+                curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+                curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+                apt-get update && apt-get install -y caddy
+              fi
+              if command -v ufw >/dev/null 2>&1; then
+                ufw allow 80/tcp || true
+                ufw allow 443/tcp || true
+              fi
+              if [ ! -f /etc/caddy/Caddyfile ]; then
+                printf '%s\n' '{' '  email admin@makylegacy.com' '}' '' 'import /etc/caddy/conf.d/*.caddy' > /etc/caddy/Caddyfile
+              elif ! grep -qE 'conf\.d/\*\.caddy' /etc/caddy/Caddyfile; then
+                printf '\nimport /etc/caddy/conf.d/*.caddy\n' >> /etc/caddy/Caddyfile
+              fi
+              caddy validate --config /etc/caddy/Caddyfile
+              if systemctl is-enabled caddy 2>&1 | grep -qi masked; then
+                systemctl unmask caddy
+              fi
+              systemctl daemon-reload || true
+              systemctl enable caddy || true
+              systemctl reload caddy 2>/dev/null || systemctl restart caddy || systemctl start caddy
+              sleep 3
+              systemctl is-active --quiet caddy || {
                 journalctl -u caddy --no-pager -n 50
                 exit 1
               }
+              echo "Caddy running"
             fi
 
-            # Health check
+            # Health check (API container — independent of proxy)
             sleep 10
             if docker ps | grep -q makyschool-api; then
               echo "Container is running"
@@ -146,5 +176,4 @@ jobs:
               exit 1
             fi
 
-            # Show startup logs regardless
             docker logs makyschool-api --tail=40
