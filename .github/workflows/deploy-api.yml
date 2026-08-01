@@ -109,10 +109,30 @@ jobs:
             python3 -c "open('/etc/caddy/Caddyfile','w').write('{\n  email admin@makylegacy.com\n}\n\nimport /etc/caddy/conf.d/*.caddy\n')"
 
             caddy validate --config /etc/caddy/Caddyfile
-            systemctl enable caddy
-            systemctl reload caddy || systemctl restart caddy
+
+            # Unit may be masked on the VPS (manual disable / prior install). Unmask before enable.
+            if systemctl is-enabled caddy 2>&1 | grep -qi masked; then
+              echo "Caddy unit is masked — unmasking"
+              systemctl unmask caddy
+            fi
+            systemctl daemon-reload || true
+            systemctl enable caddy || true
+            if ! systemctl reload caddy; then
+              systemctl restart caddy
+            fi
             sleep 3
-            systemctl is-active --quiet caddy && echo "Caddy running" || { journalctl -u caddy --no-pager -n 30; exit 1; }
+            if systemctl is-active --quiet caddy; then
+              echo "Caddy running"
+            else
+              journalctl -u caddy --no-pager -n 30 || true
+              # Last-resort: start without relying on enable state
+              systemctl start caddy || true
+              sleep 2
+              systemctl is-active --quiet caddy && echo "Caddy running after start" || {
+                journalctl -u caddy --no-pager -n 50
+                exit 1
+              }
+            fi
 
             # Health check
             sleep 10

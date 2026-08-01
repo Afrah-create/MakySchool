@@ -5,8 +5,11 @@ Guides for features implemented in MakySchool. Prefer these over chat transcript
 | Doc | Covers |
 |-----|--------|
 | [Attendance](./attendance.md) | Period registers, lock-after-submit, parent notify, admin overview |
+| [Teacher attendance](./teacher-attendance.md) | GPS clock-in/out, geofencing, admin map, manual mark |
 | [A-Level](./alevel.md) | Traditional UACE setup, enrollments, grading, results |
 | [MakyReach SMS](./makyreach.md) | Central SMS client, env vars, call-site pattern |
+| [Primary](./primary-implemented.md) | Primary exams, marks, reports |
+| [Teaching plans & resources](./Teaching-plans-resources-implemented.md) | Plan uploads, subject resources |
 
 ## Related docs elsewhere
 
