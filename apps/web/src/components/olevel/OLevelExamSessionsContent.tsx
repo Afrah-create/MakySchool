@@ -7,31 +7,38 @@ import { LoadingButton } from "@makyschool/ui/components/ui/LoadingButton";
 import { StatusBanner } from "@makyschool/ui/components/ui/StatusBanner";
 import { TablePagination } from "@makyschool/ui/components/ui/TablePagination";
 import { PAGE_SIZE_OPTIONS } from "@makyschool/shared/constants";
+import type { OLevelExamSession } from "@makyschool/shared";
 import { olevelApi } from "@/lib/api/olevel";
 import { defaultClassAndYear } from "@/lib/olevel/registration";
 import { useClientPagination } from "@/hooks/useClientPagination";
 import {
+  useHardDeleteOLevelExamSession,
   useOLevelClasses,
   useOLevelCurriculum,
   useOLevelExamSessions,
   useOLevelSubmissions,
   useOLevelTerms,
+  useRestoreOLevelExamSession,
+  useSoftDeleteOLevelExamSession,
 } from "@/hooks/useOLevel";
 import { useToast } from "@/providers/ToastProvider";
 
 type Banner = { tone: "success" | "error" | "info"; message: string };
-type SessionAction = { id: string; kind: "open" | "close" };
+type SessionAction =
+  | { id: string; kind: "open" | "close" }
+  | { session: OLevelExamSession; kind: "soft-delete" | "hard-delete" | "restore" };
 
 export function OLevelExamSessionsContent() {
   const { toast } = useToast();
   const { data: curriculum, isPending: curriculumPending } = useOLevelCurriculum();
-  const { data: classes = [] } = useOLevelClasses();
-  const { data: terms = [] } = useOLevelTerms();
+  const { data: classes = [], isSuccess: classesReady } = useOLevelClasses();
+  const { data: terms = [], isSuccess: termsReady } = useOLevelTerms();
   const defaults = useMemo(() => defaultClassAndYear(classes, terms), [classes, terms]);
 
   const [filterClassId, setFilterClassId] = useState("");
   const [filterTermId, setFilterTermId] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [includeDeleted, setIncludeDeleted] = useState(false);
   const [defaultsApplied, setDefaultsApplied] = useState(false);
 
   const [formClassId, setFormClassId] = useState("");
@@ -46,15 +53,19 @@ export function OLevelExamSessionsContent() {
   const [confirm, setConfirm] = useState<SessionAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
 
+  const softDelete = useSoftDeleteOLevelExamSession();
+  const hardDelete = useHardDeleteOLevelExamSession();
+  const restoreSession = useRestoreOLevelExamSession();
+
   useEffect(() => {
     if (defaultsApplied) return;
-    if (!defaults.classId && !defaults.termId) return;
+    if (!classesReady || !termsReady) return;
     setFilterClassId(defaults.classId);
     setFilterTermId(defaults.termId);
     setFormClassId(defaults.classId);
     setFormTermId(defaults.termId);
     setDefaultsApplied(true);
-  }, [defaults, defaultsApplied]);
+  }, [defaults, defaultsApplied, classesReady, termsReady]);
 
   const categories = curriculum?.assessmentCategories ?? [];
   useEffect(() => {
@@ -69,6 +80,15 @@ export function OLevelExamSessionsContent() {
   const formClass = classes.find((c) => c.id === formClassId);
 
   useEffect(() => {
+    if (!formCategory) return;
+    // Suggest paper total from curriculum weight (CA 20 / Exam 80).
+    const w = Number(formCategory.weightPercent);
+    if (Number.isFinite(w) && w > 0) {
+      setFormMaxMarks(String(Math.round(w)));
+    }
+  }, [formCategoryId, formCategory]);
+
+  useEffect(() => {
     if (!formTitle.trim() && formCategory && formTerm && formClass) {
       setFormTitle(`${formCategory.name} · ${formClass.name} · ${formTerm.name}`);
     }
@@ -80,12 +100,13 @@ export function OLevelExamSessionsContent() {
     classId: filterClassId || undefined,
     termId: filterTermId || undefined,
     status: filterStatus || undefined,
+    includeDeleted,
   });
   const { data: submissions = [] } = useOLevelSubmissions(selected || undefined);
 
   const { paged, page, setPage, pageSize, setPageSize, total } = useClientPagination({
     items: sessions,
-    resetDeps: [filterClassId, filterTermId, filterStatus],
+    resetDeps: [filterClassId, filterTermId, filterStatus, includeDeleted],
   });
 
   function showBanner(tone: Banner["tone"], message: string) {
@@ -168,21 +189,71 @@ export function OLevelExamSessionsContent() {
       if (confirm.kind === "open") {
         await olevelApi.openExamSession(confirm.id);
         showBanner("success", "Exam session opened. Teachers can enter marks.");
-      } else {
+      } else if (confirm.kind === "close") {
         await olevelApi.closeExamSession(confirm.id);
         showBanner("success", "Exam session closed.");
+      } else if (confirm.kind === "soft-delete") {
+        await softDelete.mutateAsync(confirm.session.id);
+        showBanner("success", `${confirm.session.title} moved to deleted.`);
+        if (selected === confirm.session.id) setSelected("");
+      } else if (confirm.kind === "hard-delete") {
+        await hardDelete.mutateAsync(confirm.session.id);
+        showBanner("success", `${confirm.session.title} permanently deleted.`);
+        if (selected === confirm.session.id) setSelected("");
+      } else if (confirm.kind === "restore") {
+        await restoreSession.mutateAsync(confirm.session.id);
+        showBanner("success", `${confirm.session.title} restored.`);
       }
       setConfirm(null);
       await refetch();
     } catch (err) {
       showBanner(
         "error",
-        err instanceof Error ? err.message : `Could not ${confirm.kind} session.`,
+        err instanceof Error ? err.message : "Could not complete that action.",
       );
     } finally {
       setActionBusy(false);
     }
   }
+
+  const confirmMeta = useMemo(() => {
+    if (!confirm) return { title: "", description: "", label: "Confirm" };
+    if (confirm.kind === "open") {
+      return {
+        title: "Open exam session?",
+        description:
+          "Teachers assigned to subjects in this class will be able to enter marks.",
+        label: "Open session",
+      };
+    }
+    if (confirm.kind === "close") {
+      return {
+        title: "Close exam session?",
+        description:
+          "Teachers will no longer be able to enter marks. All subject submissions must be submitted first.",
+        label: "Close session",
+      };
+    }
+    if (confirm.kind === "restore") {
+      return {
+        title: "Restore exam session?",
+        description: `${confirm.session.title} will become active again and appear in grading selection.`,
+        label: "Restore",
+      };
+    }
+    if (confirm.kind === "hard-delete") {
+      return {
+        title: "Permanently delete session?",
+        description: `${confirm.session.title} has no marks and will be removed forever. This cannot be undone.`,
+        label: "Delete permanently",
+      };
+    }
+    return {
+      title: "Delete exam session?",
+      description: `${confirm.session.title} will be soft-deleted and hidden from teachers. Marks are kept and you can restore it later.`,
+      label: "Move to deleted",
+    };
+  }, [confirm]);
 
   const canCreate =
     !!curriculum && !!formClassId && !!formTermId && !!formCategoryId && !!formTitle.trim();
@@ -193,7 +264,7 @@ export function OLevelExamSessionsContent() {
       maxWidth="7xl"
       eyebrow="O-Level"
       title="Exam sessions"
-      description="Create assessment sessions (CA / end-of-term), then open them for teachers to enter marks."
+      description="Create assessment sessions (multiple CAs allowed per class/term), then open them for teachers to enter marks. On Results, choose which CAs average into the 20% continuous assessment."
     >
       <div className="space-y-5">
         {banner ? (
@@ -321,7 +392,7 @@ export function OLevelExamSessionsContent() {
             <h2 className="font-semibold text-theme-primary">
               Sessions{isFetching ? " · refreshing…" : ""}
             </h2>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <select
                 className="ms-input"
                 value={filterClassId}
@@ -345,6 +416,7 @@ export function OLevelExamSessionsContent() {
                 {terms.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name} · {t.academicYearName}
+                    {t.isCurrent ? " (current)" : ""}
                   </option>
                 ))}
               </select>
@@ -359,6 +431,14 @@ export function OLevelExamSessionsContent() {
                 <option value="open">open</option>
                 <option value="closed">closed</option>
               </select>
+              <label className="flex items-center gap-2 text-sm text-theme-muted">
+                <input
+                  type="checkbox"
+                  checked={includeDeleted}
+                  onChange={(e) => setIncludeDeleted(e.target.checked)}
+                />
+                Show deleted
+              </label>
             </div>
           </div>
 
@@ -381,48 +461,100 @@ export function OLevelExamSessionsContent() {
                     </td>
                   </tr>
                 ) : (
-                  paged.map((s) => (
-                    <tr key={s.id} className="border-t border-theme">
-                      <td className="p-3">
-                        <div className="font-medium text-theme-primary">{s.title}</div>
-                        <div className="text-xs text-theme-muted">
-                          {s.categoryName} · max {s.maxMarks}
-                        </div>
-                      </td>
-                      <td className="p-3">{s.className}</td>
-                      <td className="p-3">{s.termName}</td>
-                      <td className="p-3">
-                        <StatusPill status={s.status} />
-                      </td>
-                      <td className="p-3 text-right space-x-2 whitespace-nowrap">
-                        <button
-                          type="button"
-                          className="text-sm text-theme-accent"
-                          onClick={() => setSelected(selected === s.id ? "" : s.id)}
-                        >
-                          {selected === s.id ? "Hide submissions" : "Submissions"}
-                        </button>
-                        {s.status === "draft" || s.status === "closed" ? (
-                          <button
-                            type="button"
-                            className="rounded-lg bg-theme-accent px-2.5 py-1 text-sm text-white"
-                            onClick={() => setConfirm({ id: s.id, kind: "open" })}
-                          >
-                            Open
-                          </button>
-                        ) : null}
-                        {s.status === "open" ? (
-                          <button
-                            type="button"
-                            className="rounded-lg bg-theme-raised px-2.5 py-1 text-sm"
-                            onClick={() => setConfirm({ id: s.id, kind: "close" })}
-                          >
-                            Close
-                          </button>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))
+                  paged.map((s) => {
+                    const deleted = !!s.deleted;
+                    return (
+                      <tr
+                        key={s.id}
+                        className={`border-t border-theme ${deleted ? "opacity-70" : ""}`}
+                      >
+                        <td className="p-3">
+                          <div className="font-medium text-theme-primary">{s.title}</div>
+                          <div className="text-xs text-theme-muted">
+                            {s.categoryName} · max {s.maxMarks}
+                            {deleted ? " · deleted" : ""}
+                          </div>
+                        </td>
+                        <td className="p-3">{s.className}</td>
+                        <td className="p-3">{s.termName}</td>
+                        <td className="p-3">
+                          {deleted ? (
+                            <span className="rounded-full bg-theme-raised px-2.5 py-1 text-xs text-theme-muted">
+                              Deleted
+                            </span>
+                          ) : (
+                            <StatusPill status={s.status} />
+                          )}
+                        </td>
+                        <td className="p-3 text-right space-x-2 whitespace-nowrap">
+                          {!deleted ? (
+                            <>
+                              <button
+                                type="button"
+                                className="text-sm text-theme-accent"
+                                onClick={() => setSelected(selected === s.id ? "" : s.id)}
+                              >
+                                {selected === s.id ? "Hide submissions" : "Submissions"}
+                              </button>
+                              {s.status === "draft" || s.status === "closed" ? (
+                                <button
+                                  type="button"
+                                  className="rounded-lg bg-theme-accent px-2.5 py-1 text-sm text-white"
+                                  onClick={() => setConfirm({ id: s.id, kind: "open" })}
+                                >
+                                  Open
+                                </button>
+                              ) : null}
+                              {s.status === "open" ? (
+                                <button
+                                  type="button"
+                                  className="rounded-lg bg-theme-raised px-2.5 py-1 text-sm"
+                                  onClick={() => setConfirm({ id: s.id, kind: "close" })}
+                                >
+                                  Close
+                                </button>
+                              ) : null}
+                              {s.status !== "open" ? (
+                                <button
+                                  type="button"
+                                  className="text-sm text-red-600 dark:text-red-400"
+                                  onClick={() =>
+                                    setConfirm({
+                                      session: s,
+                                      kind: s.hasMarks ? "soft-delete" : "hard-delete",
+                                    })
+                                  }
+                                >
+                                  Delete
+                                </button>
+                              ) : null}
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="text-sm text-theme-accent"
+                                onClick={() => setConfirm({ session: s, kind: "restore" })}
+                              >
+                                Restore
+                              </button>
+                              {!s.hasMarks ? (
+                                <button
+                                  type="button"
+                                  className="text-sm text-red-600 dark:text-red-400"
+                                  onClick={() =>
+                                    setConfirm({ session: s, kind: "hard-delete" })
+                                  }
+                                >
+                                  Delete forever
+                                </button>
+                              ) : null}
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -500,13 +632,14 @@ export function OLevelExamSessionsContent() {
 
       <ConfirmDialog
         open={!!confirm}
-        title={confirm?.kind === "open" ? "Open exam session?" : "Close exam session?"}
-        description={
-          confirm?.kind === "open"
-            ? "Teachers assigned to subjects in this class will be able to enter marks."
-            : "Teachers will no longer be able to enter marks. All subject submissions must be submitted first."
+        title={confirmMeta.title}
+        description={confirmMeta.description}
+        confirmLabel={confirmMeta.label}
+        variant={
+          confirm?.kind === "soft-delete" || confirm?.kind === "hard-delete"
+            ? "danger"
+            : "default"
         }
-        confirmLabel={confirm?.kind === "open" ? "Open session" : "Close session"}
         loading={actionBusy}
         onCancel={() => {
           if (!actionBusy) setConfirm(null);

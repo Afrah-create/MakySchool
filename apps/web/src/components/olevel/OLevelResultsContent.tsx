@@ -13,7 +13,7 @@ import { LoadingButton } from "@makyschool/ui/components/ui/LoadingButton";
 import { StatusBanner } from "@makyschool/ui/components/ui/StatusBanner";
 import { TablePagination } from "@makyschool/ui/components/ui/TablePagination";
 import { PAGE_SIZE_OPTIONS } from "@makyschool/shared/constants";
-import type { OLevelStudentResult } from "@makyschool/shared";
+import type { OLevelExamSession, OLevelStudentResult } from "@makyschool/shared";
 import { olevelApi } from "@/lib/api/olevel";
 import { exportOLevelResultsCsv } from "@/lib/olevel/exportResultsCsv";
 import { defaultClassAndYear } from "@/lib/olevel/registration";
@@ -23,6 +23,7 @@ import {
   useGenerateOLevelResults,
   useOLevelClassResults,
   useOLevelClasses,
+  useOLevelExamSessions,
   useOLevelTerms,
   useRankOLevelClass,
 } from "@/hooks/useOLevel";
@@ -31,10 +32,17 @@ import { useToast } from "@/providers/ToastProvider";
 type Banner = { tone: "success" | "error" | "info"; message: string };
 type PipelineAction = "generate" | "rank" | "approve" | null;
 
+function isExamCategory(s: OLevelExamSession) {
+  const code = (s.categoryCode || "").toUpperCase();
+  if (code === "EXAM" || code === "EOT") return true;
+  if (code === "CA") return false;
+  return (s.categoryWeightPercent ?? 0) >= 50;
+}
+
 export function OLevelResultsContent() {
   const { toast } = useToast();
-  const { data: classes = [] } = useOLevelClasses();
-  const { data: terms = [] } = useOLevelTerms();
+  const { data: classes = [], isSuccess: classesReady } = useOLevelClasses();
+  const { data: terms = [], isSuccess: termsReady } = useOLevelTerms();
   const defaults = useMemo(() => defaultClassAndYear(classes, terms), [classes, terms]);
 
   const [classId, setClassId] = useState("");
@@ -51,24 +59,83 @@ export function OLevelResultsContent() {
   const [headComment, setHeadComment] = useState("");
   const [commentBusy, setCommentBusy] = useState(false);
   const [query, setQuery] = useState("");
+  const [assessmentSessionIds, setAssessmentSessionIds] = useState<string[]>([]);
+  const [examSessionId, setExamSessionId] = useState("");
+  const [selectionHydrated, setSelectionHydrated] = useState(false);
 
   useEffect(() => {
     if (defaultsApplied) return;
-    if (!defaults.classId && !defaults.termId) return;
+    if (!classesReady || !termsReady) return;
     setClassId(defaults.classId);
     setTermId(defaults.termId);
     setDefaultsApplied(true);
-  }, [defaults, defaultsApplied]);
+  }, [defaults, defaultsApplied, classesReady, termsReady]);
 
   useEffect(() => {
     setCheckedIds([]);
     setExpanded(null);
     setQuery("");
+    setAssessmentSessionIds([]);
+    setExamSessionId("");
+    setSelectionHydrated(false);
   }, [classId, termId]);
 
   const selectedTerm = terms.find((t) => t.id === termId);
   const yearId = selectedTerm?.academicYearId ?? "";
   const selectedClass = classes.find((c) => c.id === classId);
+
+  const { data: sessions = [], isFetched: sessionsFetched } = useOLevelExamSessions(
+    { classId, termId, academicYearId: yearId },
+    !!classId && !!termId && !!yearId,
+  );
+
+  const assessmentSessions = useMemo(
+    () => sessions.filter((s) => !isExamCategory(s)),
+    [sessions],
+  );
+  const examSessions = useMemo(
+    () => sessions.filter((s) => isExamCategory(s)),
+    [sessions],
+  );
+
+  useEffect(() => {
+    if (!classId || !termId || !yearId || !sessionsFetched || selectionHydrated) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const saved = await olevelApi.getGradingSelection(classId, termId, yearId);
+        if (cancelled) return;
+        const assessIds = (saved?.assessmentSessionIds ?? []).filter((id) =>
+          assessmentSessions.some((s) => s.id === id),
+        );
+        const examId =
+          saved?.examSessionId && examSessions.some((s) => s.id === saved.examSessionId)
+            ? saved.examSessionId
+            : (examSessions[0]?.id ?? "");
+        setAssessmentSessionIds(
+          assessIds.length ? assessIds : assessmentSessions.map((s) => s.id),
+        );
+        setExamSessionId(examId);
+      } catch {
+        if (cancelled) return;
+        setAssessmentSessionIds(assessmentSessions.map((s) => s.id));
+        setExamSessionId(examSessions[0]?.id ?? "");
+      } finally {
+        if (!cancelled) setSelectionHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    classId,
+    termId,
+    yearId,
+    sessionsFetched,
+    selectionHydrated,
+    assessmentSessions,
+    examSessions,
+  ]);
 
   const { data: results, refetch, isFetching, isError, error } = useOLevelClassResults(
     classId,
@@ -97,6 +164,12 @@ export function OLevelResultsContent() {
   const rank = useRankOLevelClass();
   const approve = useApproveOLevelResults();
   const payload = { classId, termId, academicYearId: yearId };
+  const canGenerate =
+    !!classId &&
+    !!termId &&
+    !!yearId &&
+    assessmentSessionIds.length > 0 &&
+    !!examSessionId;
 
   function show(tone: Banner["tone"], message: string) {
     setBanner({ tone, message });
@@ -112,11 +185,25 @@ export function OLevelResultsContent() {
       setConfirm(null);
       return;
     }
+    if (confirm === "generate") {
+      if (!assessmentSessionIds.length || !examSessionId) {
+        show(
+          "error",
+          "Select at least one continuous assessment and one end-of-term exam.",
+        );
+        setConfirm(null);
+        return;
+      }
+    }
     setBusyAction(true);
     setBanner(null);
     try {
       if (confirm === "generate") {
-        const r = await generate.mutateAsync(payload);
+        const r = await generate.mutateAsync({
+          ...payload,
+          examSessionId,
+          assessmentSessionIds,
+        });
         const failed = r.failed ?? 0;
         if (failed > 0) {
           show(
@@ -229,8 +316,7 @@ export function OLevelResultsContent() {
   > = {
     generate: {
       title: "Generate class results?",
-      description:
-        "This grades every enrolled student from submitted marks, then recalculates class and subject positions. Existing approvals for this class/term will be cleared.",
+      description: `Averages ${assessmentSessionIds.length} assessment session(s) (20%), combines with the selected end-of-term exam (80%), then ranks the class. Missing marks count as zero. Existing approvals will be cleared.`,
       label: "Generate results",
     },
     rank: {
@@ -300,11 +386,109 @@ export function OLevelResultsContent() {
             </label>
           </div>
 
+          {classId && termId ? (
+            <div className="grid gap-4 rounded-lg border border-theme bg-theme-raised/40 p-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-theme-primary">
+                    Continuous assessments (20%)
+                  </h3>
+                  <button
+                    type="button"
+                    className="text-xs text-theme-accent"
+                    onClick={() =>
+                      setAssessmentSessionIds(
+                        assessmentSessionIds.length === assessmentSessions.length
+                          ? []
+                          : assessmentSessions.map((s) => s.id),
+                      )
+                    }
+                  >
+                    {assessmentSessionIds.length === assessmentSessions.length
+                      ? "Clear"
+                      : "Select all"}
+                  </button>
+                </div>
+                <p className="text-xs text-theme-muted">
+                  If several are selected, their percentages are averaged. Missing marks
+                  count as 0.
+                </p>
+                {!assessmentSessions.length ? (
+                  <p className="text-sm text-theme-muted">
+                    No CA sessions for this class/term yet.
+                  </p>
+                ) : (
+                  <ul className="max-h-40 space-y-1.5 overflow-y-auto">
+                    {assessmentSessions.map((s) => (
+                      <li key={s.id}>
+                        <label className="flex cursor-pointer items-start gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={assessmentSessionIds.includes(s.id)}
+                            onChange={(e) =>
+                              setAssessmentSessionIds((prev) =>
+                                e.target.checked
+                                  ? [...prev, s.id]
+                                  : prev.filter((id) => id !== s.id),
+                              )
+                            }
+                          />
+                          <span>
+                            <span className="font-medium text-theme-primary">{s.title}</span>
+                            <span className="block text-xs text-theme-muted">
+                              {s.categoryName} · /{s.maxMarks} · {s.status}
+                            </span>
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-theme-primary">
+                  End-of-term exam (80%)
+                </h3>
+                <p className="text-xs text-theme-muted">
+                  Choose the final paper that contributes 80% of each subject total.
+                </p>
+                {!examSessions.length ? (
+                  <p className="text-sm text-theme-muted">
+                    No end-of-term exam session for this class/term yet.
+                  </p>
+                ) : (
+                  <ul className="max-h-40 space-y-1.5 overflow-y-auto">
+                    {examSessions.map((s) => (
+                      <li key={s.id}>
+                        <label className="flex cursor-pointer items-start gap-2 text-sm">
+                          <input
+                            type="radio"
+                            name="olevel-exam-session"
+                            className="mt-0.5"
+                            checked={examSessionId === s.id}
+                            onChange={() => setExamSessionId(s.id)}
+                          />
+                          <span>
+                            <span className="font-medium text-theme-primary">{s.title}</span>
+                            <span className="block text-xs text-theme-muted">
+                              {s.categoryName} · /{s.maxMarks} · {s.status}
+                            </span>
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          ) : null}
+
           <div className="flex flex-wrap gap-2">
             <LoadingButton
               type="button"
               loading={busyAction && confirm === "generate"}
-              disabled={!classId || !termId || !yearId || busyAction}
+              disabled={!canGenerate || busyAction}
               onClick={() => setConfirm("generate")}
             >
               Generate results
@@ -356,8 +540,9 @@ export function OLevelResultsContent() {
           </div>
 
           <p className="text-xs text-theme-muted">
-            Pipeline: enter &amp; submit marks → <strong>Generate results</strong> → comments →{" "}
-            <strong>Approve</strong> → download reports.
+            Pipeline: enter &amp; submit marks → select assessments + exam →{" "}
+            <strong>Generate results</strong> → comments → <strong>Approve</strong> →
+            download reports.
             {isFetching ? " · Refreshing…" : ""}
           </p>
         </section>
@@ -644,10 +829,17 @@ function ResultRow({
                     )}
                   </span>
                   <span className="tabular-nums">
+                    CA{" "}
+                    {s.assessmentPercent != null
+                      ? Number(s.assessmentPercent).toFixed(1)
+                      : "—"}
+                    % · Exam{" "}
+                    {s.examPercent != null ? Number(s.examPercent).toFixed(1) : "—"}% ·{" "}
                     {s.weightedScore != null
                       ? `${Number(s.weightedScore).toFixed(1)}%`
                       : "—"}{" "}
-                    · {s.grade ?? "—"} · {s.points ?? "—"}
+                    · {s.grade ?? "—"}
+                    {s.gradeLabel ? ` (${s.gradeLabel})` : ""} · {s.points ?? "—"}
                   </span>
                 </div>
               ))}

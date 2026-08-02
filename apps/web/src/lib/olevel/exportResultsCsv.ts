@@ -31,7 +31,14 @@ export function exportOLevelResultsCsv(options: {
     "Average %",
     "Promoted",
     "Approved",
-    ...subjectCodes.flatMap((code) => [`${code} %`, `${code} grade`, `${code} pts`]),
+    ...subjectCodes.flatMap((code) => [
+      `${code} CA%`,
+      `${code} Exam%`,
+      `${code} Final%`,
+      `${code} grade`,
+      `${code} descriptor`,
+      `${code} pts`,
+    ]),
   ];
 
   const rows = students.map((s) => {
@@ -46,14 +53,17 @@ export function exportOLevelResultsCsv(options: {
       s.studentName ?? "",
       s.learnerId ?? "",
       s.totalPoints,
-      s.averagePercent.toFixed(1),
+      Number(s.averagePercent ?? 0).toFixed(1),
       s.isPromoted === null ? "" : s.isPromoted ? "Yes" : "No",
       s.approvedAt ? "Yes" : "No",
       ...subjectCodes.flatMap((code) => {
         const sub = byCode.get(code);
         return [
-          sub?.weightedScore != null ? sub.weightedScore.toFixed(1) : "",
+          sub?.assessmentPercent != null ? Number(sub.assessmentPercent).toFixed(1) : "",
+          sub?.examPercent != null ? Number(sub.examPercent).toFixed(1) : "",
+          sub?.weightedScore != null ? Number(sub.weightedScore).toFixed(1) : "",
           sub?.grade ?? "",
+          sub?.gradeLabel ?? "",
           sub?.points ?? "",
         ];
       }),

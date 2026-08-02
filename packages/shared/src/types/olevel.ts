@@ -111,8 +111,14 @@ export type OLevelExamSession = {
   classLevel?: string;
   termName?: string;
   categoryName?: string;
+  categoryCode?: string;
+  categoryWeightPercent?: number;
   openedAt?: string | null;
   closedAt?: string | null;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  deleted?: boolean;
+  hasMarks?: boolean | null;
 };
 
 export type StudentCurriculumEnrollment = {
@@ -179,7 +185,10 @@ export type OLevelSubjectResult = {
   subjectCode?: string;
   categoryScores: { [code: string]: number };
   weightedScore: number;
+  assessmentPercent?: number | null;
+  examPercent?: number | null;
   grade: string;
+  gradeLabel?: string | null;
   points: number;
   isPass: boolean;
   countsInResult: boolean;
@@ -258,6 +267,8 @@ export type OLevelTermOption = {
   academicYearId: string;
   academicYearName: string;
   isCurrent: boolean;
+  yearIsCurrent?: boolean;
+  startDate?: string | null;
 };
 
 export type TeacherOLevelAssignment = {

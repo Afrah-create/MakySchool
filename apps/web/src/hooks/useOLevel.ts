@@ -15,6 +15,7 @@ export const olevelKeys = {
     termId?: string;
     academicYearId?: string;
     status?: string;
+    includeDeleted?: boolean;
   }) =>
     [
       "olevel",
@@ -23,6 +24,7 @@ export const olevelKeys = {
       filters.termId ?? "",
       filters.academicYearId ?? "",
       filters.status ?? "",
+      filters.includeDeleted ? "1" : "0",
     ] as const,
   enrollments: (classId?: string, yearId?: string) =>
     ["olevel", "enrollments", classId ?? "", yearId ?? ""] as const,
@@ -95,6 +97,7 @@ export function useOLevelExamSessions(
     termId?: string;
     academicYearId?: string;
     status?: string;
+    includeDeleted?: boolean;
   } = {},
   enabled = true,
 ) {
@@ -225,5 +228,33 @@ export function useApproveOLevelResults() {
   return useMutation({
     mutationFn: olevelApi.approve,
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["olevel", "results"] }),
+  });
+}
+
+function invalidateSessions(qc: ReturnType<typeof useQueryClient>) {
+  void qc.invalidateQueries({ queryKey: ["olevel", "sessions"] });
+}
+
+export function useSoftDeleteOLevelExamSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => olevelApi.softDeleteExamSession(id),
+    onSuccess: () => invalidateSessions(qc),
+  });
+}
+
+export function useHardDeleteOLevelExamSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => olevelApi.hardDeleteExamSession(id),
+    onSuccess: () => invalidateSessions(qc),
+  });
+}
+
+export function useRestoreOLevelExamSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => olevelApi.restoreExamSession(id),
+    onSuccess: () => invalidateSessions(qc),
   });
 }

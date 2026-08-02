@@ -124,13 +124,19 @@ def session(row_: Any) -> dict[str, Any]:
             "closed_at": "closedAt",
             "term_name": "termName",
             "category_name": "categoryName",
+            "category_code": "categoryCode",
+            "category_weight_percent": "categoryWeightPercent",
             "class_name": "className",
+            "deleted_at": "deletedAt",
+            "deleted_by": "deletedBy",
         },
     )
     if class_name:
         result["className"] = class_name
     if level:
         result["classLevel"] = level
+    result["deleted"] = bool(result.get("deletedAt"))
+    result["hasMarks"] = None  # filled by list/get when requested
     return result
 
 
@@ -156,7 +162,9 @@ def subject_result(row_: Any) -> dict[str, Any]:
         "term_id": "termId", "category_scores": "categoryScores", "weighted_score": "weightedScore",
         "is_pass": "isPass", "counts_in_result": "countsInResult",
         "subject_position": "subjectPosition", "teacher_comment": "teacherComment",
-        "subject_name": "subjectName", "subject_code": "subjectCode"})
+        "subject_name": "subjectName", "subject_code": "subjectCode",
+        "assessment_percent": "assessmentPercent", "exam_percent": "examPercent",
+        "grade_label": "gradeLabel"})
 
 
 def student_result(row_: Any) -> dict[str, Any]:

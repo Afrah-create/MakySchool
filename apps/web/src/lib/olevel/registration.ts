@@ -111,12 +111,15 @@ export function registrationStatus(
   return "partial";
 }
 
-/** Default class = first class; default year = current term's year (else first). */
+/** Default class = first class; default term = current term (else current-year term, else first). */
 export function defaultClassAndYear(
   classes: OLevelClassOption[],
   terms: OLevelTermOption[],
 ): { classId: string; yearId: string; termId: string } {
-  const current = terms.find((t) => t.isCurrent) ?? terms[0];
+  const current =
+    terms.find((t) => t.isCurrent) ??
+    terms.find((t) => t.yearIsCurrent) ??
+    terms[0];
   return {
     classId: classes[0]?.id ?? "",
     yearId: current?.academicYearId ?? "",

@@ -129,11 +129,17 @@ async def list_terms(ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db))
         """
         SELECT t.id, t.name, t.academic_year_id, ay.year AS academic_year,
                COALESCE(t.is_current, false) AS is_current,
-               COALESCE(ay.is_current, false) AS year_is_current
+               COALESCE(ay.is_current, false) AS year_is_current,
+               t.start_date
         FROM terms t
         JOIN academic_years ay ON ay.id = t.academic_year_id
         WHERE t.school_id = $1
-        ORDER BY ay.year DESC, t.name
+        ORDER BY
+          CASE WHEN COALESCE(t.is_current, false) THEN 0 ELSE 1 END,
+          CASE WHEN COALESCE(ay.is_current, false) THEN 0 ELSE 1 END,
+          ay.year DESC,
+          t.start_date DESC NULLS LAST,
+          t.name
         """,
         school_id,
     )
@@ -144,7 +150,9 @@ async def list_terms(ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db))
                 "name": r["name"],
                 "academicYearId": str(r["academic_year_id"]),
                 "academicYearName": str(r["academic_year"]),
-                "isCurrent": bool(r["is_current"] or r["year_is_current"]),
+                "isCurrent": bool(r["is_current"]),
+                "yearIsCurrent": bool(r["year_is_current"]),
+                "startDate": r["start_date"].isoformat() if r["start_date"] else None,
             }
             for r in rows
         ]
@@ -478,12 +486,15 @@ async def list_exam_sessions(
     term_id: Optional[uuid.UUID] = Query(None),
     academic_year_id: Optional[uuid.UUID] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
+    include_deleted: bool = Query(False),
 ):
     school_id, actor = ctx
     role = (actor.get("role") or "").lower()
     require_olevel_action(
         actor, "manageExamSessions" if role != "teacher" else "enterOLevelMarks"
     )
+    # Teachers never see soft-deleted sessions.
+    show_deleted = include_deleted and role != "teacher"
     data = await sessions_svc.list_sessions(
         conn,
         school_id,
@@ -491,6 +502,7 @@ async def list_exam_sessions(
         term_id=term_id,
         academic_year_id=academic_year_id,
         status=status_filter,
+        include_deleted=show_deleted,
     )
     if role == "teacher":
         allowed = set(
@@ -558,6 +570,39 @@ async def close_exam_session(
     require_olevel_action(actor, "manageExamSessions")
     try:
         return _ok(await sessions_svc.close_session(conn, school_id, session_id))
+    except LookupError as exc:
+        raise _http_lookup(exc) from exc
+
+
+@router.post("/exam-sessions/{session_id}/restore")
+async def restore_exam_session(
+    session_id: uuid.UUID, ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)
+):
+    school_id, actor = ctx
+    require_olevel_action(actor, "manageExamSessions")
+    try:
+        return _ok(await sessions_svc.restore_session(conn, school_id, session_id))
+    except LookupError as exc:
+        raise _http_lookup(exc) from exc
+
+
+@router.delete("/exam-sessions/{session_id}")
+async def delete_exam_session(
+    session_id: uuid.UUID,
+    ctx: TenantCtx,
+    hard: bool = Query(False),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    require_olevel_action(actor, "manageExamSessions")
+    try:
+        if hard:
+            await sessions_svc.hard_delete_session(conn, school_id, session_id)
+            return _ok({"ok": True, "hard": True})
+        data = await sessions_svc.soft_delete_session(
+            conn, school_id, session_id, actor_user_id(actor)
+        )
+        return _ok({"ok": True, "hard": False, "session": data})
     except LookupError as exc:
         raise _http_lookup(exc) from exc
 
@@ -840,15 +885,37 @@ async def grade_class(
 ):
     school_id, actor = ctx
     require_olevel_action(actor, "viewOLevelResults")
+    class_id = uuid.UUID(str(body.get("class_id") or body.get("classId")))
+    term_id = uuid.UUID(str(body.get("term_id") or body.get("termId")))
+    academic_year_id = uuid.UUID(
+        str(body.get("academic_year_id") or body.get("academicYearId"))
+    )
+    exam_raw = body.get("exam_session_id") or body.get("examSessionId")
+    assess_raw = body.get("assessment_session_ids") or body.get("assessmentSessionIds")
+    exam_id, assess_ids, a_code, e_code = await grading_svc.resolve_selection(
+        conn,
+        school_id,
+        class_id=class_id,
+        term_id=term_id,
+        academic_year_id=academic_year_id,
+        exam_session_id=uuid.UUID(str(exam_raw)) if exam_raw else None,
+        assessment_session_ids=(
+            [uuid.UUID(str(x)) for x in assess_raw]
+            if isinstance(assess_raw, list)
+            else None
+        ),
+    )
     return _ok(
         await grading_svc.grade_class(
             conn,
             school_id,
-            class_id=uuid.UUID(str(body.get("class_id") or body.get("classId"))),
-            term_id=uuid.UUID(str(body.get("term_id") or body.get("termId"))),
-            academic_year_id=uuid.UUID(
-                str(body.get("academic_year_id") or body.get("academicYearId"))
-            ),
+            class_id=class_id,
+            term_id=term_id,
+            academic_year_id=academic_year_id,
+            assessment_session_ids=assess_ids,
+            exam_session_id=exam_id,
+            assessment_code=a_code,
+            exam_code=e_code,
         )
     )
 
@@ -860,6 +927,8 @@ async def generate_class_results(
     """Grade the class and recalculate rankings in one step."""
     school_id, actor = ctx
     require_olevel_action(actor, "viewOLevelResults")
+    exam_raw = body.get("exam_session_id") or body.get("examSessionId")
+    assess_raw = body.get("assessment_session_ids") or body.get("assessmentSessionIds")
     return _ok(
         await grading_svc.generate_class_results(
             conn,
@@ -869,8 +938,35 @@ async def generate_class_results(
             academic_year_id=uuid.UUID(
                 str(body.get("academic_year_id") or body.get("academicYearId"))
             ),
+            exam_session_id=uuid.UUID(str(exam_raw)) if exam_raw else None,
+            assessment_session_ids=(
+                [uuid.UUID(str(x)) for x in assess_raw]
+                if isinstance(assess_raw, list)
+                else None
+            ),
+            actor_id=actor_user_id(actor),
         )
     )
+
+
+@router.get("/results/grading-selection")
+async def get_grading_selection(
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+    class_id: uuid.UUID = Query(...),
+    term_id: uuid.UUID = Query(...),
+    academic_year_id: uuid.UUID = Query(...),
+):
+    school_id, actor = ctx
+    require_olevel_action(actor, "viewOLevelResults")
+    data = await grading_svc.get_grading_selection(
+        conn,
+        school_id,
+        class_id=class_id,
+        term_id=term_id,
+        academic_year_id=academic_year_id,
+    )
+    return _ok(data)
 
 
 @router.post("/grade/student/{enrollment_id}")
@@ -882,16 +978,38 @@ async def grade_student(
 ):
     school_id, actor = ctx
     require_olevel_action(actor, "viewOLevelResults")
+    class_id = uuid.UUID(str(body.get("class_id") or body.get("classId")))
+    term_id = uuid.UUID(str(body.get("term_id") or body.get("termId")))
+    academic_year_id = uuid.UUID(
+        str(body.get("academic_year_id") or body.get("academicYearId"))
+    )
+    exam_raw = body.get("exam_session_id") or body.get("examSessionId")
+    assess_raw = body.get("assessment_session_ids") or body.get("assessmentSessionIds")
     try:
+        exam_id, assess_ids, a_code, e_code = await grading_svc.resolve_selection(
+            conn,
+            school_id,
+            class_id=class_id,
+            term_id=term_id,
+            academic_year_id=academic_year_id,
+            exam_session_id=uuid.UUID(str(exam_raw)) if exam_raw else None,
+            assessment_session_ids=(
+                [uuid.UUID(str(x)) for x in assess_raw]
+                if isinstance(assess_raw, list)
+                else None
+            ),
+        )
         return _ok(
             await grading_svc.grade_student(
                 conn,
                 school_id,
                 enrollment_id=enrollment_id,
-                term_id=uuid.UUID(str(body.get("term_id") or body.get("termId"))),
-                academic_year_id=uuid.UUID(
-                    str(body.get("academic_year_id") or body.get("academicYearId"))
-                ),
+                term_id=term_id,
+                academic_year_id=academic_year_id,
+                assessment_session_ids=assess_ids,
+                exam_session_id=exam_id,
+                assessment_code=a_code,
+                exam_code=e_code,
             )
         )
     except LookupError as exc:
@@ -905,6 +1023,7 @@ async def grade_preview(
     conn: asyncpg.Connection = Depends(get_db),
     term_id: uuid.UUID = Query(...),
     academic_year_id: uuid.UUID = Query(...),
+    class_id: uuid.UUID = Query(...),
 ):
     school_id, actor = ctx
     require_olevel_action(actor, "viewOLevelResults")
@@ -916,6 +1035,7 @@ async def grade_preview(
                 enrollment_id=enrollment_id,
                 term_id=term_id,
                 academic_year_id=academic_year_id,
+                class_id=class_id,
             )
         )
     except LookupError as exc:
@@ -1186,8 +1306,15 @@ async def _build_report_payload(
             {
                 "subjectName": s["subject_name"],
                 "subjectCode": s["subject_code"],
+                "assessmentPercent": float(s["assessment_percent"] or 0)
+                if s.get("assessment_percent") is not None
+                else None,
+                "examPercent": float(s["exam_percent"] or 0)
+                if s.get("exam_percent") is not None
+                else None,
                 "weightedScore": float(s["weighted_score"] or 0),
                 "grade": s["grade"],
+                "gradeLabel": s.get("grade_label"),
                 "points": float(s["points"] or 0),
             }
             for s in subjects
@@ -1335,7 +1462,7 @@ async def teacher_assignments(
          AND os.is_active = true
         LEFT JOIN olevel_mark_submissions ms
           ON ms.exam_session_id = es.id AND ms.subject_id = os.id AND ms.teacher_id = $2
-        WHERE es.school_id = $1 AND es.status = 'open'
+        WHERE es.school_id = $1 AND es.status = 'open' AND es.deleted_at IS NULL
         ORDER BY sc.level, os.name
         """,
         school_id,

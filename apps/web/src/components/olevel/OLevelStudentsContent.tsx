@@ -34,8 +34,8 @@ import { useToast } from "@/providers/ToastProvider";
 
 export function OLevelStudentsContent() {
   const { toast } = useToast();
-  const { data: classes = [] } = useOLevelClasses();
-  const { data: terms = [] } = useOLevelTerms();
+  const { data: classes = [], isSuccess: classesReady } = useOLevelClasses();
+  const { data: terms = [], isSuccess: termsReady } = useOLevelTerms();
   const { data: curriculum } = useOLevelCurriculum();
   const defaults = useMemo(() => defaultClassAndYear(classes, terms), [classes, terms]);
 
@@ -52,11 +52,11 @@ export function OLevelStudentsContent() {
 
   useEffect(() => {
     if (defaultsApplied) return;
-    if (!defaults.classId && !defaults.yearId) return;
+    if (!classesReady || !termsReady) return;
     setClassId(defaults.classId);
     setYearId(defaults.yearId);
     setDefaultsApplied(true);
-  }, [defaults, defaultsApplied]);
+  }, [defaults, defaultsApplied, classesReady, termsReady]);
 
   const years = useMemo(
     () => Array.from(new Map(terms.map((t) => [t.academicYearId, t.academicYearName])).entries()),

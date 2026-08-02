@@ -4,19 +4,44 @@ import { useEffect, useMemo, useState } from "react";
 import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
 import { TablePagination } from "@makyschool/ui/components/ui/TablePagination";
 import { PAGE_SIZE_OPTIONS } from "@makyschool/shared/constants";
+import { defaultClassAndYear } from "@/lib/olevel/registration";
 import { useClientPagination } from "@/hooks/useClientPagination";
 import {
+  useOLevelClasses,
   useOLevelCurriculumSubjects,
   useOLevelExamSessions,
   useOLevelMarkGrid,
+  useOLevelTerms,
 } from "@/hooks/useOLevel";
 
 export function OLevelMarksReviewContent() {
-  const { data: sessions = [] } = useOLevelExamSessions();
+  const { data: classes = [], isSuccess: classesReady } = useOLevelClasses();
+  const { data: terms = [], isSuccess: termsReady } = useOLevelTerms();
+  const defaults = useMemo(() => defaultClassAndYear(classes, terms), [classes, terms]);
+  const [termId, setTermId] = useState("");
+  const [filtersReady, setFiltersReady] = useState(false);
+
+  useEffect(() => {
+    if (filtersReady) return;
+    if (!classesReady || !termsReady) return;
+    setTermId(defaults.termId);
+    setFiltersReady(true);
+  }, [filtersReady, classesReady, termsReady, defaults.termId]);
+
+  const { data: sessions = [] } = useOLevelExamSessions(
+    { termId: termId || undefined },
+    filtersReady,
+  );
   const [sessionId, setSessionId] = useState("");
   const [subjectId, setSubjectId] = useState("");
   const [defaultsApplied, setDefaultsApplied] = useState(false);
   const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    setDefaultsApplied(false);
+    setSessionId("");
+    setSubjectId("");
+  }, [termId]);
 
   useEffect(() => {
     if (defaultsApplied || !sessions.length) return;
@@ -71,6 +96,20 @@ export function OLevelMarksReviewContent() {
     >
       <div className="space-y-5">
         <div className="flex flex-wrap gap-3 rounded-xl border border-theme bg-theme-surface p-4">
+          <select
+            className="ms-input"
+            value={termId}
+            onChange={(e) => setTermId(e.target.value)}
+            aria-label="Term"
+          >
+            <option value="">All terms</option>
+            {terms.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} · {t.academicYearName}
+                {t.isCurrent ? " (current)" : ""}
+              </option>
+            ))}
+          </select>
           <select
             className="ms-input"
             value={sessionId}

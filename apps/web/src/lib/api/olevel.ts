@@ -212,12 +212,14 @@ export const olevelApi = {
     termId?: string;
     academicYearId?: string;
     status?: string;
+    includeDeleted?: boolean;
   } = {}) {
     const qs = new URLSearchParams();
     if (filters.classId) qs.set("class_id", filters.classId);
     if (filters.termId) qs.set("term_id", filters.termId);
     if (filters.academicYearId) qs.set("academic_year_id", filters.academicYearId);
     if (filters.status) qs.set("status", filters.status);
+    if (filters.includeDeleted) qs.set("include_deleted", "true");
     const q = qs.toString();
     return apiClient<OLevelExamSession[]>(`${BASE}/exam-sessions${q ? `?${q}` : ""}`).then(
       (r) => r.data,
@@ -255,6 +257,26 @@ export const olevelApi = {
     return apiClient<OLevelExamSession>(`${BASE}/exam-sessions/${id}`, {
       method: "PATCH",
       body,
+    }).then((r) => r.data);
+  },
+
+  softDeleteExamSession(id: string) {
+    return apiClient<{ ok: boolean; hard: boolean; session?: OLevelExamSession }>(
+      `${BASE}/exam-sessions/${id}`,
+      { method: "DELETE" },
+    ).then((r) => r.data);
+  },
+
+  hardDeleteExamSession(id: string) {
+    return apiClient<{ ok: boolean; hard: boolean }>(
+      `${BASE}/exam-sessions/${id}?hard=true`,
+      { method: "DELETE" },
+    ).then((r) => r.data);
+  },
+
+  restoreExamSession(id: string) {
+    return apiClient<OLevelExamSession>(`${BASE}/exam-sessions/${id}/restore`, {
+      method: "POST",
     }).then((r) => r.data);
   },
 
@@ -354,16 +376,33 @@ export const olevelApi = {
     classId: string;
     termId: string;
     academicYearId: string;
+    examSessionId?: string;
+    assessmentSessionIds?: string[];
   }) {
     return apiClient<{
       calculated: number;
       ranked: number;
       failed?: number;
       errors?: string[];
+      selection?: {
+        examSessionId: string;
+        assessmentSessionIds: string[];
+      };
     }>(`${BASE}/grade/generate`, {
       method: "POST",
       body,
     }).then((r) => r.data);
+  },
+
+  getGradingSelection(classId: string, termId: string, academicYearId: string) {
+    return apiClient<{
+      examSessionId: string;
+      assessmentSessionIds: string[];
+      selectedAt?: string | null;
+      selectedBy?: string | null;
+    } | null>(
+      `${BASE}/results/grading-selection?class_id=${classId}&term_id=${termId}&academic_year_id=${academicYearId}`,
+    ).then((r) => r.data);
   },
 
   gradeStudent(

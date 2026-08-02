@@ -45,30 +45,45 @@ def build_olevel_report_html(data: dict[str, Any]) -> str:
     rows = ""
     for s in subjects:
         cells = [
-            f"""<td>
-              <div class="subj-code">{_esc(s.get('subjectCode') or '')}</div>
-              <div class="subj-name">{_esc(s.get('subjectName'))}</div>
-            </td>"""
+            f'<td class="code">{_esc(s.get("subjectCode") or "—")}</td>',
+            f'<td class="subj-name">{_esc(s.get("subjectName"))}</td>',
         ]
         if show_pct:
+            cells.append(f'<td class="num">{_fmt_num(s.get("assessmentPercent"))}</td>')
+            cells.append(f'<td class="num">{_fmt_num(s.get("examPercent"))}</td>')
             cells.append(f'<td class="num">{_fmt_num(s.get("weightedScore"))}</td>')
         if show_grade:
             cells.append(
                 f'<td class="num grade">{_esc(s.get("grade") or "—")}</td>'
             )
+            cells.append(
+                f'<td class="muted">{_esc(s.get("gradeLabel") or "—")}</td>'
+            )
         if show_pts:
             cells.append(f'<td class="num">{_fmt_num(s.get("points"), 0)}</td>')
         rows += f"<tr>{''.join(cells)}</tr>"
 
-    col_count = 1 + int(show_pct) + int(show_grade) + int(show_pts)
+    col_count = 2
+    if show_pct:
+        col_count += 3
+    if show_grade:
+        col_count += 2
+    if show_pts:
+        col_count += 1
     if not rows:
         rows = f'<tr><td colspan="{col_count}">No subject results recorded.</td></tr>'
 
-    header_cells = ["<th>Subject</th>"]
+    header_cells = ["<th>Code</th>", "<th>Subject</th>"]
     if show_pct:
-        header_cells.append('<th class="num">%</th>')
+        header_cells.extend(
+            [
+                '<th class="num">CA</th>',
+                '<th class="num">Exam</th>',
+                '<th class="num">Final %</th>',
+            ]
+        )
     if show_grade:
-        header_cells.append('<th class="num">Grade</th>')
+        header_cells.extend(['<th class="num">Grade</th>', "<th>Descriptor</th>"])
     if show_pts:
         header_cells.append('<th class="num">Pts</th>')
 
@@ -139,12 +154,12 @@ def build_olevel_report_html(data: dict[str, Any]) -> str:
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"/>
 <style>
-  @page {{ size: A4; margin: 12mm 11mm; }}
+  @page {{ size: A4; margin: 12mm 10mm; }}
   * {{ box-sizing: border-box; }}
   body {{
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     color: #0f172a;
-    font-size: 10.5px;
+    font-size: 10px;
     line-height: 1.35;
     margin: 0;
   }}
@@ -240,18 +255,19 @@ def build_olevel_report_html(data: dict[str, Any]) -> str:
     margin-bottom: 8px;
   }}
   table.results th, table.results td {{
-    padding: 5px 8px;
+    padding: 4px 6px;
     border-bottom: 1px solid #eef2f7;
   }}
   table.results th {{
     background: #1e3a5f; color: #fff; text-align: left;
-    font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em;
+    font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.04em;
   }}
   table.results tr:last-child td {{ border-bottom: none; }}
   .num {{ text-align: center; font-variant-numeric: tabular-nums; }}
   .grade {{ font-weight: 700; color: #1e3a5f; }}
-  .subj-code {{ font-size: 9px; color: #64748b; font-weight: 600; }}
-  .subj-name {{ font-weight: 600; font-size: 10.5px; }}
+  .code {{ font-weight: 700; color: #475569; width: 48px; }}
+  .subj-name {{ font-weight: 600; font-size: 10px; }}
+  .muted {{ color: #64748b; font-size: 9.5px; }}
   .comments h3 {{
     margin: 0 0 3px; font-size: 9.5px; color: #1e3a5f;
     text-transform: uppercase; letter-spacing: 0.05em;
@@ -268,6 +284,9 @@ def build_olevel_report_html(data: dict[str, Any]) -> str:
   .footer .left {{ display: table-cell; vertical-align: bottom; }}
   .footer .right {{ display: table-cell; text-align: right; vertical-align: bottom; }}
   .stamp {{ height: 56px; opacity: 0.9; object-fit: contain; }}
+  .legend {{
+    margin: 0 0 6px; color: #64748b; font-size: 9px;
+  }}
 </style></head>
 <body>
   <table class="layout">
@@ -316,6 +335,8 @@ def build_olevel_report_html(data: dict[str, Any]) -> str:
       </td>
     </tr>
   </table>
+
+  <p class="legend">CA = average of selected continuous assessments (20%) · Exam = end-of-term (80%) · Final = weighted total</p>
 
   <table class="results">
     <thead><tr>{''.join(header_cells)}</tr></thead>
