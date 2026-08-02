@@ -17,15 +17,20 @@
     "@types/papaparse": "^5.5.2",
     "jose": "^6.2.3",
     "leaflet": "^1.9.4",
-    "lucide-react": "^1.17.0",
+    "lightningcss": "^1.32.0",
+    "lucide-react": "^1.28.0",
     "motion": "^12.40.0",
-    "next": "^16.2.7",
+    "motion-dom": "^12.43.0",
+    "motion-utils": "^12.39.0",
+    "next": "^16.2.12",
     "papaparse": "^5.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-leaflet": "^5.0.0",
     "recharts": "^2.15.4",
-    "swr": "^2.4.1"
+    "sharp": "0.35.3",
+    "swr": "^2.4.1",
+    "unrs-resolver": "^1.12.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.8",
@@ -33,7 +38,7 @@
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.5",
     "eslint": "^9.28.0",
-    "eslint-config-next": "^16.2.7",
+    "eslint-config-next": "^16.2.12",
     "tailwindcss": "^4.1.8",
     "typescript": "^5.8.3"
   }

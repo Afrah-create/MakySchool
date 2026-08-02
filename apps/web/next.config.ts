@@ -9,7 +9,12 @@ loadMonorepoEnv(monorepoRoot);
 const apiOrigin = (process.env.API_INTERNAL_URL ?? "http://localhost:4000").replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
+  // Monorepo: ensure workspace deps resolve from the repo root.
+  outputFileTracingRoot: monorepoRoot,
   transpilePackages: ["@makyschool/shared", "@makyschool/ui"],
+  turbopack: {
+    root: monorepoRoot,
+  },
   async rewrites() {
     return [
       {

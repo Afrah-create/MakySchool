@@ -11,7 +11,11 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  outputFileTracingRoot: monorepoRoot,
   transpilePackages: ["@makyschool/shared", "@makyschool/ui"],
+  turbopack: {
+    root: monorepoRoot,
+  },
 };
 
 export default nextConfig;
