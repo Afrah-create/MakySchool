@@ -138,11 +138,15 @@ def enrollment(row_: Any) -> dict[str, Any]:
     return row(row_, {"school_id": "schoolId", "student_id": "studentId",
                       "curriculum_id": "curriculumId", "class_id": "classId",
                       "academic_year_id": "academicYearId", "enrolled_by": "enrolledBy",
-                      "student_name": "studentName", "learner_id": "learnerId", "class_name": "className"})
+                      "student_name": "studentName", "learner_id": "learnerId", "class_name": "className",
+                      "registered_subject_count": "registeredSubjectCount",
+                      "optional_subject_count": "optionalSubjectCount",
+                      "compulsory_subject_count": "compulsorySubjectCount"})
 
 
 def mark(row_: Any) -> dict[str, Any]:
-    return row(row_, {"student_id": "studentId", "raw_score": "rawScore",
+    return row(row_, {"student_id": "studentId", "student_name": "studentName",
+                      "learner_id": "learnerId", "raw_score": "rawScore",
                       "is_absent": "isAbsent", "entered_at": "enteredAt"})
 
 
@@ -166,4 +170,5 @@ def student_result(row_: Any) -> dict[str, Any]:
         "promotion_reason": "promotionReason", "class_teacher_comment": "classTeacherComment",
         "head_teacher_comment": "headTeacherComment", "approved_by": "approvedBy",
         "approved_at": "approvedAt", "report_generated": "reportGenerated",
-        "report_generated_at": "reportGeneratedAt"})
+        "report_generated_at": "reportGeneratedAt",
+        "student_name": "studentName", "learner_id": "learnerId"})

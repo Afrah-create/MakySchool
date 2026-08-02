@@ -54,8 +54,13 @@ export async function downloadBinaryFile(
   if (!response.ok) {
     let message = 'Download failed.';
     try {
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as {
+        error?: string;
+        detail?: { error?: string } | string;
+      };
       if (payload.error) message = payload.error;
+      else if (typeof payload.detail === 'string') message = payload.detail;
+      else if (payload.detail?.error) message = payload.detail.error;
     } catch {
       /* ignore */
     }

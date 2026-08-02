@@ -204,6 +204,14 @@ export function useGradeOLevelClass() {
   });
 }
 
+export function useGenerateOLevelResults() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: olevelApi.generateClassResults,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["olevel", "results"] }),
+  });
+}
+
 export function useRankOLevelClass() {
   const qc = useQueryClient();
   return useMutation({

@@ -177,9 +177,62 @@ async def bulk_save_marks(
         teacher_id,
     )
     return {"saved": len(ids)}
-async def submit_marks(conn:asyncpg.Connection,school_id:uuid.UUID,teacher_id:uuid.UUID,*,exam_session_id:uuid.UUID,subject_id:uuid.UUID)->dict[str,Any]:
- missing=await conn.fetchval("""SELECT COUNT(*) FROM student_curriculum_enrollments e JOIN student_subject_registrations r ON r.enrollment_id=e.id AND r.subject_id=$3 AND r.status='active' LEFT JOIN olevel_marks m ON m.exam_session_id=$4 AND m.student_id=e.student_id AND m.subject_id=$3 WHERE e.school_id=$1 AND e.class_id=(SELECT class_id FROM olevel_exam_sessions WHERE id=$4) AND (m.id IS NULL OR (m.raw_score IS NULL AND NOT m.is_absent))""",school_id,exam_session_id,subject_id,exam_session_id)
- if missing: raise HTTPException(422,detail={"error":f"{missing} students still need a score or absence.","code":"MISSING_MARKS"})
- await conn.execute("INSERT INTO olevel_mark_submissions(school_id,exam_session_id,subject_id,teacher_id,status,submitted_at) VALUES($1,$2,$3,$4,'submitted',NOW()) ON CONFLICT(exam_session_id,subject_id,teacher_id) DO UPDATE SET status='submitted',submitted_at=NOW()",school_id,exam_session_id,subject_id,teacher_id);return {"submitted":True}
+async def submit_marks(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    *,
+    exam_session_id: uuid.UUID,
+    subject_id: uuid.UUID,
+) -> dict[str, Any]:
+    missing = await conn.fetchval(
+        """
+        SELECT COUNT(*)
+        FROM student_curriculum_enrollments e
+        JOIN student_subject_registrations r
+          ON r.enrollment_id = e.id
+         AND r.subject_id = $3
+         AND r.status = 'active'
+        LEFT JOIN olevel_marks m
+          ON m.exam_session_id = $2
+         AND m.student_id = e.student_id
+         AND m.subject_id = $3
+        WHERE e.school_id = $1
+          AND e.class_id = (
+            SELECT class_id FROM olevel_exam_sessions WHERE id = $2
+          )
+          AND (
+            m.id IS NULL
+            OR (m.raw_score IS NULL AND NOT m.is_absent)
+          )
+        """,
+        school_id,
+        exam_session_id,
+        subject_id,
+    )
+    if missing:
+        raise HTTPException(
+            422,
+            detail={
+                "error": f"{missing} students still need a score or absence.",
+                "code": "MISSING_MARKS",
+            },
+        )
+    await conn.execute(
+        """
+        INSERT INTO olevel_mark_submissions(
+          school_id, exam_session_id, subject_id, teacher_id, status, submitted_at
+        )
+        VALUES ($1, $2, $3, $4, 'submitted', NOW())
+        ON CONFLICT (exam_session_id, subject_id, teacher_id) DO UPDATE SET
+          status = 'submitted',
+          submitted_at = NOW()
+        """,
+        school_id,
+        exam_session_id,
+        subject_id,
+        teacher_id,
+    )
+    return {"submitted": True}
 async def unlock_marks(conn:asyncpg.Connection,school_id:uuid.UUID,actor_id:uuid.UUID,*,exam_session_id:uuid.UUID,subject_id:uuid.UUID,teacher_id:uuid.UUID,reason:str)->dict[str,Any]:
  await conn.execute("UPDATE olevel_mark_submissions SET status='unlocked',unlocked_at=NOW(),unlocked_by=$5,unlock_reason=$6 WHERE school_id=$1 AND exam_session_id=$2 AND subject_id=$3 AND teacher_id=$4",school_id,exam_session_id,subject_id,teacher_id,actor_id,reason);return {"unlocked":True}

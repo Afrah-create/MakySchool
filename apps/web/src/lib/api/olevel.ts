@@ -25,24 +25,31 @@ const BASE = "/api/schools/olevel";
 
 async function blobRequest(path: string, init?: RequestInit): Promise<Blob> {
   const { resolveClientApiUrl } = await import("./base-url");
-  const { TENANT_HEADERS } = await import("@makyschool/shared/constants");
+  const { CLIENT_APP_HEADER, TENANT_HEADERS } = await import(
+    "@makyschool/shared/constants"
+  );
   const { readStoredSchoolSlug } = await import("@/lib/auth/session");
   const slug =
     (typeof document !== "undefined" && document.body.dataset.schoolSlug) ||
     readStoredSchoolSlug() ||
     "";
+  const headers = new Headers(init?.headers || {});
+  if (slug) headers.set(TENANT_HEADERS.SCHOOL_SLUG, slug);
+  headers.set(CLIENT_APP_HEADER, "tenant");
+  if (init?.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   const res = await fetch(resolveClientApiUrl(path), {
     credentials: "include",
     ...init,
-    headers: {
-      ...(init?.headers || {}),
-      [TENANT_HEADERS.SCHOOL_SLUG]: slug,
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-    },
+    headers,
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error || err?.detail?.error || "Request failed");
+    const err = await res.json().catch(() => ({} as Record<string, unknown>));
+    const detail = err?.detail as { error?: string } | undefined;
+    throw new Error(
+      (err?.error as string) || detail?.error || "Request failed",
+    );
   }
   return res.blob();
 }
@@ -165,6 +172,35 @@ export const olevelApi = {
     }).then((r) => r.data);
   },
 
+  replaceBandSubjects(
+    curriculumId: string,
+    body: {
+      appliesToLevels: string[];
+      subjects: Array<{ subjectId: string; subjectRole: string }>;
+    },
+  ) {
+    return apiClient<CurriculumSubject[]>(
+      `${BASE}/curriculum/${curriculumId}/subjects/band`,
+      { method: "PUT", body },
+    ).then((r) => r.data);
+  },
+
+  updateCurriculumSubject(
+    curriculumId: string,
+    subjectId: string,
+    body: {
+      subjectRole?: string;
+      appliesToLevels?: string[];
+      displayOrder?: number;
+      isActive?: boolean;
+    },
+  ) {
+    return apiClient<CurriculumSubject>(
+      `${BASE}/curriculum/${curriculumId}/subjects/${subjectId}`,
+      { method: "PATCH", body },
+    ).then((r) => r.data);
+  },
+
   removeCurriculumSubject(curriculumId: string, subjectId: string) {
     return apiClient(`${BASE}/curriculum/${curriculumId}/subjects/${subjectId}`, {
       method: "DELETE",
@@ -263,6 +299,7 @@ export const olevelApi = {
     classId: string;
     academicYearId: string;
     subjects: Array<{ subjectId: string; subjectRole: string }>;
+    enrollmentIds?: string[];
   }) {
     return apiClient<{ enrolled: number }>(`${BASE}/enrollments/bulk-subjects`, {
       method: "POST",
@@ -313,6 +350,22 @@ export const olevelApi = {
     }).then((r) => r.data);
   },
 
+  generateClassResults(body: {
+    classId: string;
+    termId: string;
+    academicYearId: string;
+  }) {
+    return apiClient<{
+      calculated: number;
+      ranked: number;
+      failed?: number;
+      errors?: string[];
+    }>(`${BASE}/grade/generate`, {
+      method: "POST",
+      body,
+    }).then((r) => r.data);
+  },
+
   gradeStudent(
     enrollmentId: string,
     body: { termId: string; academicYearId: string },
@@ -350,6 +403,20 @@ export const olevelApi = {
     return apiClient(`${BASE}/results/comments`, { method: "POST", body }).then(
       (r) => r.data,
     );
+  },
+
+  saveCommentsBulk(body: {
+    enrollmentIds: string[];
+    termId: string;
+    academicYearId: string;
+    classTeacherComment?: string;
+    headTeacherComment?: string;
+    approve?: boolean;
+  }) {
+    return apiClient<{ saved: number; approved: number }>(
+      `${BASE}/results/comments/bulk`,
+      { method: "POST", body },
+    ).then((r) => r.data);
   },
 
   approve(body: { classId: string; termId: string; academicYearId: string }) {

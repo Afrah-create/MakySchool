@@ -75,16 +75,45 @@ async def seed_defaults(conn: asyncpg.Connection, school_id: uuid.UUID, curricul
         school_subject_id=COALESCE(olevel_subjects.school_subject_id,EXCLUDED.school_subject_id),
         is_active=true,updated_at=NOW()
     """, school_id, [s[0] for s in SUBJECTS], [s[1] for s in SUBJECTS], [s[2] for s in SUBJECTS])
-    roles: list[str] = []; levels: list[list[str]] = []; codes: list[str] = []
-    for code in LOWER_COMP: codes.append(code); roles.append("compulsory"); levels.append(["S1","S2"])
-    for code in LOWER_OPT: codes.append(code); roles.append("optional"); levels.append(["S1","S2"])
-    for code in UPPER_COMP: codes.append(code); roles.append("compulsory"); levels.append(["S3","S4"])
-    for code in UPPER_OPT: codes.append(code); roles.append("optional"); levels.append(["S3","S4"])
+    roles: list[str] = []
+    levels: list[list[str]] = []
+    codes: list[str] = []
+    for code in LOWER_COMP:
+        codes.append(code)
+        roles.append("compulsory")
+        levels.append(["S1", "S2"])
+    for code in LOWER_OPT:
+        codes.append(code)
+        roles.append("optional")
+        levels.append(["S1", "S2"])
+    for code in UPPER_COMP:
+        codes.append(code)
+        roles.append("compulsory")
+        levels.append(["S3", "S4"])
+    for code in UPPER_OPT:
+        codes.append(code)
+        roles.append("optional")
+        levels.append(["S3", "S4"])
+
+    # Merge same subject+role across bands before insert (unique constraint).
+    merged: dict[tuple[str, str], list[str]] = {}
+    for code, role, lvl in zip(codes, roles, levels):
+        key = (code, role)
+        merged[key] = sorted(
+            set(merged.get(key, []) + lvl),
+            key=lambda x: (x not in ("S1", "S2"), x),
+        )
+    codes = [k[0] for k in merged]
+    roles = [k[1] for k in merged]
+    levels = list(merged.values())
+
     await conn.execute("""
       INSERT INTO curriculum_subjects(curriculum_id,subject_id,subject_role,applies_to_levels,display_order)
       SELECT $1,os.id,x.role,x.levels,x.ord
       FROM UNNEST($2::text[],$3::text[],$4::text[][],$5::int[]) x(code,role,levels,ord)
       JOIN olevel_subjects os ON os.school_id=$6 AND os.code=x.code
-      ON CONFLICT (curriculum_id,subject_id,subject_role) DO UPDATE
-        SET applies_to_levels=EXCLUDED.applies_to_levels,display_order=EXCLUDED.display_order,is_active=true
+      ON CONFLICT (curriculum_id,subject_id,subject_role) DO UPDATE SET
+        applies_to_levels = EXCLUDED.applies_to_levels,
+        display_order = EXCLUDED.display_order,
+        is_active = true
     """, curriculum_id,codes,roles,levels,list(range(1,len(codes)+1)),school_id)

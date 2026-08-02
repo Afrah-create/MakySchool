@@ -1,11 +1,676 @@
 "use client";
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from "react";
-import { ChevronDown, Download } from "lucide-react";
+
+import { useEffect, useMemo, useState, Fragment } from "react";
+import {
+  ChevronDown,
+  Download,
+  FileArchive,
+  FileSpreadsheet,
+} from "lucide-react";
 import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
+import { ConfirmDialog } from "@makyschool/ui/components/ui/ConfirmDialog";
 import { LoadingButton } from "@makyschool/ui/components/ui/LoadingButton";
+import { StatusBanner } from "@makyschool/ui/components/ui/StatusBanner";
+import { TablePagination } from "@makyschool/ui/components/ui/TablePagination";
+import { PAGE_SIZE_OPTIONS } from "@makyschool/shared/constants";
+import type { OLevelStudentResult } from "@makyschool/shared";
 import { olevelApi } from "@/lib/api/olevel";
-import { useApproveOLevelResults, useGradeOLevelClass, useOLevelClassResults, useOLevelClasses, useOLevelTerms, useRankOLevelClass } from "@/hooks/useOLevel";
+import { exportOLevelResultsCsv } from "@/lib/olevel/exportResultsCsv";
+import { defaultClassAndYear } from "@/lib/olevel/registration";
+import { useClientPagination } from "@/hooks/useClientPagination";
+import {
+  useApproveOLevelResults,
+  useGenerateOLevelResults,
+  useOLevelClassResults,
+  useOLevelClasses,
+  useOLevelTerms,
+  useRankOLevelClass,
+} from "@/hooks/useOLevel";
 import { useToast } from "@/providers/ToastProvider";
-export function OLevelResultsContent(){const {toast}=useToast();const {data:classes=[]}=useOLevelClasses();const {data:terms=[]}=useOLevelTerms();const current=terms.find(t=>t.isCurrent);const [classId,setClassId]=useState("");const [termId,setTermId]=useState(current?.id??"");const yearId=terms.find(t=>t.id===termId)?.academicYearId??"";const {data:results,refetch}=useOLevelClassResults(classId,termId,yearId);const grade=useGradeOLevelClass(),rank=useRankOLevelClass(),approve=useApproveOLevelResults();const [expanded,setExpanded]=useState<string|null>(null);const payload={classId,termId,academicYearId:yearId};async function run(fn:any,message:string){if(!classId||!termId)return toast.error("Choose class and term.");try{await fn.mutateAsync(payload);toast.success(message);void refetch();}catch(e){toast.error(e instanceof Error?e.message:"Action failed.");}}async function download(id:string){try{const blob=await olevelApi.downloadStudentReport(id,termId,yearId);const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="o-level-report.pdf";a.click();URL.revokeObjectURL(a.href);}catch(e){toast.error(e instanceof Error?e.message:"Download failed.");}}
-return <DashboardPage embedded maxWidth="7xl" eyebrow="O-Level" title="Results"><div className="space-y-5"><div className="flex flex-wrap gap-3 rounded-xl border border-theme bg-theme-surface p-4"><select className="ms-input" value={classId} onChange={e=>setClassId(e.target.value)}><option value="">Class</option>{classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select><select className="ms-input" value={termId} onChange={e=>setTermId(e.target.value)}>{terms.map(t=><option key={t.id} value={t.id}>{t.name} · {t.academicYearName}</option>)}</select><LoadingButton loading={grade.isPending} onClick={()=>void run(grade,"Grading complete.")}>Run grading</LoadingButton><LoadingButton loading={rank.isPending} onClick={()=>void run(rank,"Rankings calculated.")}>Calculate rankings</LoadingButton><LoadingButton loading={approve.isPending} onClick={()=>void run(approve,"Results approved.")}>Approve</LoadingButton></div><div className="overflow-x-auto rounded-xl border border-theme bg-theme-surface"><table className="min-w-full text-sm"><thead className="text-xs text-theme-muted"><tr><th className="p-3 text-left">Position</th><th className="text-left">Student</th><th>Total points</th><th>Average</th><th>Promoted</th><th></th></tr></thead><tbody>{results?.students.map(r=><><tr key={r.id} className="border-t border-theme"><td className="p-3">{r.classPosition??"—"}/{r.totalStudentsInClass??"—"}</td><td>{r.studentName}<div className="text-xs text-theme-muted">{r.learnerId}</div></td><td>{r.totalPoints}</td><td>{r.averagePercent.toFixed(1)}%</td><td>{r.isPromoted===null?"—":r.isPromoted?"Yes":"No"}</td><td className="space-x-2"><button onClick={()=>setExpanded(expanded===r.id?null:r.id)}><ChevronDown className="inline h-4 w-4"/></button><button onClick={()=>void download(r.enrollmentId)}><Download className="inline h-4 w-4"/></button></td></tr>{expanded===r.id&&<tr key={`${r.id}-details`} className="border-t border-theme"><td colSpan={6} className="p-4"><div className="grid gap-2 sm:grid-cols-2">{r.subjectResults?.map(s=><div key={s.id} className="flex justify-between rounded bg-theme-raised px-3 py-2"><span>{s.subjectName} <small>{s.subjectCode}</small></span><span>{s.weightedScore.toFixed(1)}% · {s.grade} · {s.points}</span></div>)}</div></td></tr>}</>)}</tbody></table></div></div></DashboardPage>;}
+
+type Banner = { tone: "success" | "error" | "info"; message: string };
+type PipelineAction = "generate" | "rank" | "approve" | null;
+
+export function OLevelResultsContent() {
+  const { toast } = useToast();
+  const { data: classes = [] } = useOLevelClasses();
+  const { data: terms = [] } = useOLevelTerms();
+  const defaults = useMemo(() => defaultClassAndYear(classes, terms), [classes, terms]);
+
+  const [classId, setClassId] = useState("");
+  const [termId, setTermId] = useState("");
+  const [defaultsApplied, setDefaultsApplied] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [banner, setBanner] = useState<Banner | null>(null);
+  const [confirm, setConfirm] = useState<PipelineAction>(null);
+  const [busyAction, setBusyAction] = useState(false);
+  const [zipBusy, setZipBusy] = useState(false);
+
+  const [checkedIds, setCheckedIds] = useState<string[]>([]);
+  const [classComment, setClassComment] = useState("");
+  const [headComment, setHeadComment] = useState("");
+  const [commentBusy, setCommentBusy] = useState(false);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    if (defaultsApplied) return;
+    if (!defaults.classId && !defaults.termId) return;
+    setClassId(defaults.classId);
+    setTermId(defaults.termId);
+    setDefaultsApplied(true);
+  }, [defaults, defaultsApplied]);
+
+  useEffect(() => {
+    setCheckedIds([]);
+    setExpanded(null);
+    setQuery("");
+  }, [classId, termId]);
+
+  const selectedTerm = terms.find((t) => t.id === termId);
+  const yearId = selectedTerm?.academicYearId ?? "";
+  const selectedClass = classes.find((c) => c.id === classId);
+
+  const { data: results, refetch, isFetching, isError, error } = useOLevelClassResults(
+    classId,
+    termId,
+    yearId,
+  );
+  const students = useMemo(() => results?.students ?? [], [results]);
+  const summary = results?.summary;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return students;
+    return students.filter(
+      (s) =>
+        (s.studentName ?? "").toLowerCase().includes(q) ||
+        (s.learnerId ?? "").toLowerCase().includes(q),
+    );
+  }, [students, query]);
+
+  const { paged, page, setPage, pageSize, setPageSize, total } = useClientPagination({
+    items: filtered,
+    resetDeps: [classId, termId, query],
+  });
+
+  const generate = useGenerateOLevelResults();
+  const rank = useRankOLevelClass();
+  const approve = useApproveOLevelResults();
+  const payload = { classId, termId, academicYearId: yearId };
+
+  function show(tone: Banner["tone"], message: string) {
+    setBanner({ tone, message });
+    if (tone === "success") toast.success(message);
+    else if (tone === "error") toast.error(message);
+    else toast.info(message);
+  }
+
+  async function runConfirmed() {
+    if (!confirm) return;
+    if (!classId || !termId || !yearId) {
+      show("error", "Choose class and term first.");
+      setConfirm(null);
+      return;
+    }
+    setBusyAction(true);
+    setBanner(null);
+    try {
+      if (confirm === "generate") {
+        const r = await generate.mutateAsync(payload);
+        const failed = r.failed ?? 0;
+        if (failed > 0) {
+          show(
+            "info",
+            `Generated ${r.calculated} result(s), ranked ${r.ranked}. ${failed} student(s) could not be graded.`,
+          );
+        } else {
+          show(
+            "success",
+            `Results generated for ${r.calculated} student(s); rankings updated for ${r.ranked}.`,
+          );
+        }
+      } else if (confirm === "rank") {
+        const r = await rank.mutateAsync(payload);
+        show("success", `Rankings updated for ${r.updated} student(s).`);
+      } else {
+        const r = await approve.mutateAsync(payload);
+        if (!r.approved) {
+          show("error", "No results to approve. Generate results first.");
+        } else {
+          show("success", `Approved ${r.approved} result(s).`);
+        }
+      }
+      setConfirm(null);
+      await refetch();
+    } catch (e) {
+      show("error", e instanceof Error ? e.message : "Action failed.");
+    } finally {
+      setBusyAction(false);
+    }
+  }
+
+  async function downloadStudent(enrollmentId: string, name?: string) {
+    if (!termId || !yearId) {
+      show("error", "Choose class and term first.");
+      return;
+    }
+    try {
+      const { downloadBinaryFile } = await import("@/lib/api/downloadBinary");
+      await downloadBinaryFile(
+        `/api/schools/olevel/report-cards/student?enrollment_id=${enrollmentId}&term_id=${termId}&academic_year_id=${yearId}`,
+        {
+          fallbackFilename: `${(name || "student").replace(/\s+/g, "-")}-olevel-report.pdf`,
+        },
+      );
+      show("success", "Report card downloaded.");
+    } catch (e) {
+      show("error", e instanceof Error ? e.message : "Download failed.");
+    }
+  }
+
+  async function downloadClassZip() {
+    if (!classId || !termId || !yearId) {
+      show("error", "Choose class and term first.");
+      return;
+    }
+    setZipBusy(true);
+    try {
+      const { downloadBinaryFile } = await import("@/lib/api/downloadBinary");
+      await downloadBinaryFile(`/api/schools/olevel/report-cards/class`, {
+        method: "POST",
+        body: { classId, termId, academicYearId: yearId },
+        fallbackFilename: `olevel-reports-${selectedClass?.name?.replace(/\s+/g, "-") || "class"}.zip`,
+      });
+      show("success", "Class report ZIP downloaded.");
+    } catch (e) {
+      show("error", e instanceof Error ? e.message : "Could not download class reports.");
+    } finally {
+      setZipBusy(false);
+    }
+  }
+
+  async function applyBulkComments(alsoApprove: boolean) {
+    if (!checkedIds.length) {
+      show("error", "Select at least one student.");
+      return;
+    }
+    if (!classComment.trim() && !headComment.trim() && !alsoApprove) {
+      show("error", "Enter a comment or choose Approve with comments.");
+      return;
+    }
+    setCommentBusy(true);
+    try {
+      const r = await olevelApi.saveCommentsBulk({
+        enrollmentIds: checkedIds,
+        termId,
+        academicYearId: yearId,
+        classTeacherComment: classComment.trim() || undefined,
+        headTeacherComment: headComment.trim() || undefined,
+        approve: alsoApprove,
+      });
+      show(
+        "success",
+        alsoApprove
+          ? `Comments saved for ${r.saved}; approved ${r.approved}.`
+          : `Comments saved for ${r.saved} student(s).`,
+      );
+      setCheckedIds([]);
+      void refetch();
+    } catch (e) {
+      show("error", e instanceof Error ? e.message : "Could not save comments.");
+    } finally {
+      setCommentBusy(false);
+    }
+  }
+
+  const confirmCopy: Record<
+    Exclude<PipelineAction, null>,
+    { title: string; description: string; label: string }
+  > = {
+    generate: {
+      title: "Generate class results?",
+      description:
+        "This grades every enrolled student from submitted marks, then recalculates class and subject positions. Existing approvals for this class/term will be cleared.",
+      label: "Generate results",
+    },
+    rank: {
+      title: "Recalculate rankings only?",
+      description:
+        "Positions will be recomputed from existing result totals without re-grading marks.",
+      label: "Calculate rankings",
+    },
+    approve: {
+      title: "Approve class results?",
+      description:
+        "Marks all current results for this class and term as approved. Report cards should be ready before approval.",
+      label: "Approve results",
+    },
+  };
+
+  return (
+    <DashboardPage
+      embedded
+      maxWidth="7xl"
+      eyebrow="O-Level"
+      title="Results"
+      description="Generate grades and rankings, add comments, approve, then download report cards."
+    >
+      <div className="space-y-5">
+        {banner ? (
+          <StatusBanner
+            tone={banner.tone}
+            message={banner.message}
+            onDismiss={() => setBanner(null)}
+            autoDismissMs={banner.tone === "success" ? 5000 : undefined}
+          />
+        ) : null}
+
+        <section className="rounded-xl border border-theme bg-theme-surface p-4 space-y-4">
+          <div className="flex flex-wrap gap-3">
+            <label className="text-sm text-theme-muted">
+              Class
+              <select
+                className="ms-input mt-1 block min-w-40"
+                value={classId}
+                onChange={(e) => setClassId(e.target.value)}
+              >
+                <option value="">Choose class</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-theme-muted">
+              Term
+              <select
+                className="ms-input mt-1 block min-w-48"
+                value={termId}
+                onChange={(e) => setTermId(e.target.value)}
+              >
+                <option value="">Choose term</option>
+                {terms.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} · {t.academicYearName}
+                    {t.isCurrent ? " (current)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <LoadingButton
+              type="button"
+              loading={busyAction && confirm === "generate"}
+              disabled={!classId || !termId || !yearId || busyAction}
+              onClick={() => setConfirm("generate")}
+            >
+              Generate results
+            </LoadingButton>
+            <LoadingButton
+              type="button"
+              variant="ghost"
+              loading={busyAction && confirm === "rank"}
+              disabled={!classId || !termId || !yearId || !students.length || busyAction}
+              onClick={() => setConfirm("rank")}
+            >
+              Recalculate rankings
+            </LoadingButton>
+            <LoadingButton
+              type="button"
+              variant="ghost"
+              loading={busyAction && confirm === "approve"}
+              disabled={!classId || !termId || !yearId || !students.length || busyAction}
+              onClick={() => setConfirm("approve")}
+            >
+              Approve class
+            </LoadingButton>
+            <LoadingButton
+              type="button"
+              variant="ghost"
+              disabled={!students.length}
+              onClick={() =>
+                exportOLevelResultsCsv({
+                  className: selectedClass?.name ?? "class",
+                  termName: selectedTerm?.name ?? "term",
+                  academicYearName: selectedTerm?.academicYearName ?? "",
+                  students,
+                })
+              }
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Export CSV
+            </LoadingButton>
+            <LoadingButton
+              type="button"
+              variant="ghost"
+              loading={zipBusy}
+              disabled={!students.length || !yearId || zipBusy}
+              onClick={() => void downloadClassZip()}
+            >
+              <FileArchive className="h-4 w-4" />
+              Download class ZIP
+            </LoadingButton>
+          </div>
+
+          <p className="text-xs text-theme-muted">
+            Pipeline: enter &amp; submit marks → <strong>Generate results</strong> → comments →{" "}
+            <strong>Approve</strong> → download reports.
+            {isFetching ? " · Refreshing…" : ""}
+          </p>
+        </section>
+
+        {summary && students.length ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat label="Students with results" value={summary.studentCount} />
+            <Stat
+              label="Class average"
+              value={`${Number(summary.averagePercent ?? 0).toFixed(1)}%`}
+            />
+            <Stat label="Promoted" value={`${summary.promotedCount}/${summary.studentCount}`} />
+            <Stat label="Approved" value={`${summary.approvedCount}/${summary.studentCount}`} />
+          </div>
+        ) : null}
+
+        {students.length ? (
+          <section className="rounded-xl border border-theme bg-theme-surface p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="font-semibold text-theme-primary">
+                Bulk comments ({checkedIds.length} selected)
+              </h2>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg bg-theme-raised px-3 py-1.5 text-sm"
+                  onClick={() => setCheckedIds(students.map((s) => s.enrollmentId))}
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-theme-raised px-3 py-1.5 text-sm"
+                  onClick={() => setCheckedIds([])}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-sm text-theme-muted">
+                Class teacher comment
+                <textarea
+                  className="ms-input mt-1 min-h-20 w-full"
+                  value={classComment}
+                  onChange={(e) => setClassComment(e.target.value)}
+                  placeholder="Applied to selected students"
+                />
+              </label>
+              <label className="text-sm text-theme-muted">
+                Head teacher comment
+                <textarea
+                  className="ms-input mt-1 min-h-20 w-full"
+                  value={headComment}
+                  onChange={(e) => setHeadComment(e.target.value)}
+                  placeholder="Admin / head teacher only"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <LoadingButton
+                loading={commentBusy}
+                disabled={!checkedIds.length}
+                onClick={() => void applyBulkComments(false)}
+              >
+                Apply comments
+              </LoadingButton>
+              <LoadingButton
+                variant="ghost"
+                loading={commentBusy}
+                disabled={!checkedIds.length}
+                onClick={() => void applyBulkComments(true)}
+              >
+                Apply &amp; approve selected
+              </LoadingButton>
+            </div>
+          </section>
+        ) : null}
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <input
+            className="ms-input w-full sm:max-w-xs"
+            placeholder="Search student…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            disabled={!students.length}
+          />
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-theme bg-theme-surface">
+          <table className="min-w-full text-sm">
+            <thead className="text-xs text-theme-muted">
+              <tr>
+                <th className="p-3 text-left w-10">
+                  <input
+                    type="checkbox"
+                    aria-label="Select page"
+                    checked={
+                      paged.length > 0 &&
+                      paged.every((s) => checkedIds.includes(s.enrollmentId))
+                    }
+                    onChange={(e) => {
+                      const ids = paged.map((s) => s.enrollmentId);
+                      setCheckedIds((prev) =>
+                        e.target.checked
+                          ? Array.from(new Set([...prev, ...ids]))
+                          : prev.filter((id) => !ids.includes(id)),
+                      );
+                    }}
+                  />
+                </th>
+                <th className="p-3 text-left">Pos</th>
+                <th className="p-3 text-left">Student</th>
+                <th className="p-3 text-left">Points</th>
+                <th className="p-3 text-left">Average</th>
+                <th className="p-3 text-left">Promoted</th>
+                <th className="p-3 text-left">Status</th>
+                <th className="p-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isError ? (
+                <tr>
+                  <td colSpan={8} className="p-6 text-center text-theme-muted">
+                    {error instanceof Error ? error.message : "Could not load results."}{" "}
+                    <button
+                      type="button"
+                      className="text-theme-accent"
+                      onClick={() => void refetch()}
+                    >
+                      Retry
+                    </button>
+                  </td>
+                </tr>
+              ) : !students.length ? (
+                <tr>
+                  <td colSpan={8} className="p-6 text-center text-theme-muted">
+                    {classId && termId
+                      ? "No results yet. Submit subject marks, then use Generate results."
+                      : "Choose a class and term to begin."}
+                  </td>
+                </tr>
+              ) : (
+                paged.map((r) => (
+                  <ResultRow
+                    key={r.id}
+                    result={r}
+                    checked={checkedIds.includes(r.enrollmentId)}
+                    expanded={expanded === r.id}
+                    onCheck={() =>
+                      setCheckedIds((prev) =>
+                        prev.includes(r.enrollmentId)
+                          ? prev.filter((id) => id !== r.enrollmentId)
+                          : [...prev, r.enrollmentId],
+                      )
+                    }
+                    onToggle={() => setExpanded(expanded === r.id ? null : r.id)}
+                    onDownload={() => void downloadStudent(r.enrollmentId, r.studentName)}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <TablePagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          noun="students"
+        />
+      </div>
+
+      <ConfirmDialog
+        open={!!confirm}
+        title={confirm ? confirmCopy[confirm].title : ""}
+        description={confirm ? confirmCopy[confirm].description : ""}
+        confirmLabel={confirm ? confirmCopy[confirm].label : "Confirm"}
+        loading={busyAction}
+        onCancel={() => {
+          if (!busyAction) setConfirm(null);
+        }}
+        onConfirm={() => void runConfirmed()}
+      />
+    </DashboardPage>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-xl border border-theme bg-theme-surface px-4 py-3">
+      <p className="text-xs text-theme-muted">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tabular-nums text-theme-primary">{value}</p>
+    </div>
+  );
+}
+
+function ResultRow({
+  result,
+  checked,
+  expanded,
+  onCheck,
+  onToggle,
+  onDownload,
+}: {
+  result: OLevelStudentResult;
+  checked: boolean;
+  expanded: boolean;
+  onCheck: () => void;
+  onToggle: () => void;
+  onDownload: () => void;
+}) {
+  const approved = Boolean(result.approvedAt);
+  return (
+    <Fragment>
+      <tr className="border-t border-theme">
+        <td className="p-3">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={onCheck}
+            aria-label={`Select ${result.studentName}`}
+          />
+        </td>
+        <td className="p-3 tabular-nums">
+          {result.classPosition ?? "—"}
+          {result.totalStudentsInClass ? `/${result.totalStudentsInClass}` : ""}
+        </td>
+        <td className="p-3">
+          <div className="font-medium text-theme-primary">{result.studentName}</div>
+          <div className="text-xs text-theme-muted">{result.learnerId || "No student ID"}</div>
+        </td>
+        <td className="p-3 tabular-nums">{result.totalPoints ?? "—"}</td>
+        <td className="p-3 tabular-nums">
+          {result.averagePercent != null
+            ? `${Number(result.averagePercent).toFixed(1)}%`
+            : "—"}
+        </td>
+        <td className="p-3">
+          {result.isPromoted === null ? "—" : result.isPromoted ? "Yes" : "No"}
+        </td>
+        <td className="p-3">
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs ${
+              approved
+                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                : "bg-theme-raised text-theme-muted"
+            }`}
+          >
+            {approved ? "Approved" : "Draft"}
+          </span>
+        </td>
+        <td className="p-3 text-right space-x-2 whitespace-nowrap">
+          <button type="button" className="text-theme-muted" onClick={onToggle} aria-label="Expand">
+            <ChevronDown className={`inline h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
+          </button>
+          <button
+            type="button"
+            className="text-theme-accent"
+            onClick={onDownload}
+            aria-label="Download report"
+          >
+            <Download className="inline h-4 w-4" />
+          </button>
+        </td>
+      </tr>
+      {expanded ? (
+        <tr className="border-t border-theme bg-theme-raised/30">
+          <td colSpan={8} className="p-4">
+            <div className="grid gap-2 sm:grid-cols-2">
+              {result.subjectResults?.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex justify-between gap-3 rounded-lg bg-theme-surface px-3 py-2"
+                >
+                  <span>
+                    {s.subjectName}{" "}
+                    <span className="text-xs text-theme-muted">{s.subjectCode}</span>
+                    {s.countsInResult ? null : (
+                      <span className="ml-2 text-xs text-theme-muted">(not counted)</span>
+                    )}
+                  </span>
+                  <span className="tabular-nums">
+                    {s.weightedScore != null
+                      ? `${Number(s.weightedScore).toFixed(1)}%`
+                      : "—"}{" "}
+                    · {s.grade ?? "—"} · {s.points ?? "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {(result.classTeacherComment || result.headTeacherComment) && (
+              <div className="mt-3 space-y-1 text-sm text-theme-muted">
+                {result.classTeacherComment ? (
+                  <p>
+                    <span className="font-medium text-theme-primary">Class teacher:</span>{" "}
+                    {result.classTeacherComment}
+                  </p>
+                ) : null}
+                {result.headTeacherComment ? (
+                  <p>
+                    <span className="font-medium text-theme-primary">Head teacher:</span>{" "}
+                    {result.headTeacherComment}
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </td>
+        </tr>
+      ) : null}
+    </Fragment>
+  );
+}

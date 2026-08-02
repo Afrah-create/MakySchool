@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.pool import get_db
-from app.lib.alevel_reports import load_school_branding
+from app.lib.alevel_reports import load_school_branding, student_initials
 from app.lib.classes import O_LEVEL_CLASS_LEVELS
 from app.lib.olevel_access import (
     assert_olevel_enabled,
@@ -21,6 +21,7 @@ from app.lib.olevel_access import (
     teacher_assigned_olevel_class_ids,
 )
 from app.lib.olevel_pdf import generate_olevel_report_pdf_bytes
+from app.lib.storage_urls import resolve_storage_data_uri
 from app.middleware.subscription_guard import require_tenant_with_subscription
 from app.services.olevel import (
     curriculum as curriculum_svc,
@@ -433,6 +434,39 @@ async def remove_curriculum_subject(
     return _ok({"removed": True})
 
 
+@router.put("/curriculum/{curriculum_id}/subjects/band")
+async def replace_band_subjects(
+    curriculum_id: uuid.UUID,
+    body: dict[str, Any],
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """Replace compulsory/optional assignments for S1–S2 or S3–S4."""
+    school_id, actor = ctx
+    require_olevel_action(actor, "manageCurriculum")
+    levels = body.get("applies_to_levels") or body.get("appliesToLevels") or []
+    subjects = body.get("subjects") or []
+    if not isinstance(levels, list) or not isinstance(subjects, list):
+        raise HTTPException(
+            422,
+            detail={
+                "error": "Expected appliesToLevels and subjects lists.",
+                "code": "VALIDATION_ERROR",
+            },
+        )
+    try:
+        data = await subjects_svc.replace_band_subjects(
+            conn,
+            school_id,
+            curriculum_id,
+            levels=[str(x) for x in levels],
+            subjects=subjects,
+        )
+    except LookupError as exc:
+        raise _http_lookup(exc) from exc
+    return _ok(data)
+
+
 # ── Exam sessions ─────────────────────────────────────────────────────────────
 
 
@@ -594,6 +628,10 @@ async def bulk_register_subjects(
 ):
     school_id, actor = ctx
     require_olevel_action(actor, "manageStudentSubjects")
+    raw_ids = body.get("enrollment_ids") or body.get("enrollmentIds") or []
+    enrollment_ids: list[uuid.UUID] | None = None
+    if isinstance(raw_ids, list) and raw_ids:
+        enrollment_ids = [uuid.UUID(str(x)) for x in raw_ids]
     return _ok(
         await enrollments_svc.bulk_register_subjects(
             conn,
@@ -604,6 +642,7 @@ async def bulk_register_subjects(
                 str(body.get("academic_year_id") or body.get("academicYearId"))
             ),
             subjects=body.get("subjects") or [],
+            enrollment_ids=enrollment_ids,
         )
     )
 
@@ -814,6 +853,26 @@ async def grade_class(
     )
 
 
+@router.post("/grade/generate")
+async def generate_class_results(
+    body: dict[str, Any], ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)
+):
+    """Grade the class and recalculate rankings in one step."""
+    school_id, actor = ctx
+    require_olevel_action(actor, "viewOLevelResults")
+    return _ok(
+        await grading_svc.generate_class_results(
+            conn,
+            school_id,
+            class_id=uuid.UUID(str(body.get("class_id") or body.get("classId"))),
+            term_id=uuid.UUID(str(body.get("term_id") or body.get("termId"))),
+            academic_year_id=uuid.UUID(
+                str(body.get("academic_year_id") or body.get("academicYearId"))
+            ),
+        )
+    )
+
+
 @router.post("/grade/student/{enrollment_id}")
 async def grade_student(
     enrollment_id: uuid.UUID,
@@ -953,6 +1012,55 @@ async def save_comments(
     )
 
 
+@router.post("/results/comments/bulk")
+async def save_comments_bulk(
+    body: dict[str, Any], ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)
+):
+    school_id, actor = ctx
+    require_olevel_action(actor, "viewOLevelResults")
+    role = (actor.get("role") or "").lower()
+    class_comment = body.get("class_teacher_comment", body.get("classTeacherComment"))
+    head_comment = body.get("head_teacher_comment", body.get("headTeacherComment"))
+    approve = bool(body.get("approve"))
+    if head_comment is not None and role not in ("admin", "head_teacher"):
+        raise HTTPException(
+            403,
+            detail={
+                "error": "Only head teachers may set head teacher comments.",
+                "code": "FORBIDDEN",
+            },
+        )
+    if approve and role not in ("admin", "head_teacher"):
+        raise HTTPException(
+            403,
+            detail={"error": "Only head teachers may approve.", "code": "FORBIDDEN"},
+        )
+    raw_ids = body.get("enrollment_ids") or body.get("enrollmentIds") or []
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise HTTPException(
+            422,
+            detail={
+                "error": "Select at least one student.",
+                "code": "VALIDATION_ERROR",
+            },
+        )
+    return _ok(
+        await results_svc.save_comments_bulk(
+            conn,
+            school_id,
+            enrollment_ids=[uuid.UUID(str(x)) for x in raw_ids],
+            term_id=uuid.UUID(str(body.get("term_id") or body.get("termId"))),
+            academic_year_id=uuid.UUID(
+                str(body.get("academic_year_id") or body.get("academicYearId"))
+            ),
+            class_teacher_comment=class_comment,
+            head_teacher_comment=head_comment,
+            approve=approve,
+            actor_id=actor_user_id(actor) if approve else None,
+        )
+    )
+
+
 @router.post("/results/approve")
 async def approve_results(
     body: dict[str, Any], ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)
@@ -990,23 +1098,30 @@ async def _build_report_payload(
 ) -> dict[str, Any]:
     e = await conn.fetchrow(
         """
-        SELECT e.*, s.full_name, s.learner_id,
+        SELECT e.*, s.full_name, s.learner_id, s.photo_url,
                CASE WHEN sc.stream IS NULL OR sc.stream = '' THEN sc.level
-                    ELSE sc.level || ' ' || sc.stream END AS class_name
+                    ELSE sc.level || ' ' || sc.stream END AS class_name,
+               t.name AS term_name, ay.year AS academic_year
         FROM student_curriculum_enrollments e
         JOIN students s ON s.id = e.student_id
         LEFT JOIN school_classes sc ON sc.id = e.class_id
+        LEFT JOIN terms t ON t.id = $3
+        LEFT JOIN academic_years ay ON ay.id = $4
         WHERE e.id = $1 AND e.school_id = $2
         """,
         enrollment_id,
         school_id,
+        term_id,
+        academic_year_id,
     )
     if not e:
         raise LookupError("Enrollment not found.")
     result = await conn.fetchrow(
         """
-        SELECT * FROM olevel_student_results
-        WHERE school_id=$1 AND enrollment_id=$2 AND term_id=$3 AND academic_year_id=$4
+        SELECT r.*, u.full_name AS approved_by_name
+        FROM olevel_student_results r
+        LEFT JOIN users u ON u.id = r.approved_by
+        WHERE r.school_id=$1 AND r.enrollment_id=$2 AND r.term_id=$3 AND r.academic_year_id=$4
         """,
         school_id,
         enrollment_id,
@@ -1038,6 +1153,8 @@ async def _build_report_payload(
         e["curriculum_id"],
     )
     branding = await load_school_branding(conn, school_id, for_pdf=True)
+    photo = await resolve_storage_data_uri(e["photo_url"], school_id=school_id)
+    name = e["full_name"]
     rules = {
         "showGrades": bool(report_rules["show_grades"]) if report_rules else True,
         "showPercentages": bool(report_rules["show_percentages"]) if report_rules else True,
@@ -1052,15 +1169,23 @@ async def _build_report_payload(
     return {
         "schoolName": branding.get("schoolName") or branding.get("name"),
         "logoUrl": branding.get("logoUrl"),
-        "studentName": e["full_name"],
+        "stampUrl": branding.get("stampUrl"),
+        "photoUrl": photo,
+        "studentName": name,
+        "studentInitials": student_initials(name),
         "learnerId": e["learner_id"],
         "className": e["class_name"],
+        "termName": e["term_name"],
+        "academicYearName": str(e["academic_year"]) if e["academic_year"] is not None else None,
         "classTeacherComment": result["class_teacher_comment"],
         "headTeacherComment": result["head_teacher_comment"],
+        "approvedAt": result["approved_at"].isoformat() if result["approved_at"] else None,
+        "approvedByName": result["approved_by_name"],
         "reportRules": rules,
         "subjectResults": [
             {
                 "subjectName": s["subject_name"],
+                "subjectCode": s["subject_code"],
                 "weightedScore": float(s["weighted_score"] or 0),
                 "grade": s["grade"],
                 "points": float(s["points"] or 0),
@@ -1071,6 +1196,7 @@ async def _build_report_payload(
             "totalPoints": float(result["total_points"] or 0),
             "averagePercent": float(result["average_percent"] or 0),
             "classPosition": result["class_position"],
+            "totalStudentsInClass": result["total_students_in_class"],
             "isPromoted": result["is_promoted"],
         },
     }
@@ -1135,17 +1261,19 @@ async def report_cards_class(
         academic_year_id,
     )
     buf = io.BytesIO()
+    written = 0
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for r in rows:
             try:
                 payload = await _build_report_payload(
                     conn, school_id, r["id"], term_id, academic_year_id
                 )
-            except HTTPException:
+            except (HTTPException, LookupError):
                 continue
             pdf = await generate_olevel_report_pdf_bytes(payload)
             safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in r["full_name"])
             zf.writestr(f"{safe or r['id']}.pdf", pdf)
+            written += 1
             await conn.execute(
                 """
                 UPDATE olevel_student_results
@@ -1157,6 +1285,14 @@ async def report_cards_class(
                 term_id,
                 academic_year_id,
             )
+    if written == 0:
+        raise HTTPException(
+            422,
+            detail={
+                "error": "No report cards available. Generate results for this class and term first.",
+                "code": "RESULTS_MISSING",
+            },
+        )
     return Response(
         content=buf.getvalue(),
         media_type="application/zip",

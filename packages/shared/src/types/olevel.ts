@@ -126,6 +126,19 @@ export type StudentCurriculumEnrollment = {
   learnerId?: string | null;
   className?: string | null;
   enrolledAt?: string;
+  registeredSubjectCount?: number;
+  optionalSubjectCount?: number;
+  compulsorySubjectCount?: number;
+};
+
+export type OLevelLevelBand = "S1-S2" | "S3-S4";
+
+export const OLEVEL_LEVEL_BANDS: Record<
+  OLevelLevelBand,
+  { label: string; levels: string[] }
+> = {
+  "S1-S2": { label: "S1–S2 (lower secondary)", levels: ["S1", "S2"] },
+  "S3-S4": { label: "S3–S4 (upper secondary)", levels: ["S3", "S4"] },
 };
 
 export type StudentSubjectRegistration = {
@@ -204,6 +217,13 @@ export type OLevelClassResultsResponse = {
   termId: string;
   academicYearId: string;
   students: OLevelStudentResult[];
+  summary?: {
+    studentCount: number;
+    approvedCount: number;
+    promotedCount: number;
+    averagePercent: number;
+    rankedCount: number;
+  };
 };
 
 export type BulkMarkPayload = {
