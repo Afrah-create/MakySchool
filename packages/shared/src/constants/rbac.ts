@@ -52,6 +52,13 @@ export const CAN = {
   manageAttendanceSettings: ["admin"],
   viewTeacherAttendance: ["admin", "head_teacher"],
   manualMarkAttendance: ["admin", "head_teacher"],
+  manageCurriculum: ["admin"],
+  viewCurriculum: ["admin", "head_teacher"],
+  manageExamSessions: ["admin", "head_teacher"],
+  enterOLevelMarks: ["admin", "head_teacher", "teacher"],
+  viewOLevelResults: ["admin", "head_teacher"],
+  generateOLevelReports: ["admin", "head_teacher"],
+  manageStudentSubjects: ["admin"],
 } as const satisfies Record<string, MakySchoolRole[]>;
 
 export type PermissionAction = keyof typeof CAN;

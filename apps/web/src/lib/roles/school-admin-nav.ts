@@ -24,7 +24,7 @@ import {
   UserRound,
   UsersRound,
 } from "lucide-react";
-import { can, schoolOffersALevel, schoolOffersPrimary, type PermissionAction } from "@makyschool/shared/constants";
+import { can, schoolOffersALevel, schoolOffersOLevel, schoolOffersPrimary, type PermissionAction } from "@makyschool/shared/constants";
 import type { SchoolType, UserRole } from "@makyschool/shared/types";
 
 export type NavItem = {
@@ -69,6 +69,15 @@ const schoolAdminPrimaryNavChildren: NavItem[] = [
   { href: "/dashboard/primary/ple", label: "PLE", icon: GraduationCap, exact: false, requiredAction: "managePLEResults" },
   { href: "/dashboard/primary/exam-types", label: "Exam types", icon: ListOrdered, exact: false, requiredAction: "managePrimarySetup" },
   { href: "/dashboard/primary/setup", label: "Setup", icon: Settings2, exact: false, requiredAction: "managePrimarySetup" },
+];
+
+const schoolAdminOLevelNavChildren: NavItem[] = [
+  { href: "/dashboard/olevel", label: "Overview", icon: LayoutDashboard, exact: true, requiredAction: "viewCurriculum" },
+  { href: "/dashboard/olevel/exam-sessions", label: "Exam sessions", icon: ClipboardList, exact: false, requiredAction: "viewCurriculum" },
+  { href: "/dashboard/olevel/students", label: "Students", icon: UsersRound, exact: false, requiredAction: "manageStudentSubjects" },
+  { href: "/dashboard/olevel/results", label: "Results", icon: Award, exact: false, requiredAction: "viewOLevelResults" },
+  { href: "/dashboard/olevel/marks", label: "Marks review", icon: BookOpenCheck, exact: false, requiredAction: "viewOLevelResults" },
+  { href: "/dashboard/olevel/setup", label: "Setup", icon: Settings2, exact: false, requiredAction: "manageCurriculum" },
 ];
 
 const schoolAdminSettingsNavChildren: NavItem[] = [
@@ -213,6 +222,14 @@ export const schoolAdminNavGroups: NavGroup[] = [
         requiredAction: "viewALevel",
         children: schoolAdminALevelNavChildren,
       },
+      {
+        href: "/dashboard/olevel",
+        label: "O-Level",
+        icon: BookOpenCheck,
+        exact: false,
+        requiredAction: "viewCurriculum",
+        children: schoolAdminOLevelNavChildren,
+      },
     ],
   },
   {
@@ -303,6 +320,7 @@ export function filterNavGroupsBySchoolType(
 ): NavGroup[] {
   const offersPrimary = schoolOffersPrimary(schoolType);
   const offersALevel = schoolOffersALevel(schoolType);
+  const offersOLevel = schoolOffersOLevel(schoolType);
   return groups
     .map((group) => ({
       ...group,
@@ -312,6 +330,9 @@ export function filterNavGroupsBySchoolType(
         }
         if (item.href.startsWith("/dashboard/alevel")) {
           return offersALevel;
+        }
+        if (item.href === "/dashboard/olevel" || item.href.startsWith("/dashboard/olevel/")) {
+          return offersOLevel;
         }
         return true;
       }),

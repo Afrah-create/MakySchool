@@ -52,6 +52,7 @@ export {
 
 export {
   A_LEVEL_CLASS_LEVELS,
+  O_LEVEL_CLASS_LEVELS,
   PRIMARY_CLASS_LEVELS,
   SECONDARY_CLASS_LEVELS,
   formatClassLabel,
@@ -59,10 +60,12 @@ export {
   getLevelsForSchoolType,
   groupClassesByLevel,
   isALevelClassLevel,
+  isOLevelClassLevel,
   isLevelAllowedForSchoolType,
   isLowerPrimaryLevel,
   isUpperPrimaryLevel,
   schoolOffersALevel,
+  schoolOffersOLevel,
   schoolOffersPrimary,
   sortClasses,
 } from "./classes";

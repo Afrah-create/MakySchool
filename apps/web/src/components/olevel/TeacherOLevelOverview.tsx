@@ -1,0 +1,7 @@
+"use client";
+import Link from "next/link";
+import { ClipboardList } from "lucide-react";
+import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
+import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
+import { useTeacherOLevelAssignments } from "@/hooks/useOLevel";
+export function TeacherOLevelOverview(){const {data:assignments=[],isPending}=useTeacherOLevelAssignments();return <DashboardPage embedded maxWidth="7xl" eyebrow="O-Level" title="O-Level marks" description="Your assigned O-Level assessment sessions.">{!isPending&&!assignments.length?<EmptyState icon={ClipboardList} title="No O-Level assignments" description="When an administrator opens a session for a subject you teach, it will appear here."/>:<div className="grid gap-4 md:grid-cols-2">{assignments.map(a=><Link key={`${a.examSessionId}-${a.subjectId}`} href={`/teacher/olevel/marks?session=${a.examSessionId}&subject=${a.subjectId}`} className="rounded-xl border border-theme bg-theme-surface p-5 transition hover:border-theme-accent"><div className="flex justify-between gap-3"><div><h2 className="font-semibold text-theme-primary">{a.subjectName}</h2><p className="mt-1 text-sm text-theme-muted">{a.title} · {a.className} · {a.termName}</p></div><span className="rounded-full bg-theme-raised px-2 py-1 text-xs">{a.status}</span></div><p className="mt-4 text-sm text-theme-muted">{a.enteredCount}/{a.studentCount} marks entered · {a.submissionStatus}</p></Link>)}</div>}</DashboardPage>;}

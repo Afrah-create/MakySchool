@@ -6,8 +6,15 @@ export const SECONDARY_CLASS_LEVELS = ["S1", "S2", "S3", "S4", "S5", "S6"] as co
 /** Advanced level — the only classes that take subject combinations. */
 export const A_LEVEL_CLASS_LEVELS = ["S5", "S6"] as const;
 
+/** Lower secondary NLSC CBC (O-Level) — S1–S4. */
+export const O_LEVEL_CLASS_LEVELS = ["S1", "S2", "S3", "S4"] as const;
+
 export function isALevelClassLevel(level: string): boolean {
   return (A_LEVEL_CLASS_LEVELS as readonly string[]).includes(level);
+}
+
+export function isOLevelClassLevel(level: string): boolean {
+  return (O_LEVEL_CLASS_LEVELS as readonly string[]).includes(level);
 }
 
 export function schoolOffersPrimary(schoolType: SchoolType | string | null | undefined): boolean {
@@ -16,6 +23,11 @@ export function schoolOffersPrimary(schoolType: SchoolType | string | null | und
 
 /** Secondary and combined schools offer A-Level (S5/S6). Primary-only schools do not. */
 export function schoolOffersALevel(schoolType: SchoolType | string | null | undefined): boolean {
+  return schoolType === "secondary" || schoolType === "both";
+}
+
+/** Secondary and combined schools offer O-Level (S1–S4). Primary-only schools do not. */
+export function schoolOffersOLevel(schoolType: SchoolType | string | null | undefined): boolean {
   return schoolType === "secondary" || schoolType === "both";
 }
 

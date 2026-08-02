@@ -9,6 +9,8 @@ PRIMARY_CLASS_LEVELS = ("P1", "P2", "P3", "P4", "P5", "P6", "P7")
 SECONDARY_CLASS_LEVELS = ("S1", "S2", "S3", "S4", "S5", "S6")
 # Advanced level — the only classes that take subject combinations.
 A_LEVEL_CLASS_LEVELS = ("S5", "S6")
+# Lower secondary (NLSC CBC O-Level) — S1–S4.
+O_LEVEL_CLASS_LEVELS = ("S1", "S2", "S3", "S4")
 
 
 def get_levels_for_school_type(school_type: SchoolType | str | None) -> list[str]:

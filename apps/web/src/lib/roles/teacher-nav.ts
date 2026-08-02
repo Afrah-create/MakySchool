@@ -75,6 +75,14 @@ export const teacherNavGroups: PortalNavGroup[] = [
         exact: false,
         roles: teacherRole,
       },
+      {
+        id: "teacher-olevel-marks",
+        href: "/teacher/olevel",
+        label: "O-Level marks",
+        icon: BookOpenCheck,
+        exact: false,
+        roles: teacherRole,
+      },
     ],
   },
   {

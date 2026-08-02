@@ -51,6 +51,7 @@ export function filterPortalNavGroupsBySchoolType(
       items: group.items.filter((item) => {
         if (item.href.startsWith("/teacher/primary")) return offersPrimary;
         if (item.href.startsWith("/teacher/alevel")) return offersALevel;
+        if (item.href.startsWith("/teacher/olevel")) return offersALevel;
         return true;
       }),
     }))
