@@ -4,8 +4,10 @@ import { useMemo, useState } from 'react';
 import { Download, FileText } from 'lucide-react';
 import {
   schoolOffersALevel,
+  schoolOffersOLevel,
   schoolOffersPrimary,
   type ALevelReportCard,
+  type OLevelReportCard,
   type PrimaryReportCard,
 } from '@makyschool/shared';
 import { DashboardPage } from '@makyschool/ui/components/layout/DashboardPage';
@@ -19,6 +21,11 @@ import {
   useLearnerApprovedReport,
   useLearnerApprovedReports,
 } from '@/hooks/useLearnerALevel';
+import {
+  useDownloadLearnerOLevelReportPdf,
+  useLearnerOLevelApprovedReport,
+  useLearnerOLevelApprovedReports,
+} from '@/hooks/useLearnerOLevel';
 import {
   useDownloadLearnerPrimaryReportPdf,
   useLearnerPrimaryApprovedReport,
@@ -37,7 +44,7 @@ const RESULT_BADGE: Record<string, string> = {
   '6': 'bg-theme-raised text-theme-muted',
 };
 
-type Track = 'alevel' | 'primary';
+type Track = 'alevel' | 'primary' | 'olevel';
 
 type UnifiedSummary = {
   key: string;
@@ -332,6 +339,162 @@ function PrimaryDetail({ report }: { report: PrimaryReportCard }) {
   );
 }
 
+function OLevelDetail({ report }: { report: OLevelReportCard }) {
+  const totals = report.totals;
+  const rules = report.reportRules;
+  return (
+    <>
+      <section className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+        <div className="border-b border-theme px-4 py-4 sm:px-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3.5">
+              <ReportAvatar
+                photoUrl={report.photoUrl}
+                initials={report.studentInitials}
+                name={report.studentName}
+              />
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-semibold text-theme-primary">
+                  {report.studentName}
+                </h2>
+                <p className="mt-0.5 font-mono text-xs text-theme-muted">
+                  {report.learnerId}
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-3 self-start rounded-xl border border-theme bg-theme-raised/40 px-4 py-2.5 sm:flex-col sm:items-end sm:gap-1">
+              <p className="text-2xl font-semibold tabular-nums leading-none text-theme-primary">
+                {totals.averagePercent.toFixed(0)}
+                <span className="ml-1 text-sm font-normal text-theme-muted">%</span>
+              </p>
+              <span className="inline-flex rounded-full bg-theme-raised px-2.5 py-0.5 text-xs font-semibold text-theme-muted">
+                {totals.totalPoints.toFixed(0)} pts
+              </span>
+            </div>
+          </div>
+          <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-theme pt-4 sm:grid-cols-4">
+            <MetaChip label="Class" value={report.className} />
+            <MetaChip label="Term" value={report.termName} />
+            <MetaChip label="Year" value={report.academicYearName} />
+            <MetaChip
+              label="Position"
+              value={
+                totals.classPosition != null
+                  ? `${totals.classPosition}${
+                      totals.totalStudentsInClass
+                        ? ` of ${totals.totalStudentsInClass}`
+                        : ''
+                    }`
+                  : '—'
+              }
+            />
+          </dl>
+        </div>
+        <div className="grid grid-cols-3 gap-3 border-b border-theme px-4 py-4 sm:px-5">
+          <KpiTile
+            label="Average"
+            value={`${totals.averagePercent.toFixed(1)}%`}
+          />
+          <KpiTile label="Total points" value={totals.totalPoints.toFixed(0)} />
+          <KpiTile
+            label="Promotion"
+            value={
+              totals.isPromoted == null
+                ? '—'
+                : totals.isPromoted
+                  ? 'Promoted'
+                  : 'Not promoted'
+            }
+          />
+        </div>
+        <div className="overflow-x-auto">
+          <table className="ms-table ms-table-compact w-full min-w-[36rem]">
+            <thead>
+              <tr>
+                <th>Subject</th>
+                {rules?.showPercentages !== false ? (
+                  <>
+                    <th className="text-center">CA %</th>
+                    <th className="text-center">Exam %</th>
+                    <th className="text-center">Final %</th>
+                  </>
+                ) : null}
+                {rules?.showGrades !== false ? (
+                  <th className="text-center">Grade</th>
+                ) : null}
+                {rules?.showPoints !== false ? (
+                  <th className="text-center">Pts</th>
+                ) : null}
+              </tr>
+            </thead>
+            <tbody>
+              {report.subjectResults.map((s) => (
+                <tr key={s.subjectId ?? s.subjectCode ?? s.subjectName}>
+                  <td>
+                    <div className="flex items-baseline gap-2">
+                      <span className="shrink-0 font-mono text-xs text-theme-muted">
+                        {s.subjectCode}
+                      </span>
+                      <span className="font-medium text-theme-primary">
+                        {s.subjectName}
+                      </span>
+                    </div>
+                  </td>
+                  {rules?.showPercentages !== false ? (
+                    <>
+                      <td className="text-center tabular-nums text-theme-muted">
+                        {s.assessmentPercent != null
+                          ? s.assessmentPercent.toFixed(1)
+                          : '—'}
+                      </td>
+                      <td className="text-center tabular-nums text-theme-muted">
+                        {s.examPercent != null ? s.examPercent.toFixed(1) : '—'}
+                      </td>
+                      <td className="text-center tabular-nums text-theme-muted">
+                        {s.weightedScore.toFixed(1)}
+                      </td>
+                    </>
+                  ) : null}
+                  {rules?.showGrades !== false ? (
+                    <td className="text-center font-semibold tabular-nums text-theme-accent">
+                      {s.grade ?? '—'}
+                      {s.gradeLabel ? (
+                        <span className="ml-1 text-[10px] font-normal text-theme-muted">
+                          {s.gradeLabel}
+                        </span>
+                      ) : null}
+                    </td>
+                  ) : null}
+                  {rules?.showPoints !== false ? (
+                    <td className="text-center tabular-nums text-theme-primary">
+                      {s.points}
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      {(rules?.showTeacherComment !== false ||
+        rules?.showHeadTeacherComment !== false) && (
+        <CommentsBlock
+          classTeacher={
+            rules?.showTeacherComment === false
+              ? null
+              : report.classTeacherComment ?? null
+          }
+          headTeacher={
+            rules?.showHeadTeacherComment === false
+              ? null
+              : report.headTeacherComment ?? null
+          }
+        />
+      )}
+    </>
+  );
+}
+
 function CommentsBlock({
   classTeacher,
   headTeacher,
@@ -366,9 +529,11 @@ export function LearnerReportCardsContent() {
   const { school } = useSchool();
   const offersPrimary = schoolOffersPrimary(school?.school_type);
   const offersALevel = schoolOffersALevel(school?.school_type);
+  const offersOLevel = schoolOffersOLevel(school?.school_type);
 
   const alevelList = useLearnerApprovedReports(offersALevel);
   const primaryList = useLearnerPrimaryApprovedReports(offersPrimary);
+  const olevelList = useLearnerOLevelApprovedReports(offersOLevel);
 
   const items = useMemo((): UnifiedSummary[] => {
     const out: UnifiedSummary[] = [];
@@ -399,8 +564,27 @@ export function LearnerReportCardsContent() {
               : r.examTypeName || 'Primary',
       });
     }
+    for (const r of olevelList.data ?? []) {
+      out.push({
+        key: `olevel:${r.resultId}`,
+        track: 'olevel',
+        examId: r.resultId,
+        examName: r.className
+          ? `O-Level · ${r.className}`
+          : 'O-Level report',
+        termName: r.termName,
+        yearLabel: r.academicYearLabel,
+        subtitle: `${r.averagePercent.toFixed(0)}% · ${r.totalPoints.toFixed(0)} pts${
+          r.classPosition != null
+            ? ` · Pos ${r.classPosition}${
+                r.totalStudentsInClass ? `/${r.totalStudentsInClass}` : ''
+              }`
+            : ''
+        }`,
+      });
+    }
     return out;
-  }, [alevelList.data, primaryList.data]);
+  }, [alevelList.data, primaryList.data, olevelList.data]);
 
   const [selectedKey, setSelectedKey] = useState('');
   const selected =
@@ -414,22 +598,30 @@ export function LearnerReportCardsContent() {
     selected?.track === 'primary' ? selected.examId : '',
     selected?.track === 'primary',
   );
+  const olevelDetail = useLearnerOLevelApprovedReport(
+    selected?.track === 'olevel' ? selected.examId : '',
+    selected?.track === 'olevel',
+  );
 
   const downloadALevel = useDownloadLearnerReportPdf();
   const downloadPrimary = useDownloadLearnerPrimaryReportPdf();
+  const downloadOLevel = useDownloadLearnerOLevelReportPdf();
 
   const listLoading =
     (offersALevel && alevelList.isLoading) ||
-    (offersPrimary && primaryList.isLoading);
-  const listError = alevelList.error || primaryList.error;
+    (offersPrimary && primaryList.isLoading) ||
+    (offersOLevel && olevelList.isLoading);
+  const listError = alevelList.error || primaryList.error || olevelList.error;
 
   async function onDownload() {
     if (!selected) return;
     try {
       if (selected.track === 'alevel') {
         await downloadALevel.mutateAsync(selected.examId);
-      } else {
+      } else if (selected.track === 'primary') {
         await downloadPrimary.mutateAsync(selected.examId);
+      } else {
+        await downloadOLevel.mutateAsync(selected.examId);
       }
       toast.success('Report card downloaded.');
     } catch (err) {
@@ -440,19 +632,25 @@ export function LearnerReportCardsContent() {
   }
 
   const downloading =
-    downloadALevel.isPending || downloadPrimary.isPending;
+    downloadALevel.isPending ||
+    downloadPrimary.isPending ||
+    downloadOLevel.isPending;
   const detailLoading =
     selected?.track === 'alevel'
       ? alevelDetail.isPending
       : selected?.track === 'primary'
         ? primaryDetail.isPending
-        : false;
+        : selected?.track === 'olevel'
+          ? olevelDetail.isPending
+          : false;
   const detailError =
     selected?.track === 'alevel'
       ? alevelDetail.isError
       : selected?.track === 'primary'
         ? primaryDetail.isError
-        : false;
+        : selected?.track === 'olevel'
+          ? olevelDetail.isError
+          : false;
 
   return (
     <DashboardPage
@@ -487,6 +685,7 @@ export function LearnerReportCardsContent() {
           onRetry={() => {
             void alevelList.refetch();
             void primaryList.refetch();
+            void olevelList.refetch();
           }}
         />
       ) : items.length === 0 ? (
@@ -566,12 +765,15 @@ export function LearnerReportCardsContent() {
                   if (selected?.track === 'alevel') void alevelDetail.refetch();
                   if (selected?.track === 'primary')
                     void primaryDetail.refetch();
+                  if (selected?.track === 'olevel') void olevelDetail.refetch();
                 }}
               />
             ) : selected?.track === 'alevel' && alevelDetail.data ? (
               <ALevelDetail report={alevelDetail.data} />
             ) : selected?.track === 'primary' && primaryDetail.data ? (
               <PrimaryDetail report={primaryDetail.data} />
+            ) : selected?.track === 'olevel' && olevelDetail.data ? (
+              <OLevelDetail report={olevelDetail.data} />
             ) : null}
           </div>
         </div>

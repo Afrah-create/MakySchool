@@ -15,6 +15,32 @@ from app.lib.olevel_access import (
 from . import serialize
 
 
+def _coerce_score(raw: Any, max_marks: float) -> float | None:
+    """Normalize a score; blank/null → None. Raises HTTPException if out of range."""
+    if raw is None:
+        return None
+    if isinstance(raw, str) and not raw.strip():
+        return None
+    try:
+        score = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            422,
+            detail={"error": "Score must be a number.", "code": "INVALID_SCORE"},
+        ) from exc
+    if score != score:  # NaN
+        return None
+    if score < 0 or score > max_marks:
+        raise HTTPException(
+            422,
+            detail={
+                "error": f"Score must be between 0 and {max_marks:g}.",
+                "code": "INVALID_SCORE",
+            },
+        )
+    return score
+
+
 async def get_mark_grid(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
@@ -325,15 +351,10 @@ async def bulk_save_marks(
             422, detail={"error": "Submitted marks are locked.", "code": "MARKS_SUBMITTED"}
         )
     ids = [uuid.UUID(str(x.get("student_id") or x.get("studentId"))) for x in marks]
-    scores = [x.get("raw_score", x.get("rawScore")) for x in marks]
+    max_marks = float(s["max_marks"])
+    scores = [_coerce_score(x.get("raw_score", x.get("rawScore")), max_marks) for x in marks]
     absent = [bool(x.get("is_absent", x.get("isAbsent"))) for x in marks]
     remarks = [x.get("remarks") for x in marks]
-    if any(
-        x is not None and (float(x) < 0 or float(x) > float(s["max_marks"])) for x in scores
-    ):
-        raise HTTPException(
-            422, detail={"error": "Score is outside the session maximum.", "code": "INVALID_SCORE"}
-        )
     await conn.execute(
         """
         INSERT INTO olevel_marks(
@@ -432,15 +453,7 @@ async def bulk_save_session_marks(
     for subject_id, subject_entries in by_subject.items():
         marks_payload = []
         for e in subject_entries:
-            score = e.get("raw_score", e.get("rawScore"))
-            if score is not None and (float(score) < 0 or float(score) > max_marks):
-                raise HTTPException(
-                    422,
-                    detail={
-                        "error": "Score is outside the session maximum.",
-                        "code": "INVALID_SCORE",
-                    },
-                )
+            score = _coerce_score(e.get("raw_score", e.get("rawScore")), max_marks)
             marks_payload.append(
                 {
                     "studentId": e.get("student_id") or e.get("studentId"),

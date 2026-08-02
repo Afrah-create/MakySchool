@@ -80,15 +80,6 @@ export function OLevelExamSessionsContent() {
   const formClass = classes.find((c) => c.id === formClassId);
 
   useEffect(() => {
-    if (!formCategory) return;
-    // Suggest paper total from curriculum weight (CA 20 / Exam 80).
-    const w = Number(formCategory.weightPercent);
-    if (Number.isFinite(w) && w > 0) {
-      setFormMaxMarks(String(Math.round(w)));
-    }
-  }, [formCategoryId, formCategory]);
-
-  useEffect(() => {
     if (!formTitle.trim() && formCategory && formTerm && formClass) {
       setFormTitle(`${formCategory.name} · ${formClass.name} · ${formTerm.name}`);
     }
@@ -375,6 +366,10 @@ export function OLevelExamSessionsContent() {
                 onChange={(e) => setFormMaxMarks(e.target.value)}
                 required
               />
+              <span className="mt-1 block text-xs text-theme-muted">
+                Paper total teachers mark out of (usually 100). Category weight % is
+                separate and used only when generating results.
+              </span>
             </label>
 
             <div className="flex items-end md:col-span-2 lg:col-span-3">

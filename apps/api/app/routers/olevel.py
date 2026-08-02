@@ -12,7 +12,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.pool import get_db
-from app.lib.alevel_reports import load_school_branding, student_initials
 from app.lib.classes import O_LEVEL_CLASS_LEVELS
 from app.lib.olevel_access import (
     assert_olevel_enabled,
@@ -21,7 +20,6 @@ from app.lib.olevel_access import (
     teacher_assigned_olevel_class_ids,
 )
 from app.lib.olevel_pdf import generate_olevel_report_pdf_bytes
-from app.lib.storage_urls import resolve_storage_data_uri
 from app.middleware.subscription_guard import require_tenant_with_subscription
 from app.services.olevel import (
     curriculum as curriculum_svc,
@@ -29,6 +27,7 @@ from app.services.olevel import (
     grading as grading_svc,
     marks as marks_svc,
     overview as overview_svc,
+    reports as reports_svc,
     results as results_svc,
     sessions as sessions_svc,
     subjects as subjects_svc,
@@ -1242,126 +1241,6 @@ async def approve_results(
 # ── Report cards ──────────────────────────────────────────────────────────────
 
 
-async def _build_report_payload(
-    conn: asyncpg.Connection,
-    school_id: uuid.UUID,
-    enrollment_id: uuid.UUID,
-    term_id: uuid.UUID,
-    academic_year_id: uuid.UUID,
-) -> dict[str, Any]:
-    e = await conn.fetchrow(
-        """
-        SELECT e.*, s.full_name, s.learner_id, s.photo_url,
-               CASE WHEN sc.stream IS NULL OR sc.stream = '' THEN sc.level
-                    ELSE sc.level || ' ' || sc.stream END AS class_name,
-               t.name AS term_name, ay.year AS academic_year
-        FROM student_curriculum_enrollments e
-        JOIN students s ON s.id = e.student_id
-        LEFT JOIN school_classes sc ON sc.id = e.class_id
-        LEFT JOIN terms t ON t.id = $3
-        LEFT JOIN academic_years ay ON ay.id = $4
-        WHERE e.id = $1 AND e.school_id = $2
-        """,
-        enrollment_id,
-        school_id,
-        term_id,
-        academic_year_id,
-    )
-    if not e:
-        raise LookupError("Enrollment not found.")
-    result = await conn.fetchrow(
-        """
-        SELECT r.*, u.full_name AS approved_by_name
-        FROM olevel_student_results r
-        LEFT JOIN users u ON u.id = r.approved_by
-        WHERE r.school_id=$1 AND r.enrollment_id=$2 AND r.term_id=$3 AND r.academic_year_id=$4
-        """,
-        school_id,
-        enrollment_id,
-        term_id,
-        academic_year_id,
-    )
-    if not result:
-        raise HTTPException(
-            422,
-            detail={
-                "error": "Results not yet calculated for this student.",
-                "code": "RESULTS_MISSING",
-            },
-        )
-    subjects = await conn.fetch(
-        """
-        SELECT sr.*, os.name AS subject_name, os.code AS subject_code
-        FROM olevel_subject_results sr
-        JOIN olevel_subjects os ON os.id = sr.subject_id
-        WHERE sr.enrollment_id=$1 AND sr.term_id=$2 AND sr.academic_year_id=$3
-        ORDER BY os.name
-        """,
-        enrollment_id,
-        term_id,
-        academic_year_id,
-    )
-    report_rules = await conn.fetchrow(
-        "SELECT * FROM curriculum_report_rules WHERE curriculum_id=$1",
-        e["curriculum_id"],
-    )
-    branding = await load_school_branding(conn, school_id, for_pdf=True)
-    photo = await resolve_storage_data_uri(e["photo_url"], school_id=school_id)
-    name = e["full_name"]
-    rules = {
-        "showGrades": bool(report_rules["show_grades"]) if report_rules else True,
-        "showPercentages": bool(report_rules["show_percentages"]) if report_rules else True,
-        "showPoints": bool(report_rules["show_points"]) if report_rules else True,
-        "showTeacherComment": bool(report_rules["show_teacher_comment"]) if report_rules else True,
-        "showHeadTeacherComment": (
-            bool(report_rules["show_head_teacher_comment"]) if report_rules else True
-        ),
-        "reportTitle": report_rules["report_title"] if report_rules else "PROGRESS REPORT",
-        "customFooterText": report_rules["custom_footer_text"] if report_rules else None,
-    }
-    return {
-        "schoolName": branding.get("schoolName") or branding.get("name"),
-        "logoUrl": branding.get("logoUrl"),
-        "stampUrl": branding.get("stampUrl"),
-        "photoUrl": photo,
-        "studentName": name,
-        "studentInitials": student_initials(name),
-        "learnerId": e["learner_id"],
-        "className": e["class_name"],
-        "termName": e["term_name"],
-        "academicYearName": str(e["academic_year"]) if e["academic_year"] is not None else None,
-        "classTeacherComment": result["class_teacher_comment"],
-        "headTeacherComment": result["head_teacher_comment"],
-        "approvedAt": result["approved_at"].isoformat() if result["approved_at"] else None,
-        "approvedByName": result["approved_by_name"],
-        "reportRules": rules,
-        "subjectResults": [
-            {
-                "subjectName": s["subject_name"],
-                "subjectCode": s["subject_code"],
-                "assessmentPercent": float(s["assessment_percent"] or 0)
-                if s.get("assessment_percent") is not None
-                else None,
-                "examPercent": float(s["exam_percent"] or 0)
-                if s.get("exam_percent") is not None
-                else None,
-                "weightedScore": float(s["weighted_score"] or 0),
-                "grade": s["grade"],
-                "gradeLabel": s.get("grade_label"),
-                "points": float(s["points"] or 0),
-            }
-            for s in subjects
-        ],
-        "totals": {
-            "totalPoints": float(result["total_points"] or 0),
-            "averagePercent": float(result["average_percent"] or 0),
-            "classPosition": result["class_position"],
-            "totalStudentsInClass": result["total_students_in_class"],
-            "isPromoted": result["is_promoted"],
-        },
-    }
-
-
 @router.get("/report-cards/student")
 async def report_card_student(
     ctx: TenantCtx,
@@ -1373,8 +1252,14 @@ async def report_card_student(
     school_id, actor = ctx
     require_olevel_action(actor, "generateOLevelReports")
     try:
-        payload = await _build_report_payload(
-            conn, school_id, enrollment_id, term_id, academic_year_id
+        payload = await reports_svc.build_report_card_data(
+            conn,
+            school_id,
+            enrollment_id=enrollment_id,
+            term_id=term_id,
+            academic_year_id=academic_year_id,
+            for_pdf=True,
+            require_approved=False,
         )
     except LookupError as exc:
         raise _http_lookup(exc) from exc
@@ -1425,8 +1310,14 @@ async def report_cards_class(
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for r in rows:
             try:
-                payload = await _build_report_payload(
-                    conn, school_id, r["id"], term_id, academic_year_id
+                payload = await reports_svc.build_report_card_data(
+                    conn,
+                    school_id,
+                    enrollment_id=r["id"],
+                    term_id=term_id,
+                    academic_year_id=academic_year_id,
+                    for_pdf=True,
+                    require_approved=False,
                 )
             except (HTTPException, LookupError):
                 continue

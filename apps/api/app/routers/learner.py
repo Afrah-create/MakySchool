@@ -472,3 +472,84 @@ async def learner_primary_report_card_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/olevel/report-cards")
+async def learner_olevel_report_cards(
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """List approved O-Level report cards for the linked learner only."""
+    school_id, actor = ctx
+    user_id = _require_learner(actor)
+    student = await _linked_student(conn, school_id, user_id)
+
+    from app.lib.olevel_access import assert_olevel_enabled
+    from app.services.olevel import reports as reports_svc
+
+    await assert_olevel_enabled(conn, school_id)
+    items = await reports_svc.list_approved_report_summaries(
+        conn, school_id, student["id"]
+    )
+    return {"data": {"reports": items}}
+
+
+@router.get("/olevel/report-cards/{result_id}")
+async def learner_olevel_report_card_detail(
+    result_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    user_id = _require_learner(actor)
+    student = await _linked_student(conn, school_id, user_id)
+
+    from app.lib.olevel_access import assert_olevel_enabled
+    from app.services.olevel import reports as reports_svc
+
+    await assert_olevel_enabled(conn, school_id)
+    data = await reports_svc.build_report_card_data_by_result_id(
+        conn,
+        school_id,
+        result_id,
+        student_id=student["id"],
+        for_pdf=False,
+        require_approved=True,
+    )
+    return {"data": data}
+
+
+@router.get("/olevel/report-cards/{result_id}/pdf")
+async def learner_olevel_report_card_pdf(
+    result_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    from fastapi.responses import Response
+
+    school_id, actor = ctx
+    user_id = _require_learner(actor)
+    student = await _linked_student(conn, school_id, user_id)
+
+    from app.lib.olevel_access import assert_olevel_enabled
+    from app.lib.olevel_pdf import generate_olevel_report_pdf_bytes
+    from app.services.olevel import reports as reports_svc
+
+    await assert_olevel_enabled(conn, school_id)
+    data = await reports_svc.build_report_card_data_by_result_id(
+        conn,
+        school_id,
+        result_id,
+        student_id=student["id"],
+        for_pdf=True,
+        require_approved=True,
+    )
+    pdf = await generate_olevel_report_pdf_bytes(data)
+    filename = f"{data.get('learnerId') or student['id']}-olevel-report.pdf".replace(
+        " ", "_"
+    )
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

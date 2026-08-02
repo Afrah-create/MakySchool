@@ -357,3 +357,70 @@ export type OLevelMarkSubmission = {
   unlockReason?: string | null;
   enteredCount: number;
 };
+
+export type OLevelApprovedReportSummary = {
+  resultId: string;
+  enrollmentId: string;
+  termId: string;
+  termName: string;
+  academicYearId: string;
+  academicYearLabel: string | null;
+  className: string | null;
+  approvedAt: string | null;
+  averagePercent: number;
+  totalPoints: number;
+  classPosition: number | null;
+  totalStudentsInClass: number | null;
+  isPromoted: boolean | null;
+  hasClassTeacherComment: boolean;
+  hasHeadTeacherComment: boolean;
+};
+
+export type OLevelReportCard = {
+  resultId: string;
+  enrollmentId: string;
+  studentId: string;
+  termId: string;
+  academicYearId: string;
+  schoolName?: string | null;
+  logoUrl?: string | null;
+  stampUrl?: string | null;
+  photoUrl?: string | null;
+  studentName: string;
+  studentInitials?: string;
+  learnerId?: string | null;
+  className?: string | null;
+  termName?: string | null;
+  academicYearName?: string | null;
+  classTeacherComment?: string | null;
+  headTeacherComment?: string | null;
+  approvedAt?: string | null;
+  approvedByName?: string | null;
+  reportRules?: {
+    showGrades?: boolean;
+    showPercentages?: boolean;
+    showPoints?: boolean;
+    showTeacherComment?: boolean;
+    showHeadTeacherComment?: boolean;
+    reportTitle?: string | null;
+    customFooterText?: string | null;
+  };
+  subjectResults: Array<{
+    subjectId?: string;
+    subjectName: string;
+    subjectCode?: string | null;
+    assessmentPercent?: number | null;
+    examPercent?: number | null;
+    weightedScore: number;
+    grade?: string | null;
+    gradeLabel?: string | null;
+    points: number;
+  }>;
+  totals: {
+    totalPoints: number;
+    averagePercent: number;
+    classPosition?: number | null;
+    totalStudentsInClass?: number | null;
+    isPromoted?: boolean | null;
+  };
+};
