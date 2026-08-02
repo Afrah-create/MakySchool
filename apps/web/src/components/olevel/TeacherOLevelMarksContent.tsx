@@ -8,99 +8,109 @@ import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
 import { ConfirmDialog } from "@makyschool/ui/components/ui/ConfirmDialog";
 import { LoadingButton } from "@makyschool/ui/components/ui/LoadingButton";
 import { StatusBanner } from "@makyschool/ui/components/ui/StatusBanner";
-import { TablePagination } from "@makyschool/ui/components/ui/TablePagination";
-import { PAGE_SIZE_OPTIONS } from "@makyschool/shared/constants";
-import type { OLevelMarkEntry } from "@makyschool/shared";
-import { useClientPagination } from "@/hooks/useClientPagination";
+import {
+  OLevelTeacherGradeGrid,
+  cellKey,
+} from "@/components/olevel/OLevelTeacherGradeGrid";
 import {
   useOLevelCurriculum,
-  useOLevelMarkGrid,
-  useSaveOLevelMarks,
+  useOLevelSessionMarkGrid,
+  useSaveOLevelSessionMarks,
   useSubmitOLevelMarks,
   useTeacherOLevelAssignments,
 } from "@/hooks/useOLevel";
 import { useToast } from "@/providers/ToastProvider";
-
-type DraftMark = {
-  studentId: string;
-  studentName: string;
-  learnerId: string;
-  rawScore: string;
-  isAbsent: boolean;
-  remarks: string;
-};
-
-function toDraft(marks: OLevelMarkEntry[]): DraftMark[] {
-  return marks.map((m) => ({
-    studentId: m.studentId,
-    studentName: m.studentName?.trim() || "Unknown student",
-    learnerId: m.learnerId?.trim() || "",
-    rawScore: m.rawScore === null || m.rawScore === undefined ? "" : String(m.rawScore),
-    isAbsent: Boolean(m.isAbsent),
-    remarks: m.remarks ?? "",
-  }));
-}
 
 export function TeacherOLevelMarksContent() {
   const params = useSearchParams();
   const { toast } = useToast();
   const { data: assignments = [] } = useTeacherOLevelAssignments();
   const [sessionId, setSessionId] = useState(params.get("session") ?? "");
-  const [subjectId, setSubjectId] = useState(params.get("subject") ?? "");
-  const assignment = assignments.find(
-    (a) => a.examSessionId === sessionId && a.subjectId === subjectId,
-  );
-  const { data: grid, refetch, isPending: gridPending } = useOLevelMarkGrid(
+  const assignment = assignments.find((a) => a.examSessionId === sessionId);
+  const { data: grid, refetch, isPending: gridPending } = useOLevelSessionMarkGrid(
     sessionId || undefined,
-    subjectId || undefined,
   );
   const { data: curriculum } = useOLevelCurriculum();
-  const [marks, setMarks] = useState<DraftMark[]>([]);
-  const [banner, setBanner] = useState<{ tone: "success" | "error" | "info"; message: string } | null>(
-    null,
-  );
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [absent, setAbsent] = useState<Record<string, boolean>>({});
+  const [dirty, setDirty] = useState(false);
   const [query, setQuery] = useState("");
+  const [banner, setBanner] = useState<{
+    tone: "success" | "error" | "info";
+    message: string;
+  } | null>(null);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const save = useSaveOLevelMarks();
+  const save = useSaveOLevelSessionMarks();
   const submit = useSubmitOLevelMarks();
 
   useEffect(() => {
-    setMarks(toDraft(grid?.marks ?? []));
+    if (!grid) return;
+    const nextValues: Record<string, string> = {};
+    const nextAbsent: Record<string, boolean> = {};
+    for (const student of grid.students) {
+      for (const subject of grid.subjects) {
+        if (!student.registeredSubjectIds.includes(subject.id)) continue;
+        const key = cellKey(student.studentId, subject.id);
+        const cell = grid.marks[key];
+        nextAbsent[key] = Boolean(cell?.isAbsent);
+        nextValues[key] =
+          cell?.rawScore === null || cell?.rawScore === undefined
+            ? ""
+            : String(cell.rawScore);
+      }
+    }
+    setValues(nextValues);
+    setAbsent(nextAbsent);
+    setDirty(false);
   }, [grid]);
 
-  const filtered = useMemo(() => {
+  const filteredStudents = useMemo(() => {
+    if (!grid) return [];
     const q = query.trim().toLowerCase();
-    if (!q) return marks;
-    return marks.filter(
-      (m) =>
-        m.studentName.toLowerCase().includes(q) ||
-        m.learnerId.toLowerCase().includes(q),
+    if (!q) return grid.students;
+    return grid.students.filter(
+      (s) =>
+        s.studentName.toLowerCase().includes(q) ||
+        (s.learnerId ?? "").toLowerCase().includes(q),
     );
-  }, [marks, query]);
+  }, [grid, query]);
 
-  const { paged, page, setPage, pageSize, setPageSize, total } = useClientPagination({
-    items: filtered,
-    resetDeps: [sessionId, subjectId, query],
-  });
+  const filteredGrid = useMemo(() => {
+    if (!grid) return null;
+    return { ...grid, students: filteredStudents };
+  }, [grid, filteredStudents]);
 
-  const maxMarks = grid?.examSession.maxMarks ?? 100;
+  const maxMarks = grid?.maxMarks ?? 100;
   const locked = grid?.submissionStatus === "submitted";
-  const enteredCount = marks.filter(
-    (m) => m.isAbsent || (m.rawScore !== "" && Number.isFinite(Number(m.rawScore))),
-  ).length;
-  const missingCount = marks.length - enteredCount;
+  const canEdit = Boolean(grid?.canEdit);
+
+  const { enteredCount, expectedCount, missingCount } = useMemo(() => {
+    if (!grid) return { enteredCount: 0, expectedCount: 0, missingCount: 0 };
+    let expected = 0;
+    let entered = 0;
+    for (const student of grid.students) {
+      for (const subject of grid.subjects) {
+        if (!student.registeredSubjectIds.includes(subject.id)) continue;
+        expected += 1;
+        const key = cellKey(student.studentId, subject.id);
+        if (absent[key] || (values[key] ?? "").trim() !== "") entered += 1;
+      }
+    }
+    return {
+      enteredCount: entered,
+      expectedCount: expected,
+      missingCount: expected - entered,
+    };
+  }, [grid, values, absent]);
 
   function gradeFor(score: number | null): string {
     if (score === null || !grid) return "—";
     const percent = (score / maxMarks) * 100;
     const scale = grid.gradeScale ?? curriculum?.gradeScale ?? [];
-    return scale.find((g) => percent >= g.minPercent && percent <= g.maxPercent)?.grade ?? "—";
-  }
-
-  function updateByStudent(studentId: string, patch: Partial<DraftMark>) {
-    setMarks((prev) =>
-      prev.map((m) => (m.studentId === studentId ? { ...m, ...patch } : m)),
+    return (
+      scale.find((g) => percent >= g.minPercent && percent <= g.maxPercent)?.grade ??
+      "—"
     );
   }
 
@@ -111,19 +121,42 @@ export function TeacherOLevelMarksContent() {
     else toast.info(message);
   }
 
+  function buildEntries() {
+    if (!grid) return [];
+    const entries: Array<{
+      studentId: string;
+      subjectId: string;
+      rawScore: number | null;
+      isAbsent: boolean;
+      remarks: string | null;
+    }> = [];
+    for (const student of grid.students) {
+      for (const subject of grid.subjects) {
+        if (!student.registeredSubjectIds.includes(subject.id)) continue;
+        if (!grid.editableSubjectIds.includes(subject.id)) continue;
+        const key = cellKey(student.studentId, subject.id);
+        const isAbs = Boolean(absent[key]);
+        const raw = (values[key] ?? "").trim();
+        entries.push({
+          studentId: student.studentId,
+          subjectId: subject.id,
+          rawScore: isAbs || raw === "" ? null : Number(raw),
+          isAbsent: isAbs,
+          remarks: grid.marks[key]?.remarks ?? null,
+        });
+      }
+    }
+    return entries;
+  }
+
   async function persist(options?: { silent?: boolean }) {
-    if (!sessionId || !subjectId) return false;
+    if (!sessionId || !grid) return false;
     try {
       await save.mutateAsync({
         examSessionId: sessionId,
-        subjectId,
-        marks: marks.map((m) => ({
-          studentId: m.studentId,
-          rawScore: m.rawScore === "" ? null : Number(m.rawScore),
-          isAbsent: m.isAbsent,
-          remarks: m.remarks || null,
-        })),
+        entries: buildEntries(),
       });
+      setDirty(false);
       if (!options?.silent) show("success", "Draft saved.");
       void refetch();
       return true;
@@ -135,14 +168,14 @@ export function TeacherOLevelMarksContent() {
 
   function requestSubmit() {
     setBanner(null);
-    if (!marks.length) {
-      show("error", "No students on this sheet to submit.");
+    if (!expectedCount) {
+      show("error", "No registered students on this sheet to submit.");
       return;
     }
     if (missingCount > 0) {
       show(
         "error",
-        `${missingCount} student${missingCount === 1 ? "" : "s"} still need a score or absence before you can submit.`,
+        `${missingCount} cell${missingCount === 1 ? "" : "s"} still need a score or absence before you can submit.`,
       );
       return;
     }
@@ -155,9 +188,9 @@ export function TeacherOLevelMarksContent() {
     try {
       const saved = await persist({ silent: true });
       if (!saved) return;
-      await submit.mutateAsync({ examSessionId: sessionId, subjectId });
+      await submit.mutateAsync({ examSessionId: sessionId });
       setConfirmSubmit(false);
-      show("success", "Marks submitted and locked.");
+      show("success", "Marks submitted and locked for all your subjects.");
       void refetch();
     } catch (e) {
       show("error", e instanceof Error ? e.message : "Could not submit marks.");
@@ -166,13 +199,18 @@ export function TeacherOLevelMarksContent() {
     }
   }
 
+  const subjectNames =
+    assignment?.subjects.map((s) => s.name).join(", ") ||
+    grid?.subjects.map((s) => s.name).join(", ") ||
+    "your subjects";
+
   return (
     <DashboardPage
       embedded
       maxWidth="7xl"
       eyebrow="O-Level"
       title="Enter marks"
-      description="Save a draft as you go, then submit to lock the sheet."
+      description="One sheet for all subjects you teach in this class. Save a draft, then submit to lock."
     >
       <div className="space-y-4">
         {banner ? (
@@ -190,50 +228,44 @@ export function TeacherOLevelMarksContent() {
             className="inline-flex items-center gap-1.5 text-sm text-theme-muted hover:text-theme-primary"
           >
             <ArrowLeft className="h-4 w-4" />
-            All assignments
+            All sessions
           </Link>
           <select
             className="ms-input w-full sm:max-w-xl"
-            value={sessionId && subjectId ? `${sessionId}:${subjectId}` : ":"}
+            value={sessionId || ""}
             onChange={(e) => {
-              const [s = "", sub = ""] = e.target.value.split(":");
-              setSessionId(s);
-              setSubjectId(sub);
+              setSessionId(e.target.value);
               setQuery("");
               setBanner(null);
             }}
           >
-            <option value=":">Choose assignment</option>
+            <option value="">Choose session</option>
             {assignments.map((a) => (
-              <option
-                key={`${a.examSessionId}:${a.subjectId}`}
-                value={`${a.examSessionId}:${a.subjectId}`}
-              >
-                {a.subjectName} · {a.className} · {a.title}
+              <option key={a.examSessionId} value={a.examSessionId}>
+                {a.title} · {a.className} · {a.subjects.length} subject
+                {a.subjects.length === 1 ? "" : "s"}
               </option>
             ))}
           </select>
         </div>
 
-        {sessionId && subjectId && grid ? (
+        {sessionId && filteredGrid ? (
           <>
             <div className="rounded-xl border border-theme bg-theme-surface p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold text-theme-primary">
-                    {assignment?.subjectName ?? "Subject"}
-                    {assignment?.subjectCode ? (
-                      <span className="ml-2 text-sm font-normal text-theme-muted">
-                        ({assignment.subjectCode})
-                      </span>
-                    ) : null}
+                    {filteredGrid.examSession.title}
                   </h2>
                   <p className="mt-1 text-sm text-theme-muted">
-                    {grid.examSession.title}
-                    {assignment ? ` · ${assignment.className} · ${assignment.termName}` : null}
+                    {assignment
+                      ? `${assignment.className} · ${assignment.termName}`
+                      : filteredGrid.examSession.className}
+                    {" · "}
+                    {subjectNames}
                   </p>
                 </div>
-                <StatusPill status={grid.submissionStatus} />
+                <StatusPill status={filteredGrid.submissionStatus} />
               </div>
               <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-theme-muted">
                 <span>
@@ -242,13 +274,20 @@ export function TeacherOLevelMarksContent() {
                 <span>
                   Entered:{" "}
                   <strong className="text-theme-primary">
-                    {enteredCount}/{marks.length}
+                    {enteredCount}/{expectedCount}
+                  </strong>
+                </span>
+                <span>
+                  Subjects:{" "}
+                  <strong className="text-theme-primary">
+                    {filteredGrid.subjects.length}
                   </strong>
                 </span>
               </div>
-              {grid.submissionStatus === "unlocked" && grid.unlockReason ? (
+              {filteredGrid.submissionStatus === "unlocked" &&
+              filteredGrid.unlockReason ? (
                 <p className="mt-3 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-                  Unlocked for correction: {grid.unlockReason}
+                  Unlocked for correction: {filteredGrid.unlockReason}
                 </p>
               ) : null}
             </div>
@@ -282,175 +321,23 @@ export function TeacherOLevelMarksContent() {
               )}
             </div>
 
-            {/* Mobile cards */}
-            <div className="space-y-3 md:hidden">
-              {paged.map((m) => {
-                const scoreNum = m.rawScore === "" || m.isAbsent ? null : Number(m.rawScore);
-                const pct =
-                  scoreNum === null ? "—" : `${((scoreNum / maxMarks) * 100).toFixed(1)}%`;
-                return (
-                  <article
-                    key={m.studentId}
-                    className="rounded-xl border border-theme bg-theme-surface p-4 space-y-3"
-                  >
-                    <div>
-                      <p className="font-medium text-theme-primary">{m.studentName}</p>
-                      <p className="text-xs text-theme-muted">
-                        {m.learnerId ? `ID ${m.learnerId}` : "No student ID"}
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="text-xs text-theme-muted col-span-1">
-                        Score / {maxMarks}
-                        <input
-                          className="ms-input mt-1 w-full"
-                          type="number"
-                          min={0}
-                          max={maxMarks}
-                          inputMode="decimal"
-                          disabled={locked || m.isAbsent}
-                          value={m.rawScore}
-                          onChange={(e) =>
-                            updateByStudent(m.studentId, { rawScore: e.target.value })
-                          }
-                        />
-                      </label>
-                      <label className="flex items-end gap-2 pb-2 text-sm text-theme-primary">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4"
-                          checked={m.isAbsent}
-                          disabled={locked}
-                          onChange={(e) =>
-                            updateByStudent(m.studentId, {
-                              isAbsent: e.target.checked,
-                              rawScore: e.target.checked ? "" : m.rawScore,
-                            })
-                          }
-                        />
-                        Absent
-                      </label>
-                    </div>
-                    <label className="block text-xs text-theme-muted">
-                      Remarks
-                      <input
-                        className="ms-input mt-1 w-full"
-                        disabled={locked}
-                        value={m.remarks}
-                        onChange={(e) =>
-                          updateByStudent(m.studentId, { remarks: e.target.value })
-                        }
-                      />
-                    </label>
-                    <p className="text-sm text-theme-muted">
-                      Live: {pct} · Grade {gradeFor(scoreNum)}
-                    </p>
-                  </article>
-                );
-              })}
-              {!paged.length ? (
-                <p className="rounded-xl border border-theme bg-theme-surface p-6 text-center text-sm text-theme-muted">
-                  {gridPending
-                    ? "Loading students…"
-                    : query
-                      ? "No students match your search."
-                      : "No students registered for this subject yet."}
-                </p>
-              ) : null}
-            </div>
-
-            {/* Desktop table */}
-            <div className="hidden overflow-x-auto rounded-xl border border-theme bg-theme-surface md:block">
-              <table className="min-w-full text-sm">
-                <thead className="text-xs text-theme-muted">
-                  <tr>
-                    <th className="p-3 text-left">#</th>
-                    <th className="p-3 text-left">Student</th>
-                    <th className="p-3 text-left">Student ID</th>
-                    <th className="p-3 text-left">Score</th>
-                    <th className="p-3 text-left">Absent</th>
-                    <th className="p-3 text-left">Remarks</th>
-                    <th className="p-3 text-left">% / Grade</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paged.map((m, idx) => {
-                    const scoreNum =
-                      m.rawScore === "" || m.isAbsent ? null : Number(m.rawScore);
-                    const pct =
-                      scoreNum === null
-                        ? "—"
-                        : `${((scoreNum / maxMarks) * 100).toFixed(1)}%`;
-                    return (
-                      <tr key={m.studentId} className="border-t border-theme">
-                        <td className="p-3 tabular-nums text-theme-muted">
-                          {(page - 1) * pageSize + idx + 1}
-                        </td>
-                        <td className="p-3 font-medium text-theme-primary">{m.studentName}</td>
-                        <td className="p-3 text-theme-muted">{m.learnerId || "—"}</td>
-                        <td className="p-3">
-                          <input
-                            className="ms-input w-24"
-                            type="number"
-                            min={0}
-                            max={maxMarks}
-                            disabled={locked || m.isAbsent}
-                            value={m.rawScore}
-                            onChange={(e) =>
-                              updateByStudent(m.studentId, { rawScore: e.target.value })
-                            }
-                          />
-                        </td>
-                        <td className="p-3">
-                          <input
-                            type="checkbox"
-                            checked={m.isAbsent}
-                            disabled={locked}
-                            onChange={(e) =>
-                              updateByStudent(m.studentId, {
-                                isAbsent: e.target.checked,
-                                rawScore: e.target.checked ? "" : m.rawScore,
-                              })
-                            }
-                          />
-                        </td>
-                        <td className="p-3">
-                          <input
-                            className="ms-input min-w-40"
-                            disabled={locked}
-                            value={m.remarks}
-                            onChange={(e) =>
-                              updateByStudent(m.studentId, { remarks: e.target.value })
-                            }
-                          />
-                        </td>
-                        <td className="p-3 tabular-nums text-theme-muted">
-                          {pct} · {gradeFor(scoreNum)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!paged.length ? (
-                    <tr>
-                      <td colSpan={7} className="p-6 text-center text-theme-muted">
-                        {query
-                          ? "No students match your search."
-                          : "No students registered for this subject yet."}
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
-
-            <TablePagination
-              page={page}
-              pageSize={pageSize}
-              total={total}
-              onPageChange={setPage}
-              onPageSizeChange={setPageSize}
-              pageSizeOptions={PAGE_SIZE_OPTIONS}
-              noun="students"
+            <OLevelTeacherGradeGrid
+              grid={filteredGrid}
+              values={values}
+              absent={absent}
+              canEdit={canEdit}
+              gradeFor={gradeFor}
+              onChange={(key, value) => {
+                setValues((prev) => ({ ...prev, [key]: value }));
+                setDirty(true);
+              }}
+              onAbsentChange={(key, isAbsent) => {
+                setAbsent((prev) => ({ ...prev, [key]: isAbsent }));
+                if (isAbsent) {
+                  setValues((prev) => ({ ...prev, [key]: "" }));
+                }
+                setDirty(true);
+              }}
             />
 
             {!locked ? (
@@ -472,11 +359,11 @@ export function TeacherOLevelMarksContent() {
               </div>
             ) : null}
           </>
-        ) : sessionId && subjectId && gridPending ? (
+        ) : sessionId && gridPending ? (
           <p className="text-sm text-theme-muted">Loading mark sheet…</p>
         ) : (
           <p className="rounded-xl border border-theme bg-theme-surface p-6 text-center text-sm text-theme-muted">
-            Choose an assignment to enter marks.
+            Choose a session to enter marks for all subjects you teach in that class.
           </p>
         )}
       </div>
@@ -484,7 +371,7 @@ export function TeacherOLevelMarksContent() {
       <ConfirmDialog
         open={confirmSubmit}
         title="Submit and lock marks?"
-        description={`You are about to submit ${enteredCount} of ${marks.length} marks for ${assignment?.subjectName ?? "this subject"} (${assignment?.className ?? "class"}). After submission the sheet is locked until an administrator unlocks it.`}
+        description={`You are about to submit ${enteredCount} of ${expectedCount} marks across ${grid?.subjects.length ?? 0} subject(s) for ${assignment?.className ?? "this class"}. After submission the sheet is locked until an administrator unlocks it.`}
         confirmLabel="Submit and lock"
         loading={submitting}
         onCancel={() => {
@@ -504,6 +391,8 @@ function StatusPill({ status }: { status: string }) {
         ? "bg-amber-500/15 text-amber-800 dark:text-amber-200"
         : "bg-theme-raised text-theme-muted";
   return (
-    <span className={`rounded-full px-2.5 py-1 text-xs capitalize ${tone}`}>{status}</span>
+    <span className={`rounded-full px-2.5 py-1 text-xs capitalize ${tone}`}>
+      {status}
+    </span>
   );
 }

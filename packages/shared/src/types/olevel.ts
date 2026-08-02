@@ -176,6 +176,43 @@ export type OLevelMarkGridResponse = {
   marks: OLevelMarkEntry[];
 };
 
+export type OLevelSessionMarkStudent = {
+  enrollmentId: string;
+  studentId: string;
+  studentName: string;
+  learnerId?: string | null;
+  registeredSubjectIds: string[];
+};
+
+export type OLevelSessionMarkSubject = {
+  id: string;
+  name: string;
+  code: string;
+};
+
+export type OLevelSessionMarkCell = {
+  rawScore: number | null;
+  isAbsent: boolean;
+  remarks?: string | null;
+  enteredAt?: string | null;
+};
+
+export type OLevelSessionMarkGridResponse = {
+  examSession: OLevelExamSession;
+  students: OLevelSessionMarkStudent[];
+  subjects: OLevelSessionMarkSubject[];
+  /** Key: `${studentId}:${subjectId}` */
+  marks: Record<string, OLevelSessionMarkCell>;
+  gradeScale?: OLevelGradeScale[];
+  editableSubjectIds: string[];
+  lockedSubjectIds: string[];
+  canEdit: boolean;
+  submissionStatus: "draft" | "submitted" | "unlocked";
+  submittedAt?: string | null;
+  unlockReason?: string | null;
+  maxMarks: number;
+};
+
 export type OLevelSubjectResult = {
   id: string;
   enrollmentId: string;
@@ -246,6 +283,17 @@ export type BulkMarkPayload = {
   }>;
 };
 
+export type BulkSessionMarkPayload = {
+  examSessionId: string;
+  entries: Array<{
+    studentId: string;
+    subjectId: string;
+    rawScore?: number | null;
+    isAbsent?: boolean;
+    remarks?: string | null;
+  }>;
+};
+
 export type OLevelOverview = {
   configured: boolean;
   enrolledCount: number;
@@ -283,9 +331,14 @@ export type TeacherOLevelAssignment = {
   academicYearId: string;
   categoryId: string;
   categoryName: string;
-  subjectId: string;
-  subjectName: string;
-  subjectCode: string;
+  subjects: Array<{
+    id: string;
+    name: string;
+    code: string;
+    submissionStatus: string;
+    enteredCount: number;
+    studentCount: number;
+  }>;
   submissionStatus: string;
   enteredCount: number;
   studentCount: number;

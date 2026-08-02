@@ -132,6 +132,28 @@ async def assert_teacher_can_mark_subject(
         )
 
 
+async def assert_teacher_can_mark_class(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    class_id: uuid.UUID,
+) -> set[str]:
+    """Ensure the teacher teaches at least one O-Level subject in the class."""
+    allowed = await teacher_olevel_subject_ids(conn, school_id, teacher_id, class_id)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": (
+                    "You are not assigned to teach any O-Level subject in this class. "
+                    "Ask an admin to update your teaching load."
+                ),
+                "code": "NOT_ASSIGNED",
+            },
+        )
+    return allowed
+
+
 async def teacher_assigned_olevel_class_ids(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,

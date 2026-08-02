@@ -250,12 +250,15 @@ async def soft_delete_session(
 ) -> dict[str, Any]:
     session = await get_session(conn, school_id, session_id)
     if session["status"] == "open":
-        raise HTTPException(
-            409,
-            detail={
-                "error": "Close the exam session before deleting it.",
-                "code": "SESSION_OPEN",
-            },
+        # Soft-delete bypasses the "all submissions must be submitted" gate used by close.
+        await conn.execute(
+            """
+            UPDATE olevel_exam_sessions
+            SET status = 'closed', closed_at = NOW(), updated_at = NOW()
+            WHERE id = $1 AND school_id = $2 AND status = 'open' AND deleted_at IS NULL
+            """,
+            session_id,
+            school_id,
         )
     # Soft-deleted sessions must not remain selected for grading.
     await conn.execute(

@@ -31,6 +31,8 @@ export const olevelKeys = {
   enrollmentSubjects: (id: string) => ["olevel", "enrollmentSubjects", id] as const,
   markGrid: (sessionId: string, subjectId: string) =>
     ["olevel", "marks", sessionId, subjectId] as const,
+  sessionMarkGrid: (sessionId: string) =>
+    ["olevel", "marks", "session", sessionId] as const,
   classResults: (classId: string, termId: string, yearId: string) =>
     ["olevel", "results", classId, termId, yearId] as const,
   submissions: (sessionId: string) => ["olevel", "submissions", sessionId] as const,
@@ -136,6 +138,15 @@ export function useOLevelMarkGrid(
   });
 }
 
+export function useOLevelSessionMarkGrid(examSessionId?: string, enabled = true) {
+  return useQuery({
+    queryKey: olevelKeys.sessionMarkGrid(examSessionId ?? ""),
+    queryFn: () => olevelApi.getSessionMarkGrid(examSessionId!),
+    enabled: enabled && !!examSessionId,
+    staleTime: 10_000,
+  });
+}
+
 export function useOLevelClassResults(
   classId?: string,
   termId?: string,
@@ -185,6 +196,17 @@ export function useSaveOLevelMarks() {
   });
 }
 
+export function useSaveOLevelSessionMarks() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: olevelApi.saveSessionMarks,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["olevel", "marks"] });
+      void qc.invalidateQueries({ queryKey: olevelKeys.teacherAssignments });
+    },
+  });
+}
+
 export function useSubmitOLevelMarks() {
   const qc = useQueryClient();
   return useMutation({
@@ -193,7 +215,7 @@ export function useSubmitOLevelMarks() {
       subjectId,
     }: {
       examSessionId: string;
-      subjectId: string;
+      subjectId?: string;
     }) => olevelApi.submitMarks(examSessionId, subjectId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["olevel"] }),
   });

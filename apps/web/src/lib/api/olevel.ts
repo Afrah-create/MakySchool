@@ -2,6 +2,7 @@ import { apiClient } from "./client";
 import type {
   AssessmentCategory,
   BulkMarkPayload,
+  BulkSessionMarkPayload,
   CurriculumReportRules,
   CurriculumSubject,
   OLevelClassOption,
@@ -12,6 +13,7 @@ import type {
   OLevelMarkGridResponse,
   OLevelMarkSubmission,
   OLevelOverview,
+  OLevelSessionMarkGridResponse,
   OLevelSubject,
   OLevelTermOption,
   PromotionRules,
@@ -341,6 +343,12 @@ export const olevelApi = {
     ).then((r) => r.data);
   },
 
+  getSessionMarkGrid(examSessionId: string) {
+    return apiClient<OLevelSessionMarkGridResponse>(
+      `${BASE}/marks?exam_session_id=${examSessionId}`,
+    ).then((r) => r.data);
+  },
+
   saveMarks(body: BulkMarkPayload) {
     return apiClient<{ saved: number }>(`${BASE}/marks/bulk`, {
       method: "POST",
@@ -348,10 +356,17 @@ export const olevelApi = {
     }).then((r) => r.data);
   },
 
-  submitMarks(examSessionId: string, subjectId: string) {
+  saveSessionMarks(body: BulkSessionMarkPayload) {
+    return apiClient<{ saved: number; skipped?: number }>(`${BASE}/marks/bulk`, {
+      method: "POST",
+      body,
+    }).then((r) => r.data);
+  },
+
+  submitMarks(examSessionId: string, subjectId?: string) {
     return apiClient(`${BASE}/marks/${examSessionId}/submit`, {
       method: "POST",
-      body: { subjectId },
+      body: subjectId ? { subjectId } : {},
     }).then((r) => r.data);
   },
 

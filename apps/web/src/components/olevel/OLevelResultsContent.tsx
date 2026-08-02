@@ -34,9 +34,17 @@ type PipelineAction = "generate" | "rank" | "approve" | null;
 
 function isExamCategory(s: OLevelExamSession) {
   const code = (s.categoryCode || "").toUpperCase();
-  if (code === "EXAM" || code === "EOT") return true;
-  if (code === "CA") return false;
-  return (s.categoryWeightPercent ?? 0) >= 50;
+  if (code === "EXAM" || code === "EOT" || code === "EOE") return true;
+  if (code === "CA" || code === "CASS" || code === "ASSESSMENT") return false;
+  const name = (s.categoryName || "").toLowerCase();
+  if (name.includes("end") || name.includes("exam") || name.includes("term exam")) {
+    return true;
+  }
+  if (name.includes("continuous") || name.includes("assessment") || name.includes("ca ")) {
+    return false;
+  }
+  const weight = Number(s.categoryWeightPercent ?? 0);
+  return weight >= 50;
 }
 
 export function OLevelResultsContent() {
@@ -84,58 +92,65 @@ export function OLevelResultsContent() {
   const yearId = selectedTerm?.academicYearId ?? "";
   const selectedClass = classes.find((c) => c.id === classId);
 
-  const { data: sessions = [], isFetched: sessionsFetched } = useOLevelExamSessions(
-    { classId, termId, academicYearId: yearId },
-    !!classId && !!termId && !!yearId,
+  const { data: sessions = [], isFetched: sessionsFetched, isFetching: sessionsFetching } =
+    useOLevelExamSessions(
+      { classId, termId },
+      !!classId && !!termId,
+    );
+
+  const activeSessions = useMemo(
+    () => sessions.filter((s) => !s.deleted),
+    [sessions],
   );
 
   const assessmentSessions = useMemo(
-    () => sessions.filter((s) => !isExamCategory(s)),
-    [sessions],
+    () => activeSessions.filter((s) => !isExamCategory(s)),
+    [activeSessions],
   );
   const examSessions = useMemo(
-    () => sessions.filter((s) => isExamCategory(s)),
-    [sessions],
+    () => activeSessions.filter((s) => isExamCategory(s)),
+    [activeSessions],
   );
 
+  const sessionsKey = useMemo(
+    () => activeSessions.map((s) => `${s.id}:${s.categoryCode ?? ""}`).join("|"),
+    [activeSessions],
+  );
+
+  // Prefer saved selection; otherwise select all CAs + first exam.
   useEffect(() => {
-    if (!classId || !termId || !yearId || !sessionsFetched || selectionHydrated) return;
+    if (!classId || !termId || !yearId || !sessionsFetched || sessionsFetching) return;
     let cancelled = false;
     void (async () => {
+      let savedAssess: string[] = [];
+      let savedExam = "";
       try {
         const saved = await olevelApi.getGradingSelection(classId, termId, yearId);
-        if (cancelled) return;
-        const assessIds = (saved?.assessmentSessionIds ?? []).filter((id) =>
-          assessmentSessions.some((s) => s.id === id),
-        );
-        const examId =
-          saved?.examSessionId && examSessions.some((s) => s.id === saved.examSessionId)
-            ? saved.examSessionId
-            : (examSessions[0]?.id ?? "");
-        setAssessmentSessionIds(
-          assessIds.length ? assessIds : assessmentSessions.map((s) => s.id),
-        );
-        setExamSessionId(examId);
+        savedAssess = saved?.assessmentSessionIds ?? [];
+        savedExam = saved?.examSessionId ?? "";
       } catch {
-        if (cancelled) return;
-        setAssessmentSessionIds(assessmentSessions.map((s) => s.id));
-        setExamSessionId(examSessions[0]?.id ?? "");
-      } finally {
-        if (!cancelled) setSelectionHydrated(true);
+        /* no saved selection yet */
       }
+      if (cancelled) return;
+      const assessPool = activeSessions.filter((s) => !isExamCategory(s));
+      const examPool = activeSessions.filter((s) => isExamCategory(s));
+      const assessIds = savedAssess.filter((id) => assessPool.some((s) => s.id === id));
+      setAssessmentSessionIds(
+        assessIds.length ? assessIds : assessPool.map((s) => s.id),
+      );
+      setExamSessionId(
+        savedExam && examPool.some((s) => s.id === savedExam)
+          ? savedExam
+          : (examPool[0]?.id ?? ""),
+      );
+      setSelectionHydrated(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [
-    classId,
-    termId,
-    yearId,
-    sessionsFetched,
-    selectionHydrated,
-    assessmentSessions,
-    examSessions,
-  ]);
+    // sessionsKey captures session identity; avoid looping on array identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classId, termId, yearId, sessionsFetched, sessionsFetching, sessionsKey]);
 
   const { data: results, refetch, isFetching, isError, error } = useOLevelClassResults(
     classId,
@@ -413,12 +428,18 @@ export function OLevelResultsContent() {
                   If several are selected, their percentages are averaged. Missing marks
                   count as 0.
                 </p>
-                {!assessmentSessions.length ? (
+                {sessionsFetching && !selectionHydrated ? (
+                  <p className="text-sm text-theme-muted">Loading sessions…</p>
+                ) : !assessmentSessions.length ? (
                   <p className="text-sm text-theme-muted">
-                    No CA sessions for this class/term yet.
+                    No CA sessions for this class/term yet. Create Continuous Assessment
+                    sessions under Exam sessions.
+                    {activeSessions.length > 0
+                      ? ` (${activeSessions.length} other session(s) found — check their category).`
+                      : ""}
                   </p>
                 ) : (
-                  <ul className="max-h-40 space-y-1.5 overflow-y-auto">
+                  <ul className="max-h-48 space-y-1.5 overflow-y-auto">
                     {assessmentSessions.map((s) => (
                       <li key={s.id}>
                         <label className="flex cursor-pointer items-start gap-2 text-sm">
@@ -437,7 +458,8 @@ export function OLevelResultsContent() {
                           <span>
                             <span className="font-medium text-theme-primary">{s.title}</span>
                             <span className="block text-xs text-theme-muted">
-                              {s.categoryName} · /{s.maxMarks} · {s.status}
+                              {s.categoryName || s.categoryCode || "CA"} · /{s.maxMarks} ·{" "}
+                              {s.status}
                             </span>
                           </span>
                         </label>
@@ -453,12 +475,15 @@ export function OLevelResultsContent() {
                 <p className="text-xs text-theme-muted">
                   Choose the final paper that contributes 80% of each subject total.
                 </p>
-                {!examSessions.length ? (
+                {sessionsFetching && !selectionHydrated ? (
+                  <p className="text-sm text-theme-muted">Loading sessions…</p>
+                ) : !examSessions.length ? (
                   <p className="text-sm text-theme-muted">
-                    No end-of-term exam session for this class/term yet.
+                    No end-of-term exam session for this class/term yet. Create an
+                    End-of-Term Exam session under Exam sessions.
                   </p>
                 ) : (
-                  <ul className="max-h-40 space-y-1.5 overflow-y-auto">
+                  <ul className="max-h-48 space-y-1.5 overflow-y-auto">
                     {examSessions.map((s) => (
                       <li key={s.id}>
                         <label className="flex cursor-pointer items-start gap-2 text-sm">
@@ -472,7 +497,8 @@ export function OLevelResultsContent() {
                           <span>
                             <span className="font-medium text-theme-primary">{s.title}</span>
                             <span className="block text-xs text-theme-muted">
-                              {s.categoryName} · /{s.maxMarks} · {s.status}
+                              {s.categoryName || s.categoryCode || "Exam"} · /{s.maxMarks} ·{" "}
+                              {s.status}
                             </span>
                           </span>
                         </label>

@@ -250,7 +250,10 @@ export function OLevelExamSessionsContent() {
     }
     return {
       title: "Delete exam session?",
-      description: `${confirm.session.title} will be soft-deleted and hidden from teachers. Marks are kept and you can restore it later.`,
+      description:
+        confirm.kind === "soft-delete" && confirm.session.status === "open"
+          ? `${confirm.session.title} is open. It will be closed first, then soft-deleted and hidden from teachers. Marks are kept and you can restore it later.`
+          : `${confirm.kind === "soft-delete" ? confirm.session.title : "This session"} will be soft-deleted and hidden from teachers. Marks are kept and you can restore it later.`,
       label: "Move to deleted",
     };
   }, [confirm]);
@@ -486,7 +489,8 @@ export function OLevelExamSessionsContent() {
                             <StatusPill status={s.status} />
                           )}
                         </td>
-                        <td className="p-3 text-right space-x-2 whitespace-nowrap">
+                        <td className="p-3 text-right">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
                           {!deleted ? (
                             <>
                               <button
@@ -514,20 +518,23 @@ export function OLevelExamSessionsContent() {
                                   Close
                                 </button>
                               ) : null}
-                              {s.status !== "open" ? (
-                                <button
-                                  type="button"
-                                  className="text-sm text-red-600 dark:text-red-400"
-                                  onClick={() =>
-                                    setConfirm({
-                                      session: s,
-                                      kind: s.hasMarks ? "soft-delete" : "hard-delete",
-                                    })
-                                  }
-                                >
-                                  Delete
-                                </button>
-                              ) : null}
+                              <button
+                                type="button"
+                                className="text-sm text-red-600 dark:text-red-400"
+                                onClick={() =>
+                                  setConfirm({
+                                    session: s,
+                                    kind:
+                                      s.status === "open"
+                                        ? "soft-delete"
+                                        : s.hasMarks
+                                          ? "soft-delete"
+                                          : "hard-delete",
+                                  })
+                                }
+                              >
+                                Delete
+                              </button>
                             </>
                           ) : (
                             <>
@@ -551,6 +558,7 @@ export function OLevelExamSessionsContent() {
                               ) : null}
                             </>
                           )}
+                          </div>
                         </td>
                       </tr>
                     );

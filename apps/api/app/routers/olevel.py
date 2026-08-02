@@ -748,21 +748,37 @@ async def get_marks(
     ctx: TenantCtx,
     conn: asyncpg.Connection = Depends(get_db),
     exam_session_id: uuid.UUID = Query(...),
-    subject_id: uuid.UUID = Query(...),
+    subject_id: uuid.UUID | None = Query(None),
 ):
     school_id, actor = ctx
     require_olevel_action(actor, "enterOLevelMarks")
     role = (actor.get("role") or "").lower()
     is_teacher = role == "teacher"
     try:
-        data = await marks_svc.get_mark_grid(
-            conn,
-            school_id,
-            actor_user_id(actor) if is_teacher else None,
-            exam_session_id=exam_session_id,
-            subject_id=subject_id,
-            require_assignment=is_teacher,
-        )
+        if subject_id is None:
+            if not is_teacher:
+                raise HTTPException(
+                    422,
+                    detail={
+                        "error": "subject_id is required for admin mark review.",
+                        "code": "SUBJECT_REQUIRED",
+                    },
+                )
+            data = await marks_svc.get_session_mark_grid(
+                conn,
+                school_id,
+                actor_user_id(actor),
+                exam_session_id=exam_session_id,
+            )
+        else:
+            data = await marks_svc.get_mark_grid(
+                conn,
+                school_id,
+                actor_user_id(actor) if is_teacher else None,
+                exam_session_id=exam_session_id,
+                subject_id=subject_id,
+                require_assignment=is_teacher,
+            )
     except LookupError as exc:
         raise _http_lookup(exc) from exc
     return _ok(data)
@@ -777,14 +793,26 @@ async def bulk_marks(
     role = (actor.get("role") or "").lower()
     # Spec: teachers enter marks; admin/HT may also enter for cover.
     is_teacher = role == "teacher"
+    exam_session_id = uuid.UUID(
+        str(body.get("exam_session_id") or body.get("examSessionId"))
+    )
+    entries = body.get("entries")
+    if isinstance(entries, list):
+        return _ok(
+            await marks_svc.bulk_save_session_marks(
+                conn,
+                school_id,
+                actor_user_id(actor),
+                exam_session_id=exam_session_id,
+                entries=entries,
+            )
+        )
     return _ok(
         await marks_svc.bulk_save_marks(
             conn,
             school_id,
             actor_user_id(actor),
-            exam_session_id=uuid.UUID(
-                str(body.get("exam_session_id") or body.get("examSessionId"))
-            ),
+            exam_session_id=exam_session_id,
             subject_id=uuid.UUID(str(body.get("subject_id") or body.get("subjectId"))),
             marks=body.get("marks") or [],
             require_assignment=is_teacher,
@@ -801,16 +829,19 @@ async def submit_marks(
 ):
     school_id, actor = ctx
     require_olevel_action(actor, "enterOLevelMarks")
-    subject_id = uuid.UUID(str(body.get("subject_id") or body.get("subjectId")))
-    return _ok(
-        await marks_svc.submit_marks(
-            conn,
-            school_id,
-            actor_user_id(actor),
-            exam_session_id=exam_session_id,
-            subject_id=subject_id,
+    subject_raw = body.get("subject_id") or body.get("subjectId")
+    try:
+        return _ok(
+            await marks_svc.submit_marks(
+                conn,
+                school_id,
+                actor_user_id(actor),
+                exam_session_id=exam_session_id,
+                subject_id=uuid.UUID(str(subject_raw)) if subject_raw else None,
+            )
         )
-    )
+    except LookupError as exc:
+        raise _http_lookup(exc) from exc
 
 
 @router.post("/marks/{exam_session_id}/unlock")
@@ -929,6 +960,12 @@ async def generate_class_results(
     require_olevel_action(actor, "viewOLevelResults")
     exam_raw = body.get("exam_session_id") or body.get("examSessionId")
     assess_raw = body.get("assessment_session_ids") or body.get("assessmentSessionIds")
+    exam_session_id = uuid.UUID(str(exam_raw)) if exam_raw else None
+    assessment_session_ids: list[uuid.UUID] | None
+    if isinstance(assess_raw, list) and len(assess_raw) > 0:
+        assessment_session_ids = [uuid.UUID(str(x)) for x in assess_raw]
+    else:
+        assessment_session_ids = None
     return _ok(
         await grading_svc.generate_class_results(
             conn,
@@ -938,12 +975,8 @@ async def generate_class_results(
             academic_year_id=uuid.UUID(
                 str(body.get("academic_year_id") or body.get("academicYearId"))
             ),
-            exam_session_id=uuid.UUID(str(exam_raw)) if exam_raw else None,
-            assessment_session_ids=(
-                [uuid.UUID(str(x)) for x in assess_raw]
-                if isinstance(assess_raw, list)
-                else None
-            ),
+            exam_session_id=exam_session_id,
+            assessment_session_ids=assessment_session_ids,
             actor_id=actor_user_id(actor),
         )
     )
@@ -1431,7 +1464,7 @@ async def report_cards_class(
 async def teacher_assignments(
     ctx: TenantCtx, conn: asyncpg.Connection = Depends(get_db)
 ):
-    """Open sessions + subjects assigned to the current teacher."""
+    """Open sessions for classes where the teacher has assigned O-Level subjects."""
     school_id, actor = ctx
     require_olevel_action(actor, "enterOLevelMarks")
     teacher_id = actor_user_id(actor)
@@ -1445,7 +1478,8 @@ async def teacher_assignments(
                os.id AS subject_id, os.name AS subject_name, os.code AS subject_code,
                COALESCE(ms.status, 'draft') AS submission_status,
                (SELECT COUNT(*) FROM olevel_marks m
-                 WHERE m.exam_session_id = es.id AND m.subject_id = os.id) AS entered_count,
+                 WHERE m.exam_session_id = es.id AND m.subject_id = os.id
+                   AND (m.raw_score IS NOT NULL OR m.is_absent)) AS entered_count,
                (SELECT COUNT(*) FROM student_subject_registrations r
                  JOIN student_curriculum_enrollments e ON e.id = r.enrollment_id
                 WHERE e.class_id = es.class_id AND e.academic_year_id = es.academic_year_id
@@ -1463,15 +1497,18 @@ async def teacher_assignments(
         LEFT JOIN olevel_mark_submissions ms
           ON ms.exam_session_id = es.id AND ms.subject_id = os.id AND ms.teacher_id = $2
         WHERE es.school_id = $1 AND es.status = 'open' AND es.deleted_at IS NULL
-        ORDER BY sc.level, os.name
+        ORDER BY sc.level, es.title, os.name
         """,
         school_id,
         teacher_id,
     )
-    return _ok(
-        [
-            {
-                "examSessionId": str(r["session_id"]),
+    by_session: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        sid = str(r["session_id"])
+        item = by_session.get(sid)
+        if not item:
+            item = {
+                "examSessionId": sid,
                 "title": r["title"],
                 "status": r["status"],
                 "maxMarks": float(r["max_marks"]),
@@ -1482,13 +1519,33 @@ async def teacher_assignments(
                 "academicYearId": str(r["academic_year_id"]),
                 "categoryId": str(r["category_id"]),
                 "categoryName": r["category_name"],
-                "subjectId": str(r["subject_id"]),
-                "subjectName": r["subject_name"],
-                "subjectCode": r["subject_code"],
+                "subjects": [],
+                "submissionStatus": "draft",
+                "enteredCount": 0,
+                "studentCount": 0,
+            }
+            by_session[sid] = item
+        item["subjects"].append(
+            {
+                "id": str(r["subject_id"]),
+                "name": r["subject_name"],
+                "code": r["subject_code"],
                 "submissionStatus": r["submission_status"],
                 "enteredCount": int(r["entered_count"] or 0),
                 "studentCount": int(r["student_count"] or 0),
             }
-            for r in rows
-        ]
-    )
+        )
+        item["enteredCount"] += int(r["entered_count"] or 0)
+        item["studentCount"] += int(r["student_count"] or 0)
+
+    result = []
+    for item in by_session.values():
+        statuses = [s["submissionStatus"] for s in item["subjects"]]
+        if statuses and all(st == "submitted" for st in statuses):
+            item["submissionStatus"] = "submitted"
+        elif any(st == "unlocked" for st in statuses):
+            item["submissionStatus"] = "unlocked"
+        else:
+            item["submissionStatus"] = "draft"
+        result.append(item)
+    return _ok(result)
