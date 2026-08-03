@@ -1,6 +1,6 @@
 # Uganda Primary Reports (P1–P7) — Implemented
 
-Status: **shipped** (migrations `048`–`050`, exam workflow aligned with A-Level + UNEB aggregates).
+Status: **shipped** (migrations `048`–`050`, `053`, **`059`** — thematic sittings for P1–P3 + exam workflow for P4–P7).
 
 Hard gates:
 - Primary: `school_type ∈ {primary, both}` → else `403 PRIMARY_NOT_ENABLED`
@@ -30,7 +30,17 @@ Hard gates:
 5. **Marks** — Teachers save only changed cells; submit when done. Admin unlocks for re-entry.
 6. **Results** — Per-exam aggregate / division / position (lower aggregate ranks higher).
 
-Lower primary (P1–P3) still uses thematic assessment grids.
+Lower primary (P1–P3) uses **thematic sittings** (same BOT/MID/EOT types), not subject exams.
+
+---
+
+## Workflow (lower primary P1–P3)
+
+1. **Setup** — Themes & strands CRUD under Primary setup (defaults seeded).
+2. **Exam types** — Shared BOT / MID / EOT catalogue.
+3. **Thematic sittings** — Admin creates a sitting per class × term × type; open for assessment.
+4. **Thematic marks (teachers)** — Scalable sheet: pick open sitting → strand tabs → students × themes with level + comment per cell. Bulk fill column/strand; one-shot sheet save (`POST /marks/thematic/sheet`); submit locks the sitting. Admins do not enter marks — they open/close sittings, unlock, and approve reports.
+5. **Report cards** — Comments + head-teacher approval keyed by `sitting_id`; learner portal lists approved thematic reports alongside upper-primary exams.
 
 ---
 
@@ -38,10 +48,12 @@ Lower primary (P1–P3) still uses thematic assessment grids.
 
 | Piece | Path |
 |-------|------|
-| Migrations | `048_primary_reports.sql`, `049_primary_exams.sql`, `050_primary_exam_subjects.sql` |
+| Migrations | `048`–`050`, `053`, **`059_primary_thematic_sittings.sql`** |
 | Access | `primary_access.py`, `primary_exam_access.py` |
 | Exams | `services/primary/exams.py` |
-| Recalc | `recalculate_exam_results` — PLE points or percent |
+| Sittings | `services/primary/sittings.py` |
+| Themes/strands | `services/primary/subjects.py` |
+| Recalc | `recalculate_exam_results` — PLE points or percent (upper) |
 | Router | `/api/schools/primary` |
 
 ### Key endpoints
@@ -52,6 +64,11 @@ Lower primary (P1–P3) still uses thematic assessment grids.
 - `GET /exams/{id}/grades` — scoped to exam subjects
 - `POST /exams/{id}/grades/bulk` — teacher only; skips never-saved empty cells
 - `POST /exams/{id}/submit` / unlock
+- `GET|POST|PATCH|DELETE /sittings` — lower-primary thematic sittings lifecycle
+- `POST /sittings/{id}/open|close|restore`
+- `GET|POST|PATCH|DELETE /themes`, `/strands` — admin catalogue CRUD
+- `GET|POST /marks/thematic` (+ `sitting_id`), submit/unlock
+- Report cards: `exam_id` (upper) or `sitting_id` (lower)
 - Legacy `POST /marks/exams/bulk` → `410 USE_EXAM_GRADES`
 
 ### RBAC
@@ -69,13 +86,16 @@ Lower primary (P1–P3) still uses thematic assessment grids.
 
 | Route | Role |
 |-------|------|
-| `/dashboard/primary/setup` | Weights, ranking mode, install subjects |
+| `/dashboard/primary/setup` | Weights, ranking mode, subjects, **themes & strands** |
 | `/dashboard/primary/exam-types` | Exam type CRUD |
-| `/dashboard/primary/exams` | Create with subject picker / open / close |
+| `/dashboard/primary/exams` | P4–P7 subject exams |
+| `/dashboard/primary/sittings` | P1–P3 thematic sittings CRUD |
 | `/dashboard/primary/grades` | Admin view + unlock |
-| `/teacher/primary/grades` | Teacher enter + submit |
+| `/teacher/primary/grades` | Teacher enter + submit (upper) |
+| `/teacher/primary/marks/thematic` | Teacher thematic entry (lower) |
 | `/dashboard/primary/results` | Aggregate, division, positions |
-| `/dashboard/primary/marks/thematic` | P1–P3 thematic |
+| `/dashboard/primary/marks/thematic` | P1–P3 thematic (sitting-scoped) |
+| `/dashboard/primary/report-cards` | Upper exams + lower sittings |
 
 ---
 

@@ -7,7 +7,7 @@ import { PrimaryThematicContent } from '@/components/school-admin/primary/Primar
 export default function PrimaryThematicPage() {
   return (
     <Suspense fallback={<Skeleton className="h-72 w-full rounded-xl" />}>
-      <PrimaryThematicContent />
+      <PrimaryThematicContent portal="admin" />
     </Suspense>
   );
 }

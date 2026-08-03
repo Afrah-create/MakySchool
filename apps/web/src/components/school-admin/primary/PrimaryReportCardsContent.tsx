@@ -9,6 +9,7 @@ import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
 import { LoadingButton } from "@makyschool/ui/components/ui/LoadingButton";
 import {
+  isLowerPrimaryLevel,
   isUpperPrimaryLevel,
   schoolOffersPrimary,
 } from "@makyschool/shared";
@@ -23,6 +24,7 @@ import {
   usePrimaryClassResults,
   usePrimaryExams,
   usePrimaryReportCard,
+  usePrimarySittings,
   useSavePrimaryReportComment,
 } from "@/hooks/usePrimary";
 
@@ -100,15 +102,13 @@ function PrimaryReportCardsClient() {
   const canApprove = useCan("generatePrimaryReports");
 
   const { data: allClasses = [] } = usePrimaryClasses(offers);
-  const classes = useMemo(
-    () => allClasses.filter((c) => isUpperPrimaryLevel(c.level)),
-    [allClasses],
-  );
+  const classes = allClasses;
   const { data: terms = [] } = useResourceTerms(offers);
 
   const [classId, setClassId] = useState(searchParams.get("classId") ?? "");
   const [termId, setTermId] = useState(searchParams.get("termId") ?? "");
   const [examId, setExamId] = useState(searchParams.get("examId") ?? "");
+  const [sittingId, setSittingId] = useState(searchParams.get("sittingId") ?? "");
   const [studentId, setStudentId] = useState(
     searchParams.get("studentId") ?? "",
   );
@@ -131,32 +131,73 @@ function PrimaryReportCardsClient() {
     if (!classId && classes[0]) setClassId(classes[0].id);
   }, [classes, classId]);
 
+  const selectedClass = classes.find((c) => c.id === classId);
+  const isLower = selectedClass
+    ? isLowerPrimaryLevel(selectedClass.level)
+    : false;
+  const isUpper = selectedClass
+    ? isUpperPrimaryLevel(selectedClass.level)
+    : false;
+
   const { data: exams, isPending: examsLoading } = usePrimaryExams(
     classId && termId ? { classId, termId } : {},
-    offers && ((!!classId && !!termId) || !!examId),
+    offers && isUpper && ((!!classId && !!termId) || !!examId),
+  );
+  const { data: sittings, isPending: sittingsLoading } = usePrimarySittings(
+    classId && termId ? { classId, termId } : {},
+    offers && isLower && ((!!classId && !!termId) || !!sittingId),
   );
 
   useEffect(() => {
-    if (!examId || (classId && termId)) return;
+    if (!examId || (classId && termId) || isLower) return;
     const match = (exams ?? []).find((e) => e.id === examId);
     if (match) {
       setClassId(match.classId);
       setTermId(match.termId);
     }
-  }, [examId, exams, classId, termId]);
+  }, [examId, exams, classId, termId, isLower]);
 
   useEffect(() => {
+    if (!sittingId || (classId && termId) || isUpper) return;
+    const match = (sittings ?? []).find((s) => s.id === sittingId);
+    if (match) {
+      setClassId(match.classId);
+      setTermId(match.termId);
+    }
+  }, [sittingId, sittings, classId, termId, isUpper]);
+
+  useEffect(() => {
+    if (isLower) {
+      setExamId("");
+      return;
+    }
     if (!examId || !exams) return;
     if (!exams.some((e) => e.id === examId)) {
       setExamId(exams[0]?.id ?? "");
     }
-  }, [exams, examId]);
+  }, [exams, examId, isLower]);
+
+  useEffect(() => {
+    if (isUpper) {
+      setSittingId("");
+      return;
+    }
+    if (!sittingId || !sittings) return;
+    const active = sittings.filter((s) => !s.deleted);
+    if (!active.some((s) => s.id === sittingId)) {
+      setSittingId(active[0]?.id ?? "");
+    }
+  }, [sittings, sittingId, isUpper]);
 
   const { data: resultsData } = usePrimaryClassResults(
     classId,
     termId,
-    offers && !!classId && !!termId && !!examId,
-    examId,
+    offers &&
+      !!classId &&
+      !!termId &&
+      ((isUpper && !!examId) || (isLower && !!sittingId)),
+    isUpper ? examId : undefined,
+    isLower ? sittingId : undefined,
   );
   const students = resultsData?.students ?? [];
 
@@ -169,14 +210,18 @@ function PrimaryReportCardsClient() {
   useEffect(() => {
     setSelectedIds(new Set());
     setBulkOpen(false);
-  }, [examId]);
+  }, [examId, sittingId]);
 
   const {
     data: report,
     isPending,
     isError,
     refetch,
-  } = usePrimaryReportCard(studentId, examId, !!studentId && !!examId);
+  } = usePrimaryReportCard(
+    studentId,
+    { examId: isUpper ? examId : undefined, sittingId: isLower ? sittingId : undefined },
+    !!studentId && ((isUpper && !!examId) || (isLower && !!sittingId)),
+  );
 
   const [syncedReport, setSyncedReport] = useState<typeof report>(undefined);
   if (report !== syncedReport) {
@@ -189,7 +234,7 @@ function PrimaryReportCardsClient() {
   const bulkSave = useBulkSavePrimaryReportComments();
   const generate = useGeneratePrimaryReportCards();
 
-  const ready = !!examId;
+  const ready = (isUpper && !!examId) || (isLower && !!sittingId);
   const approved = !!report?.approvedAt;
   const allSelected =
     students.length > 0 && selectedIds.size === students.length;
@@ -220,11 +265,12 @@ function PrimaryReportCardsClient() {
   }
 
   async function save(approve = false) {
-    if (!studentId || !examId) return;
+    if (!studentId || !ready) return;
     try {
       await saveComment.mutateAsync({
         studentId,
-        examId,
+        examId: isUpper ? examId : undefined,
+        sittingId: isLower ? sittingId : undefined,
         classTeacherComment: classComment,
         headTeacherComment: headComment,
         approve,
@@ -242,7 +288,7 @@ function PrimaryReportCardsClient() {
   }
 
   async function applyBulk(approve = false) {
-    if (!examId || selectedIds.size === 0) return;
+    if (!ready || selectedIds.size === 0) return;
     const classText = bulkClassComment.trim();
     const headText = bulkHeadComment.trim();
     if (!classText && !headText && !approve) {
@@ -251,7 +297,8 @@ function PrimaryReportCardsClient() {
     }
     try {
       const result = await bulkSave.mutateAsync({
-        examId,
+        examId: isUpper ? examId : undefined,
+        sittingId: isLower ? sittingId : undefined,
         studentIds: [...selectedIds],
         classTeacherComment: classText || null,
         headTeacherComment: headText || null,
@@ -280,10 +327,11 @@ function PrimaryReportCardsClient() {
   }
 
   async function download(one = true) {
-    if (!examId) return;
+    if (!ready) return;
     try {
       const result = await generate.mutateAsync({
-        examId,
+        examId: isUpper ? examId : undefined,
+        sittingId: isLower ? sittingId : undefined,
         studentId: one ? studentId : undefined,
       });
       toast.success(
@@ -320,7 +368,7 @@ function PrimaryReportCardsClient() {
     <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
       <PageHeader
         title="Primary report cards"
-        description="Preview exam reports, add comments (including bulk), approve for the learner portal, and download PDFs."
+        description="P1–P3 thematic sittings and P4–P7 exam reports — comments, approval, and PDF download."
         actions={
           ready && students.length > 0 ? (
             <div className="flex flex-wrap gap-2">
@@ -357,11 +405,12 @@ function PrimaryReportCardsClient() {
                 onChange={(e) => {
                   setClassId(e.target.value);
                   setExamId("");
+                  setSittingId("");
                   setStudentId("");
                 }}
               >
                 <option value="">
-                  {classes.length === 0 ? "No P4–P7 classes" : "Select a class…"}
+                  {classes.length === 0 ? "No primary classes" : "Select a class…"}
                 </option>
                 {classes.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -380,6 +429,7 @@ function PrimaryReportCardsClient() {
                 onChange={(e) => {
                   setTermId(e.target.value);
                   setExamId("");
+                  setSittingId("");
                   setStudentId("");
                 }}
               >
@@ -392,49 +442,97 @@ function PrimaryReportCardsClient() {
                 ))}
               </select>
             </label>
-            <label className="block min-w-[12rem] flex-1">
-              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
-                Exam
-              </span>
-              <select
-                className="ms-input w-full"
-                value={examId}
-                onChange={(e) => {
-                  setExamId(e.target.value);
-                  setStudentId("");
-                }}
-                disabled={!classId || !termId || examsLoading}
-              >
-                <option value="">
-                  {examsLoading
-                    ? "Loading exams…"
-                    : (exams ?? []).length === 0
-                      ? "No exams for this class/term"
-                      : "Select an exam…"}
-                </option>
-                {(exams ?? []).map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                    {e.examTypeName ? ` · ${e.examTypeName}` : ""}
+            {isLower ? (
+              <label className="block min-w-[12rem] flex-1">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+                  Sitting
+                </span>
+                <select
+                  className="ms-input w-full"
+                  value={sittingId}
+                  onChange={(e) => {
+                    setSittingId(e.target.value);
+                    setStudentId("");
+                  }}
+                  disabled={!classId || !termId || sittingsLoading}
+                >
+                  <option value="">
+                    {sittingsLoading
+                      ? "Loading sittings…"
+                      : (sittings ?? []).filter((s) => !s.deleted).length === 0
+                        ? "No sittings for this class/term"
+                        : "Select a sitting…"}
                   </option>
-                ))}
-              </select>
-            </label>
+                  {(sittings ?? [])
+                    .filter((s) => !s.deleted)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                        {s.examTypeName ? ` · ${s.examTypeName}` : ""}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            ) : (
+              <label className="block min-w-[12rem] flex-1">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+                  Exam
+                </span>
+                <select
+                  className="ms-input w-full"
+                  value={examId}
+                  onChange={(e) => {
+                    setExamId(e.target.value);
+                    setStudentId("");
+                  }}
+                  disabled={!classId || !termId || examsLoading}
+                >
+                  <option value="">
+                    {examsLoading
+                      ? "Loading exams…"
+                      : (exams ?? []).length === 0
+                        ? "No exams for this class/term"
+                        : "Select an exam…"}
+                  </option>
+                  {(exams ?? []).map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name}
+                      {e.examTypeName ? ` · ${e.examTypeName}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
       {classes.length === 0 ? (
             <EmptyState
               icon={FileText}
-              title="No upper primary classes"
-              description="Exam report cards apply to P4–P7. Create classes first."
+              title="No primary classes"
+              description="Create P1–P7 classes to manage report cards."
             />
           ) : !classId || !termId ? (
             <EmptyState
               icon={FileText}
               title="Select a class and term"
-              description="Then choose an exam to open report cards."
+              description={
+                isLower
+                  ? "Then choose a thematic sitting to open report cards."
+                  : "Then choose an exam to open report cards."
+              }
             />
-          ) : !examId ? (
+          ) : isLower && !sittingId ? (
+            <EmptyState
+              icon={FileText}
+              title="No sitting selected"
+              description="Create a thematic sitting for this class and term, then select it."
+              action={
+                <Link href="/dashboard/primary/sittings" className="ms-btn-primary">
+                  Manage sittings
+                </Link>
+              }
+            />
+          ) : isUpper && !examId ? (
             <EmptyState
               icon={FileText}
               title="No exam selected"
@@ -449,7 +547,11 @@ function PrimaryReportCardsClient() {
             <EmptyState
               icon={FileText}
               title="No results yet"
-              description="Enter marks and calculate results for this exam first."
+              description={
+                isLower
+                  ? "Enter thematic assessments for this sitting first."
+                  : "Enter marks and calculate results for this exam first."
+              }
             />
           ) : (
             <div className="grid items-start gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -753,45 +855,85 @@ function PrimaryReportCardsClient() {
                       </div>
 
                       <div className="overflow-x-auto">
-                        <table className="ms-table ms-table-compact w-full min-w-[32rem]">
-                          <thead>
-                            <tr>
-                              <th>Subject</th>
-                              <th className="text-center">Exam %</th>
-                              <th className="text-center">Grade</th>
-                              <th className="text-center">Pts</th>
-                              <th>Comment</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(report.subjectResults ?? []).map((s) => (
-                              <tr key={s.subjectCode}>
-                                <td>
-                                  <div className="flex items-baseline gap-2">
-                                    <span className="shrink-0 font-mono text-xs text-theme-muted">
-                                      {s.subjectCode}
-                                    </span>
-                                    <span className="font-medium text-theme-primary">
-                                      {s.subjectName}
-                                    </span>
-                                  </div>
-                                </td>
-                                <td className="text-center tabular-nums text-theme-muted">
-                                  {s.examPercentage ?? s.finalPercent ?? "—"}
-                                </td>
-                                <td className="text-center font-semibold tabular-nums text-theme-accent">
-                                  {s.grade ?? "—"}
-                                </td>
-                                <td className="text-center tabular-nums text-theme-primary">
-                                  {s.gradePoints ?? "—"}
-                                </td>
-                                <td className="text-muted">
-                                  {s.teacherComment || "—"}
-                                </td>
+                        {report.isLowerPrimary ? (
+                          <table className="ms-table ms-table-compact w-full min-w-[32rem]">
+                            <thead>
+                              <tr>
+                                <th>Theme</th>
+                                <th>Strand</th>
+                                <th className="text-center">Level</th>
+                                <th>Label</th>
+                                <th>Comment</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody>
+                              {(report.thematicResults ?? []).flatMap((theme) =>
+                                theme.strands.map((s) => (
+                                  <tr key={`${theme.theme}-${s.strand}`}>
+                                    <td className="font-medium text-theme-primary">
+                                      {theme.theme}
+                                    </td>
+                                    <td>{s.strand}</td>
+                                    <td className="text-center font-semibold tabular-nums text-theme-accent">
+                                      {s.level}
+                                    </td>
+                                    <td className="text-theme-muted">{s.label ?? "—"}</td>
+                                    <td className="text-theme-muted">
+                                      {s.teacherComment || "—"}
+                                    </td>
+                                  </tr>
+                                )),
+                              )}
+                              {(report.thematicResults ?? []).length === 0 ? (
+                                <tr>
+                                  <td colSpan={5} className="text-theme-muted">
+                                    No thematic assessments recorded.
+                                  </td>
+                                </tr>
+                              ) : null}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <table className="ms-table ms-table-compact w-full min-w-[32rem]">
+                            <thead>
+                              <tr>
+                                <th>Subject</th>
+                                <th className="text-center">Exam %</th>
+                                <th className="text-center">Grade</th>
+                                <th className="text-center">Pts</th>
+                                <th>Comment</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(report.subjectResults ?? []).map((s) => (
+                                <tr key={s.subjectCode}>
+                                  <td>
+                                    <div className="flex items-baseline gap-2">
+                                      <span className="shrink-0 font-mono text-xs text-theme-muted">
+                                        {s.subjectCode}
+                                      </span>
+                                      <span className="font-medium text-theme-primary">
+                                        {s.subjectName}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="text-center tabular-nums text-theme-muted">
+                                    {s.examPercentage ?? s.finalPercent ?? "—"}
+                                  </td>
+                                  <td className="text-center font-semibold tabular-nums text-theme-accent">
+                                    {s.grade ?? "—"}
+                                  </td>
+                                  <td className="text-center tabular-nums text-theme-primary">
+                                    {s.gradePoints ?? "—"}
+                                  </td>
+                                  <td className="text-muted">
+                                    {s.teacherComment || "—"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
                       </div>
                     </section>
 

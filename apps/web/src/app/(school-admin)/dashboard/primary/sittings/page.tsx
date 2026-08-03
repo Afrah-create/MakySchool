@@ -2,12 +2,12 @@
 
 import { Suspense } from 'react';
 import { Skeleton } from '@makyschool/ui/components/ui/Skeleton';
-import { PrimaryThematicContent } from '@/components/school-admin/primary/PrimaryThematicContent';
+import { PrimarySittingsContent } from '@/components/school-admin/primary/PrimarySittingsContent';
 
-export default function TeacherPrimaryThematicPage() {
+export default function Page() {
   return (
     <Suspense fallback={<Skeleton className="h-72 w-full rounded-xl" />}>
-      <PrimaryThematicContent portal="teacher" />
+      <PrimarySittingsContent />
     </Suspense>
   );
 }

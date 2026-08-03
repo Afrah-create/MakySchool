@@ -20,6 +20,7 @@ async def class_results(
     class_id: uuid.UUID,
     term_id: uuid.UUID,
     exam_id: uuid.UUID | None = None,
+    sitting_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     level = await fetch_class_level(conn, school_id, class_id)
     class_row = await conn.fetchrow(
@@ -33,7 +34,6 @@ async def class_results(
     )
 
     if is_lower_primary(level):
-        # Aggregate thematic into student cards
         students = await conn.fetch(
             """
             SELECT id, full_name, learner_id
@@ -44,24 +44,50 @@ async def class_results(
             school_id,
             class_id,
         )
-        assessments = await conn.fetch(
-            """
-            SELECT student_id, theme_id, strand, level
-            FROM primary_thematic_assessments
-            WHERE school_id = $1 AND class_id = $2 AND term_id = $3
-            """,
-            school_id,
-            class_id,
-            term_id,
-        )
+        if sitting_id:
+            assessments = await conn.fetch(
+                """
+                SELECT student_id, theme_id, strand, level
+                FROM primary_thematic_assessments
+                WHERE school_id = $1 AND class_id = $2 AND sitting_id = $3
+                """,
+                school_id,
+                class_id,
+                sitting_id,
+            )
+            term_rows = await conn.fetch(
+                """
+                SELECT student_id, class_teacher_comment, head_teacher_comment,
+                       approved_at, report_generated, average_percent
+                FROM primary_term_results
+                WHERE school_id = $1 AND sitting_id = $2
+                """,
+                school_id,
+                sitting_id,
+            )
+        else:
+            assessments = await conn.fetch(
+                """
+                SELECT student_id, theme_id, strand, level
+                FROM primary_thematic_assessments
+                WHERE school_id = $1 AND class_id = $2 AND term_id = $3
+                """,
+                school_id,
+                class_id,
+                term_id,
+            )
+            term_rows = []
+
         by_student: dict[uuid.UUID, list] = {}
         for a in assessments:
             by_student.setdefault(a["student_id"], []).append(a)
+        term_map = {r["student_id"]: r for r in term_rows}
 
         items = []
         for s in students:
             levels = [a["level"] for a in by_student.get(s["id"], [])]
             avg = sum(levels) / len(levels) if levels else None
+            tr = term_map.get(s["id"])
             items.append(
                 {
                     "studentId": str(s["id"]),
@@ -69,6 +95,13 @@ async def class_results(
                     "learnerId": s["learner_id"],
                     "thematicCount": len(levels),
                     "averageLevel": round(avg, 2) if avg is not None else None,
+                    "classTeacherComment": tr["class_teacher_comment"] if tr else None,
+                    "headTeacherComment": tr["head_teacher_comment"] if tr else None,
+                    "approvedAt": tr["approved_at"].isoformat()
+                    if tr and tr["approved_at"]
+                    else None,
+                    "reportGenerated": bool(tr["report_generated"]) if tr else False,
+                    "sittingId": str(sitting_id) if sitting_id else None,
                     "isLowerPrimary": True,
                 }
             )
@@ -78,6 +111,7 @@ async def class_results(
             "termId": str(term_id),
             "termName": term["name"] if term else None,
             "examId": str(exam_id) if exam_id else None,
+            "sittingId": str(sitting_id) if sitting_id else None,
             "isLowerPrimary": True,
             "students": items,
         }
@@ -206,6 +240,7 @@ async def student_result(
     student_id: uuid.UUID,
     term_id: uuid.UUID,
     exam_id: uuid.UUID | None = None,
+    sitting_id: uuid.UUID | None = None,
     require_approved: bool = False,
 ) -> dict[str, Any]:
     student = await conn.fetchrow(
@@ -267,21 +302,79 @@ async def student_result(
         "termName": term["name"],
         "academicYear": term["year"],
         "isLowerPrimary": is_lower_primary(level) if level else False,
+        "examId": None,
+        "examName": None,
+        "examTypeName": None,
+        "sittingId": None,
+        "sittingName": None,
     }
 
     if is_lower_primary(level):
-        rows = await conn.fetch(
-            """
-            SELECT th.name AS theme_name, ta.strand, ta.level, ta.teacher_comment
-            FROM primary_thematic_assessments ta
-            JOIN primary_themes th ON th.id = ta.theme_id
-            WHERE ta.school_id = $1 AND ta.student_id = $2 AND ta.term_id = $3
-            ORDER BY th.display_order, ta.strand
-            """,
-            school_id,
-            student_id,
-            term_id,
-        )
+        resolved_sitting_id = sitting_id
+        sitting_meta = None
+        if resolved_sitting_id is None:
+            # Prefer latest sitting-scoped result for this term
+            latest = await conn.fetchrow(
+                """
+                SELECT sitting_id FROM primary_term_results
+                WHERE school_id = $1 AND student_id = $2 AND term_id = $3
+                  AND sitting_id IS NOT NULL
+                ORDER BY calculated_at DESC NULLS LAST
+                LIMIT 1
+                """,
+                school_id,
+                student_id,
+                term_id,
+            )
+            if latest:
+                resolved_sitting_id = latest["sitting_id"]
+
+        if resolved_sitting_id:
+            from app.services.primary.sittings import require_sitting
+
+            sitting_meta = await require_sitting(conn, school_id, resolved_sitting_id)
+            base["sittingId"] = sitting_meta["id"]
+            base["sittingName"] = sitting_meta["name"]
+            base["examName"] = sitting_meta["name"]
+            base["examTypeName"] = sitting_meta.get("examTypeName")
+            rows = await conn.fetch(
+                """
+                SELECT th.name AS theme_name, ta.strand, ta.level, ta.teacher_comment
+                FROM primary_thematic_assessments ta
+                JOIN primary_themes th ON th.id = ta.theme_id
+                WHERE ta.school_id = $1 AND ta.student_id = $2 AND ta.sitting_id = $3
+                ORDER BY th.display_order, ta.strand
+                """,
+                school_id,
+                student_id,
+                resolved_sitting_id,
+            )
+            term_row = await conn.fetchrow(
+                """
+                SELECT class_teacher_comment, head_teacher_comment,
+                       approved_at, approved_by, report_generated, average_percent
+                FROM primary_term_results
+                WHERE school_id = $1 AND student_id = $2 AND sitting_id = $3
+                """,
+                school_id,
+                student_id,
+                resolved_sitting_id,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT th.name AS theme_name, ta.strand, ta.level, ta.teacher_comment
+                FROM primary_thematic_assessments ta
+                JOIN primary_themes th ON th.id = ta.theme_id
+                WHERE ta.school_id = $1 AND ta.student_id = $2 AND ta.term_id = $3
+                ORDER BY th.display_order, ta.strand
+                """,
+                school_id,
+                student_id,
+                term_id,
+            )
+            term_row = None
+
         themes: dict[str, list] = {}
         for r in rows:
             themes.setdefault(r["theme_name"], []).append(
@@ -295,6 +388,57 @@ async def student_result(
         base["thematicResults"] = [
             {"theme": name, "strands": strands} for name, strands in themes.items()
         ]
+
+        levels = [s["level"] for strands in themes.values() for s in strands]
+        avg_level = sum(levels) / len(levels) if levels else None
+        base["totals"] = {
+            "totalMarks": None,
+            "totalPossible": None,
+            "averagePercent": round(avg_level, 2) if avg_level is not None else None,
+            "overallGrade": None,
+            "overallGradeLabel": (
+                THEMATIC_LEVELS.get(round(avg_level), {}).get("label")
+                if avg_level is not None
+                else None
+            ),
+            "aggregate": None,
+            "division": None,
+            "classPosition": None,
+            "totalStudents": None,
+            "attendanceDays": None,
+            "presentDays": None,
+            "attendancePercent": None,
+            "averageLevel": round(avg_level, 2) if avg_level is not None else None,
+            "thematicCount": len(levels),
+        }
+
+        if term_row:
+            approved_at = term_row.get("approved_at")
+            if require_approved and not approved_at:
+                raise LookupError("This report card is not approved yet.")
+            base["classTeacherComment"] = term_row["class_teacher_comment"]
+            base["headTeacherComment"] = term_row["head_teacher_comment"]
+            base["approvedAt"] = approved_at.isoformat() if approved_at else None
+            base["reportGenerated"] = bool(term_row.get("report_generated"))
+            approved_by = term_row.get("approved_by")
+            if approved_by:
+                name = await conn.fetchval(
+                    "SELECT full_name FROM users WHERE id = $1",
+                    approved_by,
+                )
+                base["approvedByName"] = name
+            else:
+                base["approvedByName"] = None
+        else:
+            if require_approved:
+                raise LookupError("This report card is not approved yet.")
+            base["classTeacherComment"] = None
+            base["headTeacherComment"] = None
+            base["approvedAt"] = None
+            base["approvedByName"] = None
+            base["reportGenerated"] = False
+
+        base["photoUrl"] = base["student"]["photoUrl"]
         return base
 
     # Prefer an explicit exam, else the latest exam-scoped result for this term.
@@ -537,6 +681,174 @@ async def upsert_report_comment(
     return {"ok": True, "approved": approve}
 
 
+async def upsert_sitting_report_comment(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    student_id: uuid.UUID,
+    sitting_id: uuid.UUID,
+    class_teacher_comment: str | None,
+    head_teacher_comment: str | None,
+    approve: bool,
+    actor_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Insert or update comments/approval on a sitting-scoped term result row."""
+    from app.services.primary.sittings import require_sitting
+
+    sitting = await require_sitting(conn, school_id, sitting_id)
+    existing = await conn.fetchrow(
+        """
+        SELECT approved_at FROM primary_term_results
+        WHERE school_id = $1 AND student_id = $2 AND sitting_id = $3
+        """,
+        school_id,
+        student_id,
+        sitting_id,
+    )
+    if existing and existing["approved_at"] and not approve:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "This report card is approved. Comments are locked.",
+                "code": "APPROVED",
+            },
+        )
+
+    # Snapshot average competence level at approval/save time
+    avg_row = await conn.fetchrow(
+        """
+        SELECT AVG(level)::float AS avg_level, COUNT(*)::int AS n
+        FROM primary_thematic_assessments
+        WHERE school_id = $1 AND student_id = $2 AND sitting_id = $3
+        """,
+        school_id,
+        student_id,
+        sitting_id,
+    )
+    avg_level = float(avg_row["avg_level"]) if avg_row and avg_row["n"] else None
+    grade_label = None
+    if avg_level is not None:
+        grade_label = THEMATIC_LEVELS.get(int(round(avg_level)), {}).get("label")
+
+    approved_by = actor_id if approve else None
+    await conn.execute(
+        """
+        INSERT INTO primary_term_results (
+          school_id, student_id, class_id, term_id, academic_year_id,
+          sitting_id, exam_id,
+          average_percent, overall_grade_label,
+          class_teacher_comment, head_teacher_comment,
+          approved_by, approved_at, calculated_at
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6, NULL,
+          $7, $8, $9, $10, $11::uuid,
+          CASE WHEN $11::uuid IS NOT NULL THEN NOW() ELSE NULL END,
+          NOW()
+        )
+        ON CONFLICT (sitting_id, student_id)
+        DO UPDATE SET
+          average_percent = COALESCE(
+            EXCLUDED.average_percent, primary_term_results.average_percent
+          ),
+          overall_grade_label = COALESCE(
+            EXCLUDED.overall_grade_label, primary_term_results.overall_grade_label
+          ),
+          class_teacher_comment = COALESCE(
+            EXCLUDED.class_teacher_comment, primary_term_results.class_teacher_comment
+          ),
+          head_teacher_comment = COALESCE(
+            EXCLUDED.head_teacher_comment, primary_term_results.head_teacher_comment
+          ),
+          approved_by = COALESCE(
+            EXCLUDED.approved_by, primary_term_results.approved_by
+          ),
+          approved_at = COALESCE(
+            EXCLUDED.approved_at, primary_term_results.approved_at
+          ),
+          calculated_at = NOW()
+        """,
+        school_id,
+        student_id,
+        uuid.UUID(sitting["classId"]),
+        uuid.UUID(sitting["termId"]),
+        uuid.UUID(sitting["academicYearId"]),
+        sitting_id,
+        avg_level,
+        grade_label,
+        class_teacher_comment,
+        head_teacher_comment,
+        approved_by,
+    )
+    return {"ok": True, "approved": approve}
+
+
+async def bulk_upsert_sitting_report_comments(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    sitting_id: uuid.UUID,
+    student_ids: list[uuid.UUID],
+    class_teacher_comment: str | None,
+    head_teacher_comment: str | None,
+    approve: bool,
+    actor_id: uuid.UUID,
+) -> dict[str, Any]:
+    from app.services.primary.sittings import require_sitting
+
+    sitting = await require_sitting(conn, school_id, sitting_id)
+    class_id = uuid.UUID(sitting["classId"])
+
+    roster = await conn.fetch(
+        """
+        SELECT id FROM students
+        WHERE school_id = $1 AND current_class_id = $2 AND status = 'active'
+        """,
+        school_id,
+        class_id,
+    )
+    enrolled = {r["id"] for r in roster}
+
+    approved_rows = await conn.fetch(
+        """
+        SELECT student_id FROM primary_term_results
+        WHERE school_id = $1 AND sitting_id = $2 AND approved_at IS NOT NULL
+        """,
+        school_id,
+        sitting_id,
+    )
+    already_approved = {r["student_id"] for r in approved_rows}
+
+    saved = 0
+    skipped_approved = 0
+    skipped_not_enrolled = 0
+    for sid in student_ids:
+        if sid not in enrolled:
+            skipped_not_enrolled += 1
+            continue
+        if sid in already_approved and not approve:
+            skipped_approved += 1
+            continue
+        await upsert_sitting_report_comment(
+            conn,
+            school_id,
+            student_id=sid,
+            sitting_id=sitting_id,
+            class_teacher_comment=class_teacher_comment,
+            head_teacher_comment=head_teacher_comment,
+            approve=approve,
+            actor_id=actor_id,
+        )
+        saved += 1
+    return {
+        "saved": saved,
+        "skippedApproved": skipped_approved,
+        "skippedNotEnrolled": skipped_not_enrolled,
+    }
+
+
 async def bulk_upsert_report_comments(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
@@ -606,10 +918,10 @@ async def list_approved_report_summaries(
     school_id: uuid.UUID,
     student_id: uuid.UUID,
 ) -> list[dict[str, Any]]:
-    rows = await conn.fetch(
+    exam_rows = await conn.fetch(
         """
         SELECT
-          tr.exam_id, tr.term_id, tr.approved_at, tr.aggregate, tr.division,
+          tr.exam_id, tr.sitting_id, tr.term_id, tr.approved_at, tr.aggregate, tr.division,
           tr.average_percent, tr.overall_grade, tr.class_position, tr.total_students,
           tr.class_teacher_comment, tr.head_teacher_comment,
           e.name AS exam_name, et.name AS exam_type_name,
@@ -626,29 +938,84 @@ async def list_approved_report_summaries(
         school_id,
         student_id,
     )
-    return [
-        {
-            "examId": str(r["exam_id"]),
-            "examName": r["exam_name"],
-            "examTypeName": r["exam_type_name"],
-            "termId": str(r["term_id"]),
-            "termName": r["term_name"],
-            "academicYear": r["academic_year"],
-            "academicYearLabel": str(r["academic_year"]) if r["academic_year"] is not None else None,
-            "approvedAt": r["approved_at"].isoformat() if r["approved_at"] else None,
-            "aggregate": r["aggregate"],
-            "division": r["division"],
-            "averagePercent": float(r["average_percent"])
-            if r["average_percent"] is not None
-            else None,
-            "overallGrade": r["overall_grade"],
-            "classPosition": r["class_position"],
-            "totalStudents": r["total_students"],
-            "hasClassTeacherComment": bool(r["class_teacher_comment"]),
-            "hasHeadTeacherComment": bool(r["head_teacher_comment"]),
-        }
-        for r in rows
-    ]
+    sitting_rows = await conn.fetch(
+        """
+        SELECT
+          tr.exam_id, tr.sitting_id, tr.term_id, tr.approved_at, tr.aggregate, tr.division,
+          tr.average_percent, tr.overall_grade, tr.class_position, tr.total_students,
+          tr.class_teacher_comment, tr.head_teacher_comment,
+          s.name AS exam_name, et.name AS exam_type_name,
+          t.name AS term_name, ay.year AS academic_year
+        FROM primary_term_results tr
+        JOIN primary_thematic_sittings s ON s.id = tr.sitting_id
+        LEFT JOIN primary_exam_types et ON et.id = s.exam_type_id
+        JOIN terms t ON t.id = tr.term_id
+        JOIN academic_years ay ON ay.id = tr.academic_year_id
+        WHERE tr.school_id = $1 AND tr.student_id = $2
+          AND tr.approved_at IS NOT NULL AND tr.sitting_id IS NOT NULL
+        ORDER BY tr.approved_at DESC
+        """,
+        school_id,
+        student_id,
+    )
+
+    items: list[dict[str, Any]] = []
+    for r in exam_rows:
+        items.append(
+            {
+                "kind": "exam",
+                "examId": str(r["exam_id"]),
+                "sittingId": None,
+                "examName": r["exam_name"],
+                "examTypeName": r["exam_type_name"],
+                "termId": str(r["term_id"]),
+                "termName": r["term_name"],
+                "academicYear": r["academic_year"],
+                "academicYearLabel": str(r["academic_year"])
+                if r["academic_year"] is not None
+                else None,
+                "approvedAt": r["approved_at"].isoformat() if r["approved_at"] else None,
+                "aggregate": r["aggregate"],
+                "division": r["division"],
+                "averagePercent": float(r["average_percent"])
+                if r["average_percent"] is not None
+                else None,
+                "overallGrade": r["overall_grade"],
+                "classPosition": r["class_position"],
+                "totalStudents": r["total_students"],
+                "hasClassTeacherComment": bool(r["class_teacher_comment"]),
+                "hasHeadTeacherComment": bool(r["head_teacher_comment"]),
+            }
+        )
+    for r in sitting_rows:
+        items.append(
+            {
+                "kind": "sitting",
+                "examId": None,
+                "sittingId": str(r["sitting_id"]),
+                "examName": r["exam_name"],
+                "examTypeName": r["exam_type_name"],
+                "termId": str(r["term_id"]),
+                "termName": r["term_name"],
+                "academicYear": r["academic_year"],
+                "academicYearLabel": str(r["academic_year"])
+                if r["academic_year"] is not None
+                else None,
+                "approvedAt": r["approved_at"].isoformat() if r["approved_at"] else None,
+                "aggregate": r["aggregate"],
+                "division": r["division"],
+                "averagePercent": float(r["average_percent"])
+                if r["average_percent"] is not None
+                else None,
+                "overallGrade": r["overall_grade"],
+                "classPosition": r["class_position"],
+                "totalStudents": r["total_students"],
+                "hasClassTeacherComment": bool(r["class_teacher_comment"]),
+                "hasHeadTeacherComment": bool(r["head_teacher_comment"]),
+            }
+        )
+    items.sort(key=lambda x: x["approvedAt"] or "", reverse=True)
+    return items
 
 
 async def save_comments(

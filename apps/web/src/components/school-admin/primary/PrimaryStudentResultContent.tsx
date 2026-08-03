@@ -38,7 +38,12 @@ type ResultPayload = {
   } | null;
   thematicResults?: Array<{
     theme: string;
-    strands: Array<{ strand: string; level: number; label?: string | null }>;
+    strands: Array<{
+      strand: string;
+      level: number;
+      label?: string | null;
+      teacherComment?: string | null;
+    }>;
   }>;
   subjectResults?: Array<{
     subjectName: string;
@@ -170,6 +175,7 @@ export function PrimaryStudentResultContent({ studentId }: { studentId: string }
                     <th className="px-3 py-2 text-left">Theme</th>
                     <th className="px-3 py-2 text-left">Strand</th>
                     <th className="px-3 py-2 text-left">Level</th>
+                    <th className="px-3 py-2 text-left">Comment</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-theme">
@@ -181,6 +187,9 @@ export function PrimaryStudentResultContent({ studentId }: { studentId: string }
                         <td className="px-3 py-2">
                           L{s.level}
                           {s.label ? ` · ${s.label}` : ""}
+                        </td>
+                        <td className="px-3 py-2 text-theme-muted">
+                          {s.teacherComment || "—"}
                         </td>
                       </tr>
                     )),

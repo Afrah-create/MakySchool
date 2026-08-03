@@ -22,6 +22,7 @@ from app.services.primary import marks as marks_svc
 from app.services.primary import ple as ple_svc
 from app.services.primary import results as results_svc
 from app.services.primary import setup as setup_svc
+from app.services.primary import sittings as sittings_svc
 from app.services.primary import subjects as subjects_svc
 
 router = APIRouter()
@@ -156,7 +157,63 @@ class BulkThematicBody(BaseModel):
     theme_id: uuid.UUID
     strand: str = Field(min_length=1, max_length=100)
     term_id: uuid.UUID
+    sitting_id: uuid.UUID | None = None
     assessments: list[ThematicItem] = Field(min_length=1, max_length=BULK_MARKS_LIMIT)
+
+
+class ThematicSheetItem(BaseModel):
+    student_id: uuid.UUID
+    theme_id: uuid.UUID
+    strand: str = Field(min_length=1, max_length=100)
+    level: int = Field(ge=1, le=4)
+    teacher_comment: str | None = Field(default=None, max_length=500)
+
+
+class BulkThematicSheetBody(BaseModel):
+    class_id: uuid.UUID
+    term_id: uuid.UUID
+    sitting_id: uuid.UUID
+    assessments: list[ThematicSheetItem] = Field(min_length=1, max_length=2500)
+
+
+class ThemeBody(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    applies_from: str = "P1"
+    applies_to: str = "P3"
+    display_order: int = 0
+
+
+class ThemePatchBody(BaseModel):
+    name: str | None = None
+    applies_from: str | None = None
+    applies_to: str | None = None
+    display_order: int | None = None
+    is_active: bool | None = None
+
+
+class StrandBody(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    display_order: int = 0
+
+
+class StrandPatchBody(BaseModel):
+    name: str | None = None
+    display_order: int | None = None
+    is_active: bool | None = None
+
+
+class SittingCreateBody(BaseModel):
+    class_id: uuid.UUID
+    term_id: uuid.UUID
+    exam_type_id: uuid.UUID
+    name: str | None = None
+    notes: str | None = None
+    open_now: bool = False
+
+
+class SittingPatchBody(BaseModel):
+    name: str | None = None
+    notes: str | None = None
 
 
 class CommentItem(BaseModel):
@@ -178,7 +235,8 @@ class ReportCommentBody(BaseModel):
 
 
 class BulkReportCommentBody(BaseModel):
-    examId: uuid.UUID
+    examId: uuid.UUID | None = None
+    sittingId: uuid.UUID | None = None
     studentIds: list[uuid.UUID] = Field(min_length=1, max_length=BULK_MARKS_LIMIT)
     classTeacherComment: str | None = None
     headTeacherComment: str | None = None
@@ -439,19 +497,151 @@ async def link_class(
 async def list_themes(
     ctx: TenantCtx,
     class_level: str | None = Query(None),
+    include_inactive: bool = Query(False),
     conn: asyncpg.Connection = Depends(get_db),
 ):
     school_id, actor = ctx
     try:
         await _gate(conn, school_id, actor, "enterPrimaryMarks")
+        strands = await subjects_svc.list_strands(
+            conn, school_id, include_inactive=include_inactive
+        )
         return {
             "data": {
                 "themes": await subjects_svc.list_themes(
-                    conn, school_id, class_level=class_level
+                    conn,
+                    school_id,
+                    class_level=class_level,
+                    include_inactive=include_inactive,
                 ),
-                "strands": subjects_svc.strands(),
+                "strands": [s["name"] for s in strands if s["isActive"] or include_inactive],
+                "strandItems": strands,
             }
         }
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/themes")
+async def create_theme(
+    body: ThemeBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        data = await subjects_svc.create_theme(
+            conn,
+            school_id,
+            name=body.name,
+            applies_from=body.applies_from,
+            applies_to=body.applies_to,
+            display_order=body.display_order,
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.patch("/themes/{theme_id}")
+async def patch_theme(
+    theme_id: uuid.UUID,
+    body: ThemePatchBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        data = await subjects_svc.update_theme(
+            conn, school_id, theme_id, body.model_dump(exclude_unset=True)
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.delete("/themes/{theme_id}")
+async def delete_theme(
+    theme_id: uuid.UUID,
+    ctx: TenantCtx,
+    hard: bool = Query(False),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        await subjects_svc.delete_theme(conn, school_id, theme_id, hard=hard)
+        return {"data": {"ok": True}}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.get("/strands")
+async def list_strands_route(
+    ctx: TenantCtx,
+    include_inactive: bool = Query(False),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "enterPrimaryMarks")
+        data = await subjects_svc.list_strands(
+            conn, school_id, include_inactive=include_inactive
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/strands")
+async def create_strand(
+    body: StrandBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        data = await subjects_svc.create_strand(
+            conn, school_id, name=body.name, display_order=body.display_order
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.patch("/strands/{strand_id}")
+async def patch_strand(
+    strand_id: uuid.UUID,
+    body: StrandPatchBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        data = await subjects_svc.update_strand(
+            conn, school_id, strand_id, body.model_dump(exclude_unset=True)
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.delete("/strands/{strand_id}")
+async def delete_strand(
+    strand_id: uuid.UUID,
+    ctx: TenantCtx,
+    hard: bool = Query(False),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        await subjects_svc.delete_strand(conn, school_id, strand_id, hard=hard)
+        return {"data": {"ok": True}}
     except Exception as exc:
         raise _http(exc) from exc
 
@@ -598,13 +788,18 @@ async def get_thematic(
     ctx: TenantCtx,
     class_id: uuid.UUID = Query(...),
     term_id: uuid.UUID = Query(...),
+    sitting_id: uuid.UUID | None = Query(None),
     conn: asyncpg.Connection = Depends(get_db),
 ):
     school_id, actor = ctx
     try:
         await _gate(conn, school_id, actor, "enterPrimaryMarks")
         data = await marks_svc.list_thematic(
-            conn, school_id, class_id=class_id, term_id=term_id
+            conn,
+            school_id,
+            class_id=class_id,
+            term_id=term_id,
+            sitting_id=sitting_id,
         )
         return {"data": data}
     except Exception as exc:
@@ -629,8 +824,68 @@ async def bulk_thematic(
                 theme_id=body.theme_id,
                 strand=body.strand,
                 term_id=body.term_id,
+                sitting_id=body.sitting_id,
                 assessments=[a.model_dump() for a in body.assessments],
             )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/marks/thematic/sheet")
+async def bulk_thematic_sheet(
+    body: BulkThematicSheetBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """Teacher sheet save: many theme×strand cells (levels + comments) in one request."""
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "enterPrimaryMarks")
+        async with conn.transaction():
+            data = await marks_svc.bulk_upsert_thematic_sheet(
+                conn,
+                school_id,
+                actor_user_id(actor),
+                class_id=body.class_id,
+                term_id=body.term_id,
+                sitting_id=body.sitting_id,
+                assessments=[a.model_dump() for a in body.assessments],
+            )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/marks/thematic/submit")
+async def submit_thematic(
+    ctx: TenantCtx,
+    sitting_id: uuid.UUID = Query(...),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "enterPrimaryMarks")
+        data = await sittings_svc.submit_sitting_assessments(
+            conn, school_id, sitting_id=sitting_id
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/marks/thematic/unlock")
+async def unlock_thematic(
+    ctx: TenantCtx,
+    sitting_id: uuid.UUID = Query(...),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        data = await sittings_svc.unlock_sitting_assessments(
+            conn, school_id, sitting_id=sitting_id
+        )
         return {"data": data}
     except Exception as exc:
         raise _http(exc) from exc
@@ -645,6 +900,7 @@ async def results_class(
     ctx: TenantCtx,
     term_id: uuid.UUID = Query(...),
     exam_id: uuid.UUID | None = Query(None),
+    sitting_id: uuid.UUID | None = Query(None),
     conn: asyncpg.Connection = Depends(get_db),
 ):
     school_id, actor = ctx
@@ -656,6 +912,7 @@ async def results_class(
             class_id=class_id,
             term_id=term_id,
             exam_id=exam_id,
+            sitting_id=sitting_id,
         )
         return {"data": data}
     except Exception as exc:
@@ -668,6 +925,7 @@ async def results_student(
     ctx: TenantCtx,
     term_id: uuid.UUID = Query(...),
     exam_id: uuid.UUID | None = Query(None),
+    sitting_id: uuid.UUID | None = Query(None),
     conn: asyncpg.Connection = Depends(get_db),
 ):
     school_id, actor = ctx
@@ -679,6 +937,7 @@ async def results_student(
             student_id=student_id,
             term_id=term_id,
             exam_id=exam_id,
+            sitting_id=sitting_id,
         )
         return {"data": data}
     except Exception as exc:
@@ -706,22 +965,35 @@ async def results_comments(
 async def get_report_card(
     student_id: uuid.UUID,
     ctx: TenantCtx,
-    exam_id: uuid.UUID = Query(...),
+    exam_id: uuid.UUID | None = Query(None),
+    sitting_id: uuid.UUID | None = Query(None),
     conn: asyncpg.Connection = Depends(get_db),
 ):
     school_id, actor = ctx
     try:
         await _gate(conn, school_id, actor, "viewPrimaryResults")
-        from app.lib.primary_exam_access import require_exam
+        if sitting_id:
+            sitting = await sittings_svc.require_sitting(conn, school_id, sitting_id)
+            data = await results_svc.student_result(
+                conn,
+                school_id,
+                student_id=student_id,
+                term_id=uuid.UUID(sitting["termId"]),
+                sitting_id=sitting_id,
+            )
+        elif exam_id:
+            from app.lib.primary_exam_access import require_exam
 
-        exam = await require_exam(conn, school_id, exam_id)
-        data = await results_svc.student_result(
-            conn,
-            school_id,
-            student_id=student_id,
-            term_id=uuid.UUID(exam["termId"]),
-            exam_id=exam_id,
-        )
+            exam = await require_exam(conn, school_id, exam_id)
+            data = await results_svc.student_result(
+                conn,
+                school_id,
+                student_id=student_id,
+                term_id=uuid.UUID(exam["termId"]),
+                exam_id=exam_id,
+            )
+        else:
+            raise ValueError("Provide exam_id or sitting_id.")
         return {"data": data}
     except Exception as exc:
         raise _http(exc) from exc
@@ -732,7 +1004,8 @@ async def save_report_comment(
     student_id: uuid.UUID,
     body: ReportCommentBody,
     ctx: TenantCtx,
-    exam_id: uuid.UUID = Query(...),
+    exam_id: uuid.UUID | None = Query(None),
+    sitting_id: uuid.UUID | None = Query(None),
     conn: asyncpg.Connection = Depends(get_db),
 ):
     school_id, actor = ctx
@@ -746,16 +1019,30 @@ async def save_report_comment(
                 status_code=403,
                 detail={"error": "Only the head teacher or admin can approve."},
             )
-        data = await results_svc.upsert_report_comment(
-            conn,
-            school_id,
-            student_id=student_id,
-            exam_id=exam_id,
-            class_teacher_comment=body.classTeacherComment,
-            head_teacher_comment=body.headTeacherComment,
-            approve=body.approve,
-            actor_id=actor_user_id(actor),
-        )
+        if sitting_id:
+            data = await results_svc.upsert_sitting_report_comment(
+                conn,
+                school_id,
+                student_id=student_id,
+                sitting_id=sitting_id,
+                class_teacher_comment=body.classTeacherComment,
+                head_teacher_comment=body.headTeacherComment,
+                approve=body.approve,
+                actor_id=actor_user_id(actor),
+            )
+        elif exam_id:
+            data = await results_svc.upsert_report_comment(
+                conn,
+                school_id,
+                student_id=student_id,
+                exam_id=exam_id,
+                class_teacher_comment=body.classTeacherComment,
+                head_teacher_comment=body.headTeacherComment,
+                approve=body.approve,
+                actor_id=actor_user_id(actor),
+            )
+        else:
+            raise ValueError("Provide exam_id or sitting_id.")
         return {"data": data}
     except Exception as exc:
         raise _http(exc) from exc
@@ -790,16 +1077,30 @@ async def bulk_save_report_comments(
                 status_code=403,
                 detail={"error": "Only the head teacher or admin can approve."},
             )
-        data = await results_svc.bulk_upsert_report_comments(
-            conn,
-            school_id,
-            exam_id=body.examId,
-            student_ids=body.studentIds,
-            class_teacher_comment=body.classTeacherComment,
-            head_teacher_comment=body.headTeacherComment,
-            approve=body.approve,
-            actor_id=actor_user_id(actor),
-        )
+        if body.sittingId:
+            data = await results_svc.bulk_upsert_sitting_report_comments(
+                conn,
+                school_id,
+                sitting_id=body.sittingId,
+                student_ids=body.studentIds,
+                class_teacher_comment=body.classTeacherComment,
+                head_teacher_comment=body.headTeacherComment,
+                approve=body.approve,
+                actor_id=actor_user_id(actor),
+            )
+        elif body.examId:
+            data = await results_svc.bulk_upsert_report_comments(
+                conn,
+                school_id,
+                exam_id=body.examId,
+                student_ids=body.studentIds,
+                class_teacher_comment=body.classTeacherComment,
+                head_teacher_comment=body.headTeacherComment,
+                approve=body.approve,
+                actor_id=actor_user_id(actor),
+            )
+        else:
+            raise ValueError("Provide examId or sittingId.")
         return {"data": data}
     except Exception as exc:
         raise _http(exc) from exc
@@ -901,15 +1202,14 @@ async def generate_primary_report_cards(
     ctx: TenantCtx,
     conn: asyncpg.Connection = Depends(get_db),
     exam_id: uuid.UUID | None = Query(None),
+    sitting_id: uuid.UUID | None = Query(None),
     class_id: uuid.UUID | None = Query(None),
     term_id: uuid.UUID | None = Query(None),
     student_id: uuid.UUID | None = Query(None),
 ):
     """Generate primary PDF report card(s). Single PDF or ZIP for the class.
 
-    Prefer exam_id (A-Level-aligned). class_id + term_id remain for legacy clients.
-    Bulk class generation uses a bounded semaphore and separate pool connections
-    so large classes do not exhaust the DB pool or time out the proxy.
+    Prefer exam_id (upper) or sitting_id (lower). class_id + term_id remain for legacy.
     """
     import asyncio
     import io
@@ -928,12 +1228,21 @@ async def generate_primary_report_cards(
         await _gate(conn, school_id, actor, "generatePrimaryReports")
 
         resolved_exam_id = exam_id
-        if resolved_exam_id:
+        resolved_sitting_id = sitting_id
+        if resolved_sitting_id:
+            sitting = await sittings_svc.require_sitting(
+                conn, school_id, resolved_sitting_id
+            )
+            class_id = uuid.UUID(sitting["classId"])
+            term_id = uuid.UUID(sitting["termId"])
+        elif resolved_exam_id:
             exam = await require_exam(conn, school_id, resolved_exam_id)
             class_id = uuid.UUID(exam["classId"])
             term_id = uuid.UUID(exam["termId"])
         elif not class_id or not term_id:
-            raise ValueError("Provide exam_id, or both class_id and term_id.")
+            raise ValueError(
+                "Provide exam_id, sitting_id, or both class_id and term_id."
+            )
 
         branding = await load_school_branding(conn, school_id, for_pdf=True)
 
@@ -967,6 +1276,7 @@ async def generate_primary_report_cards(
                             student_id=sid,
                             term_id=term_id,  # type: ignore[arg-type]
                             exam_id=resolved_exam_id,
+                            sitting_id=resolved_sitting_id,
                         )
                         data["schoolName"] = branding.get("schoolName")
                         data["schoolAddress"] = branding.get("schoolAddress")
@@ -1018,7 +1328,20 @@ async def generate_primary_report_cards(
                             data["student"]["photoUrl"] = photo_uri
 
                         pdf = await generate_primary_report_pdf_bytes(data)
-                        if resolved_exam_id:
+                        if resolved_sitting_id:
+                            await worker.execute(
+                                """
+                                UPDATE primary_term_results
+                                SET report_generated = true,
+                                    report_generated_at = COALESCE(report_generated_at, NOW()),
+                                    calculated_at = NOW()
+                                WHERE school_id = $1 AND student_id = $2 AND sitting_id = $3
+                                """,
+                                school_id,
+                                sid,
+                                resolved_sitting_id,
+                            )
+                        elif resolved_exam_id:
                             await worker.execute(
                                 """
                                 UPDATE primary_term_results
@@ -1141,6 +1464,155 @@ def _require_teacher(actor: dict[str, Any]) -> None:
                 "code": "TEACHER_ONLY",
             },
         )
+
+
+# ── Thematic sittings (P1–P3) ────────────────────────────────────────────────
+
+
+@router.get("/sittings")
+async def list_sittings(
+    ctx: TenantCtx,
+    class_id: uuid.UUID | None = Query(None),
+    term_id: uuid.UUID | None = Query(None),
+    status: str | None = Query(None),
+    include_deleted: bool = Query(False),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        role = (actor.get("role") or "").lower()
+        action = "enterPrimaryMarks" if role == "teacher" else "viewPrimaryResults"
+        await _gate(conn, school_id, actor, action)
+        data = await sittings_svc.list_sittings(
+            conn,
+            school_id,
+            class_id=class_id,
+            term_id=term_id,
+            status=status,
+            include_deleted=include_deleted and role in {"admin", "head_teacher"},
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/sittings")
+async def create_sitting(
+    body: SittingCreateBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        data = await sittings_svc.create_sitting(
+            conn,
+            school_id,
+            actor_user_id(actor),
+            class_id=body.class_id,
+            term_id=body.term_id,
+            exam_type_id=body.exam_type_id,
+            name=body.name,
+            notes=body.notes,
+            open_now=body.open_now,
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.patch("/sittings/{sitting_id}")
+async def patch_sitting(
+    sitting_id: uuid.UUID,
+    body: SittingPatchBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        from app.services.primary.sittings import _UNSET
+
+        data = await sittings_svc.update_sitting(
+            conn,
+            school_id,
+            sitting_id,
+            name=body.name,
+            notes=body.notes if "notes" in body.model_fields_set else _UNSET,
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/sittings/{sitting_id}/open")
+async def open_sitting(
+    sitting_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "viewPrimaryResults")
+        data = await sittings_svc.open_sitting(
+            conn, school_id, sitting_id, actor_user_id(actor)
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/sittings/{sitting_id}/close")
+async def close_sitting(
+    sitting_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "viewPrimaryResults")
+        data = await sittings_svc.close_sitting(
+            conn, school_id, sitting_id, actor_user_id(actor)
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/sittings/{sitting_id}/restore")
+async def restore_sitting(
+    sitting_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        data = await sittings_svc.restore_sitting(conn, school_id, sitting_id)
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
+
+
+@router.delete("/sittings/{sitting_id}")
+async def delete_sitting(
+    sitting_id: uuid.UUID,
+    ctx: TenantCtx,
+    hard: bool = Query(False),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    try:
+        await _gate(conn, school_id, actor, "managePrimarySetup")
+        if hard:
+            await sittings_svc.hard_delete_sitting(conn, school_id, sitting_id)
+            return {"data": {"ok": True}}
+        data = await sittings_svc.soft_delete_sitting(
+            conn, school_id, sitting_id, actor_user_id(actor)
+        )
+        return {"data": data}
+    except Exception as exc:
+        raise _http(exc) from exc
 
 
 @router.get("/exam-types")

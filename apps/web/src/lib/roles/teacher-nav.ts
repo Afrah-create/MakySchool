@@ -68,6 +68,14 @@ export const teacherNavGroups: PortalNavGroup[] = [
         roles: teacherRole,
       },
       {
+        id: "teacher-primary-thematic",
+        href: "/teacher/primary/marks/thematic",
+        label: "Thematic (P1–P3)",
+        icon: ClipboardList,
+        exact: false,
+        roles: teacherRole,
+      },
+      {
         id: "teacher-alevel-grades",
         href: "/teacher/alevel/grades",
         label: "A-Level marks",

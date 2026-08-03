@@ -168,6 +168,64 @@ export interface PrimaryTheme {
   appliesFrom: string;
   appliesTo: string;
   displayOrder: number;
+  isActive?: boolean;
+}
+
+export interface PrimaryStrand {
+  id: string;
+  name: string;
+  displayOrder: number;
+  isActive: boolean;
+}
+
+export type PrimaryThematicSittingStatus = "draft" | "open" | "closed";
+
+export interface PrimaryThematicSitting {
+  id: string;
+  schoolId: string;
+  classId: string;
+  termId: string;
+  academicYearId: string;
+  examTypeId: string | null;
+  examTypeName?: string | null;
+  examTypeCode?: string | null;
+  name: string;
+  status: PrimaryThematicSittingStatus;
+  isOpen: boolean;
+  isLocked: boolean;
+  className?: string | null;
+  classLevel?: string | null;
+  termName?: string | null;
+  notes?: string | null;
+  openedAt?: string | null;
+  openedByName?: string | null;
+  closedAt?: string | null;
+  closedByName?: string | null;
+  createdAt?: string | null;
+  deletedAt?: string | null;
+  deleted?: boolean;
+  hasMarks?: boolean;
+}
+
+export interface CreatePrimaryThematicSittingPayload {
+  classId: string;
+  termId: string;
+  examTypeId: string;
+  name?: string | null;
+  notes?: string | null;
+  openNow?: boolean;
+}
+
+export interface UpdatePrimaryThematicSittingPayload {
+  name?: string;
+  notes?: string | null;
+}
+
+export interface PrimaryThematicSittingFilters {
+  classId?: string;
+  termId?: string;
+  status?: PrimaryThematicSittingStatus | "";
+  includeDeleted?: boolean;
 }
 
 export interface PrimaryClassOption {
@@ -197,6 +255,7 @@ export interface PrimaryClassResults {
   termId: string;
   termName: string | null;
   examId?: string | null;
+  sittingId?: string | null;
   isLowerPrimary: boolean;
   students: Array<{
     studentId: string;
@@ -208,6 +267,7 @@ export interface PrimaryClassResults {
     aggregate?: number | null;
     division?: string | null;
     examId?: string | null;
+    sittingId?: string | null;
     classPosition?: number | null;
     totalStudents?: number | null;
     subjectGrades?: Record<
@@ -247,7 +307,18 @@ export interface PrimaryReportCard {
   examId: string | null;
   examName: string | null;
   examTypeName: string | null;
+  sittingId?: string | null;
+  sittingName?: string | null;
   isLowerPrimary: boolean;
+  thematicResults?: Array<{
+    theme: string;
+    strands: Array<{
+      strand: string;
+      level: number;
+      label?: string | null;
+      teacherComment?: string | null;
+    }>;
+  }>;
   subjectResults?: Array<{
     subjectName: string;
     subjectCode: string;
@@ -284,7 +355,9 @@ export interface PrimaryReportCard {
 }
 
 export interface PrimaryApprovedReportSummary {
-  examId: string;
+  kind?: "exam" | "sitting";
+  examId: string | null;
+  sittingId?: string | null;
   examName: string;
   examTypeName: string | null;
   termId: string;

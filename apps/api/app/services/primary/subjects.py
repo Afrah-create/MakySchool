@@ -408,27 +408,44 @@ async def link_class_subject(
     }
 
 
+def serialize_theme(row: asyncpg.Record) -> dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "name": row["name"],
+        "appliesFrom": row["applies_from"],
+        "appliesTo": row["applies_to"],
+        "displayOrder": row["display_order"],
+        "isActive": bool(row["is_active"]),
+    }
+
+
+def serialize_strand(row: asyncpg.Record) -> dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "name": row["name"],
+        "displayOrder": row["display_order"],
+        "isActive": bool(row["is_active"]),
+    }
+
+
 async def list_themes(
-    conn: asyncpg.Connection, school_id: uuid.UUID, *, class_level: str | None = None
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    class_level: str | None = None,
+    include_inactive: bool = False,
 ) -> list[dict[str, Any]]:
     rows = await conn.fetch(
         """
         SELECT * FROM primary_themes
-        WHERE school_id = $1 AND is_active = true
+        WHERE school_id = $1
+          AND ($2::boolean = true OR is_active = true)
         ORDER BY display_order, name
         """,
         school_id,
+        include_inactive,
     )
-    items = [
-        {
-            "id": str(r["id"]),
-            "name": r["name"],
-            "appliesFrom": r["applies_from"],
-            "appliesTo": r["applies_to"],
-            "displayOrder": r["display_order"],
-        }
-        for r in rows
-    ]
+    items = [serialize_theme(r) for r in rows]
     if class_level:
         items = [
             t
@@ -436,6 +453,269 @@ async def list_themes(
             if level_in_range(class_level, t["appliesFrom"], t["appliesTo"])
         ]
     return items
+
+
+async def create_theme(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    name: str,
+    applies_from: str = "P1",
+    applies_to: str = "P3",
+    display_order: int = 0,
+) -> dict[str, Any]:
+    from app.lib.primary_access import LEVEL_ORDER
+
+    cleaned = name.strip()
+    if not cleaned:
+        raise ValueError("Theme name is required.")
+    if applies_from not in LEVEL_ORDER or applies_to not in LEVEL_ORDER:
+        raise ValueError("Theme level range must be a valid primary level.")
+    if LEVEL_ORDER[applies_from] > LEVEL_ORDER[applies_to]:
+        raise ValueError("applies_from must be at or before applies_to.")
+    if applies_to not in ("P1", "P2", "P3", "P4") or applies_from not in (
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+    ):
+        raise ValueError("Themes apply to P1–P4 only.")
+    try:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO primary_themes (
+              school_id, name, applies_from, applies_to, display_order
+            )
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING *
+            """,
+            school_id,
+            cleaned,
+            applies_from,
+            applies_to,
+            display_order,
+        )
+    except asyncpg.UniqueViolationError as exc:
+        raise ValueError("A theme with this name already exists.") from exc
+    return serialize_theme(row)
+
+
+async def update_theme(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    theme_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    row = await conn.fetchrow(
+        """
+        UPDATE primary_themes SET
+          name = COALESCE($3, name),
+          applies_from = COALESCE($4, applies_from),
+          applies_to = COALESCE($5, applies_to),
+          display_order = COALESCE($6, display_order),
+          is_active = COALESCE($7, is_active)
+        WHERE id = $1 AND school_id = $2
+        RETURNING *
+        """,
+        theme_id,
+        school_id,
+        payload.get("name").strip() if isinstance(payload.get("name"), str) else None,
+        payload.get("applies_from"),
+        payload.get("applies_to"),
+        payload.get("display_order"),
+        payload.get("is_active"),
+    )
+    if not row:
+        raise LookupError("Theme not found.")
+    return serialize_theme(row)
+
+
+async def delete_theme(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    theme_id: uuid.UUID,
+    *,
+    hard: bool = False,
+) -> None:
+    in_use = await conn.fetchval(
+        """
+        SELECT 1 FROM primary_thematic_assessments
+        WHERE school_id = $1 AND theme_id = $2
+        LIMIT 1
+        """,
+        school_id,
+        theme_id,
+    )
+    if hard:
+        if in_use:
+            raise ValueError(
+                "Cannot permanently delete a theme that has assessments. Deactivate it instead."
+            )
+        result = await conn.execute(
+            "DELETE FROM primary_themes WHERE id = $1 AND school_id = $2",
+            theme_id,
+            school_id,
+        )
+        if result == "DELETE 0":
+            raise LookupError("Theme not found.")
+        return
+
+    result = await conn.execute(
+        """
+        UPDATE primary_themes SET is_active = false
+        WHERE id = $1 AND school_id = $2
+        """,
+        theme_id,
+        school_id,
+    )
+    if result == "UPDATE 0":
+        raise LookupError("Theme not found.")
+
+
+async def ensure_default_strands(
+    conn: asyncpg.Connection, school_id: uuid.UUID
+) -> None:
+    existing = await conn.fetchval(
+        "SELECT COUNT(*)::int FROM primary_strands WHERE school_id = $1",
+        school_id,
+    )
+    if not existing:
+        for i, name in enumerate(DEFAULT_STRANDS, start=1):
+            await conn.execute(
+                """
+                INSERT INTO primary_strands (school_id, name, display_order)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (school_id, name) DO NOTHING
+                """,
+                school_id,
+                name,
+                i,
+            )
+
+
+async def list_strands(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    active_only: bool = True,
+    include_inactive: bool = False,
+) -> list[dict[str, Any]]:
+    await ensure_default_strands(conn, school_id)
+    show_all = include_inactive or not active_only
+    rows = await conn.fetch(
+        """
+        SELECT * FROM primary_strands
+        WHERE school_id = $1
+          AND ($2::boolean = true OR is_active = true)
+        ORDER BY display_order, name
+        """,
+        school_id,
+        show_all,
+    )
+    return [serialize_strand(r) for r in rows]
+
+
+async def create_strand(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    *,
+    name: str,
+    display_order: int = 0,
+) -> dict[str, Any]:
+    await ensure_default_strands(conn, school_id)
+    cleaned = name.strip()
+    if not cleaned:
+        raise ValueError("Strand name is required.")
+    try:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO primary_strands (school_id, name, display_order)
+            VALUES ($1, $2, $3)
+            RETURNING *
+            """,
+            school_id,
+            cleaned,
+            display_order,
+        )
+    except asyncpg.UniqueViolationError as exc:
+        raise ValueError("A strand with this name already exists.") from exc
+    return serialize_strand(row)
+
+
+async def update_strand(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    strand_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    row = await conn.fetchrow(
+        """
+        UPDATE primary_strands SET
+          name = COALESCE($3, name),
+          display_order = COALESCE($4, display_order),
+          is_active = COALESCE($5, is_active),
+          updated_at = NOW()
+        WHERE id = $1 AND school_id = $2
+        RETURNING *
+        """,
+        strand_id,
+        school_id,
+        payload.get("name").strip() if isinstance(payload.get("name"), str) else None,
+        payload.get("display_order"),
+        payload.get("is_active"),
+    )
+    if not row:
+        raise LookupError("Strand not found.")
+    return serialize_strand(row)
+
+
+async def delete_strand(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    strand_id: uuid.UUID,
+    *,
+    hard: bool = False,
+) -> None:
+    strand = await conn.fetchrow(
+        "SELECT name FROM primary_strands WHERE id = $1 AND school_id = $2",
+        strand_id,
+        school_id,
+    )
+    if not strand:
+        raise LookupError("Strand not found.")
+    in_use = await conn.fetchval(
+        """
+        SELECT 1 FROM primary_thematic_assessments
+        WHERE school_id = $1 AND strand = $2
+        LIMIT 1
+        """,
+        school_id,
+        strand["name"],
+    )
+    if hard:
+        if in_use:
+            raise ValueError(
+                "Cannot permanently delete a strand that has assessments. Deactivate it instead."
+            )
+        result = await conn.execute(
+            "DELETE FROM primary_strands WHERE id = $1 AND school_id = $2",
+            strand_id,
+            school_id,
+        )
+        if result == "DELETE 0":
+            raise LookupError("Strand not found.")
+        return
+
+    result = await conn.execute(
+        """
+        UPDATE primary_strands SET is_active = false, updated_at = NOW()
+        WHERE id = $1 AND school_id = $2
+        """,
+        strand_id,
+        school_id,
+    )
+    if result == "UPDATE 0":
+        raise LookupError("Strand not found.")
 
 
 async def list_class_roster(
@@ -489,4 +769,12 @@ async def list_primary_classes(
 
 
 def strands() -> list[str]:
+    """Legacy hardcoded strands — prefer list_strands() for school-managed catalogue."""
     return list(DEFAULT_STRANDS)
+
+
+async def strand_names(
+    conn: asyncpg.Connection, school_id: uuid.UUID
+) -> list[str]:
+    items = await list_strands(conn, school_id, active_only=True)
+    return [s["name"] for s in items]

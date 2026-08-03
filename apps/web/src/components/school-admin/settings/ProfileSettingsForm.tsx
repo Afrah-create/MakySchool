@@ -101,11 +101,18 @@ export function ProfileSettingsForm({
     setSaving(true);
     setError(null);
 
+    const name = value.name.trim();
+    if (!name) {
+      setError("School name is required.");
+      setSaving(false);
+      return;
+    }
+
     const emails = value.emails.map((e) => e.trim()).filter(Boolean);
     const phones = value.phones.map((p) => p.trim()).filter(Boolean);
 
     const formData = new FormData();
-    formData.append("name", value.name.trim());
+    formData.append("name", name);
     formData.append("emails", JSON.stringify(emails));
     formData.append("phones", JSON.stringify(phones));
     formData.append("address", value.address.trim());
@@ -124,6 +131,8 @@ export function ProfileSettingsForm({
       });
       setValue((current) => ({
         ...current,
+        name: response.data.name ?? current.name,
+        address: response.data.address ?? current.address,
         logo: null,
         stamp: null,
         emails: response.data.emails?.length

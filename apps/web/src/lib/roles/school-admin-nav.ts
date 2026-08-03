@@ -63,6 +63,7 @@ const schoolAdminALevelNavChildren: NavItem[] = [
 const schoolAdminPrimaryNavChildren: NavItem[] = [
   { href: "/dashboard/primary", label: "Overview", icon: LayoutDashboard, exact: true, requiredAction: "viewPrimaryResults" },
   { href: "/dashboard/primary/exams", label: "Exams", icon: ClipboardList, exact: false, requiredAction: "viewPrimaryResults" },
+  { href: "/dashboard/primary/sittings", label: "Thematic sittings", icon: ClipboardList, exact: false, requiredAction: "viewPrimaryResults" },
   { href: "/dashboard/primary/grades", label: "View grades", icon: BookOpenCheck, exact: false, requiredAction: "viewPrimaryResults" },
   { href: "/dashboard/primary/results", label: "Results", icon: Award, exact: false, requiredAction: "viewPrimaryResults" },
   { href: "/dashboard/primary/report-cards", label: "Report cards", icon: FileText, exact: false, requiredAction: "generatePrimaryReports" },

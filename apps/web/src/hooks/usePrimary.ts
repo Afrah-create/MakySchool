@@ -3,9 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CreatePrimaryExamPayload,
+  CreatePrimaryThematicSittingPayload,
   PrimaryExamFilters,
+  PrimaryThematicSittingFilters,
   UpdatePrimaryExamPayload,
   UpdatePrimaryExamTypePayload,
+  UpdatePrimaryThematicSittingPayload,
 } from "@makyschool/shared";
 import { primaryApi } from "@/lib/api/primary";
 
@@ -15,11 +18,12 @@ export const primaryKeys = {
   classes: ["primary", "classes"] as const,
   subjects: (level?: string) => ["primary", "subjects", level ?? ""] as const,
   themes: (level?: string) => ["primary", "themes", level ?? ""] as const,
+  strands: ["primary", "strands"] as const,
   roster: (classId: string) => ["primary", "roster", classId] as const,
-  classResults: (classId: string, termId: string, examId?: string) =>
-    ["primary", "results", classId, termId, examId ?? ""] as const,
-  reportCard: (studentId: string, examId: string) =>
-    ["primary", "reportCard", studentId, examId] as const,
+  classResults: (classId: string, termId: string, examId?: string, sittingId?: string) =>
+    ["primary", "results", classId, termId, examId ?? "", sittingId ?? ""] as const,
+  reportCard: (studentId: string, examId?: string, sittingId?: string) =>
+    ["primary", "reportCard", studentId, examId ?? "", sittingId ?? ""] as const,
   exams: (filters: PrimaryExamFilters = {}) =>
     [
       "primary",
@@ -29,9 +33,18 @@ export const primaryKeys = {
       filters.status ?? "",
       filters.includeDeleted ? "1" : "0",
     ] as const,
+  sittings: (filters: PrimaryThematicSittingFilters = {}) =>
+    [
+      "primary",
+      "sittings",
+      filters.classId ?? "",
+      filters.termId ?? "",
+      filters.status ?? "",
+      filters.includeDeleted ? "1" : "0",
+    ] as const,
   examTypes: ["primary", "exam-types"] as const,
-  thematic: (classId: string, termId: string) =>
-    ["primary", "thematic", classId, termId] as const,
+  thematic: (classId: string, termId: string, sittingId?: string) =>
+    ["primary", "thematic", classId, termId, sittingId ?? ""] as const,
   ple: (yearId: string) => ["primary", "ple", yearId] as const,
 };
 
@@ -89,10 +102,11 @@ export function usePrimaryClassResults(
   termId: string,
   enabled = true,
   examId?: string,
+  sittingId?: string,
 ) {
   return useQuery({
-    queryKey: primaryKeys.classResults(classId, termId, examId),
-    queryFn: () => primaryApi.classResults(classId, termId, examId),
+    queryKey: primaryKeys.classResults(classId, termId, examId, sittingId),
+    queryFn: () => primaryApi.classResults(classId, termId, examId, sittingId),
     enabled: enabled && !!classId && !!termId,
     staleTime: 15_000,
   });
@@ -100,13 +114,15 @@ export function usePrimaryClassResults(
 
 export function usePrimaryReportCard(
   studentId: string,
-  examId: string,
+  opts: { examId?: string; sittingId?: string },
   enabled = true,
 ) {
+  const examId = opts.examId;
+  const sittingId = opts.sittingId;
   return useQuery({
-    queryKey: primaryKeys.reportCard(studentId, examId),
-    queryFn: () => primaryApi.getReportCard(studentId, examId),
-    enabled: enabled && !!studentId && !!examId,
+    queryKey: primaryKeys.reportCard(studentId, examId, sittingId),
+    queryFn: () => primaryApi.getReportCard(studentId, { examId, sittingId }),
+    enabled: enabled && !!studentId && !!(examId || sittingId),
     staleTime: 15_000,
   });
 }
@@ -116,19 +132,24 @@ export function useSavePrimaryReportComment() {
   return useMutation({
     mutationFn: (args: {
       studentId: string;
-      examId: string;
+      examId?: string;
+      sittingId?: string;
       classTeacherComment?: string | null;
       headTeacherComment?: string | null;
       approve?: boolean;
     }) =>
-      primaryApi.saveReportComment(args.studentId, args.examId, {
-        classTeacherComment: args.classTeacherComment,
-        headTeacherComment: args.headTeacherComment,
-        approve: args.approve,
-      }),
+      primaryApi.saveReportComment(
+        args.studentId,
+        { examId: args.examId, sittingId: args.sittingId },
+        {
+          classTeacherComment: args.classTeacherComment,
+          headTeacherComment: args.headTeacherComment,
+          approve: args.approve,
+        },
+      ),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({
-        queryKey: primaryKeys.reportCard(vars.studentId, vars.examId),
+        queryKey: primaryKeys.reportCard(vars.studentId, vars.examId, vars.sittingId),
       });
       qc.invalidateQueries({ queryKey: ["primary", "results"] });
     },
@@ -139,7 +160,8 @@ export function useBulkSavePrimaryReportComments() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: {
-      examId: string;
+      examId?: string;
+      sittingId?: string;
       studentIds: string[];
       classTeacherComment?: string | null;
       headTeacherComment?: string | null;
@@ -150,7 +172,7 @@ export function useBulkSavePrimaryReportComments() {
       qc.invalidateQueries({ queryKey: ["primary", "results"] });
       for (const studentId of vars.studentIds) {
         qc.invalidateQueries({
-          queryKey: primaryKeys.reportCard(studentId, vars.examId),
+          queryKey: primaryKeys.reportCard(studentId, vars.examId, vars.sittingId),
         });
       }
     },
@@ -161,6 +183,7 @@ export function useGeneratePrimaryReportCards() {
   return useMutation({
     mutationFn: (params: {
       examId?: string;
+      sittingId?: string;
       classId?: string;
       termId?: string;
       studentId?: string;
@@ -282,5 +305,83 @@ export function useDeletePrimaryExamType() {
   return useMutation({
     mutationFn: (id: string) => primaryApi.deleteExamType(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: primaryKeys.examTypes }),
+  });
+}
+
+export function usePrimarySittings(
+  filters: PrimaryThematicSittingFilters = {},
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: primaryKeys.sittings(filters),
+    queryFn: () =>
+      primaryApi.listSittings({
+        classId: filters.classId,
+        termId: filters.termId,
+        status: filters.status || undefined,
+        includeDeleted: filters.includeDeleted,
+      }),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useCreatePrimarySitting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreatePrimaryThematicSittingPayload) =>
+      primaryApi.createSitting(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "sittings"] }),
+  });
+}
+
+export function useUpdatePrimarySitting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      id: string;
+      payload: UpdatePrimaryThematicSittingPayload;
+    }) => primaryApi.updateSitting(args.id, args.payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "sittings"] }),
+  });
+}
+
+export function useSoftDeletePrimarySitting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => primaryApi.softDeleteSitting(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "sittings"] }),
+  });
+}
+
+export function useHardDeletePrimarySitting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => primaryApi.hardDeleteSitting(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "sittings"] }),
+  });
+}
+
+export function useRestorePrimarySitting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => primaryApi.restoreSitting(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "sittings"] }),
+  });
+}
+
+export function useOpenPrimarySitting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => primaryApi.openSitting(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "sittings"] }),
+  });
+}
+
+export function useClosePrimarySitting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => primaryApi.closeSitting(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["primary", "sittings"] }),
   });
 }

@@ -301,7 +301,7 @@ export function PrimaryMarksContent() {
               </>
             ) : (
               <a href={thematicBase} className="ms-btn-primary text-xs">
-                Open thematic grid
+                Open grade sheet
               </a>
             )}
           </div>
@@ -310,13 +310,13 @@ export function PrimaryMarksContent() {
         {lower ? (
           <EmptyState
             title="Lower primary class"
-            description="P1–P3 use thematic levels. Open the thematic assessment grid."
+            description="P1–P3 use thematic levels and theme comments. Teachers enter them on the grade sheet for an open sitting."
             action={
               <a
                 href={`${thematicBase}?classId=${classId}`}
                 className="ms-btn-primary"
               >
-                Thematic assessment
+                Thematic grade sheet
               </a>
             }
           />

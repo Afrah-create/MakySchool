@@ -9,8 +9,10 @@ import type {
   PrimaryReportCard,
   PrimaryRosterStudent,
   PrimarySetup,
+  PrimaryStrand,
   PrimarySubject,
   PrimaryTheme,
+  PrimaryThematicSitting,
   PleResult,
   PrimaryCaType,
   PrimaryExamType,
@@ -84,11 +86,95 @@ export const primaryApi = {
     return apiClient<PrimarySubject[]>(`${BASE}/subjects${qs}`).then((r) => r.data);
   },
 
-  themes(classLevel?: string) {
-    const qs = classLevel ? `?class_level=${classLevel}` : "";
-    return apiClient<{ themes: PrimaryTheme[]; strands: string[] }>(
-      `${BASE}/themes${qs}`,
-    ).then((r) => r.data);
+  themes(classLevel?: string, includeInactive = false) {
+    const q = new URLSearchParams();
+    if (classLevel) q.set("class_level", classLevel);
+    if (includeInactive) q.set("include_inactive", "true");
+    const qs = q.toString() ? `?${q}` : "";
+    return apiClient<{
+      themes: PrimaryTheme[];
+      strands: string[];
+      strandItems?: PrimaryStrand[];
+    }>(`${BASE}/themes${qs}`).then((r) => r.data);
+  },
+
+  createTheme(body: {
+    name: string;
+    appliesFrom?: string;
+    appliesTo?: string;
+    displayOrder?: number;
+  }) {
+    return apiClient<PrimaryTheme>(`${BASE}/themes`, {
+      method: "POST",
+      body: {
+        name: body.name,
+        applies_from: body.appliesFrom ?? "P1",
+        applies_to: body.appliesTo ?? "P3",
+        display_order: body.displayOrder ?? 0,
+      },
+    }).then((r) => r.data);
+  },
+
+  updateTheme(
+    id: string,
+    body: {
+      name?: string;
+      appliesFrom?: string;
+      appliesTo?: string;
+      displayOrder?: number;
+      isActive?: boolean;
+    },
+  ) {
+    return apiClient<PrimaryTheme>(`${BASE}/themes/${id}`, {
+      method: "PATCH",
+      body: {
+        name: body.name,
+        applies_from: body.appliesFrom,
+        applies_to: body.appliesTo,
+        display_order: body.displayOrder,
+        is_active: body.isActive,
+      },
+    }).then((r) => r.data);
+  },
+
+  deleteTheme(id: string, hard = false) {
+    const qs = hard ? "?hard=true" : "";
+    return apiClient<{ ok: boolean }>(`${BASE}/themes/${id}${qs}`, {
+      method: "DELETE",
+    }).then((r) => r.data);
+  },
+
+  listStrands(includeInactive = false) {
+    const qs = includeInactive ? "?include_inactive=true" : "";
+    return apiClient<PrimaryStrand[]>(`${BASE}/strands${qs}`).then((r) => r.data);
+  },
+
+  createStrand(body: { name: string; displayOrder?: number }) {
+    return apiClient<PrimaryStrand>(`${BASE}/strands`, {
+      method: "POST",
+      body: { name: body.name, display_order: body.displayOrder ?? 0 },
+    }).then((r) => r.data);
+  },
+
+  updateStrand(
+    id: string,
+    body: { name?: string; displayOrder?: number; isActive?: boolean },
+  ) {
+    return apiClient<PrimaryStrand>(`${BASE}/strands/${id}`, {
+      method: "PATCH",
+      body: {
+        name: body.name,
+        display_order: body.displayOrder,
+        is_active: body.isActive,
+      },
+    }).then((r) => r.data);
+  },
+
+  deleteStrand(id: string, hard = false) {
+    const qs = hard ? "?hard=true" : "";
+    return apiClient<{ ok: boolean }>(`${BASE}/strands/${id}${qs}`, {
+      method: "DELETE",
+    }).then((r) => r.data);
   },
 
   linkClass(body: {
@@ -218,12 +304,24 @@ export const primaryApi = {
     }).then((r) => r.data);
   },
 
-  listThematic(params: { classId: string; termId: string }) {
+  listThematic(params: { classId: string; termId: string; sittingId?: string }) {
     const q = new URLSearchParams({
       class_id: params.classId,
       term_id: params.termId,
     });
-    return apiClient<unknown[]>(`${BASE}/marks/thematic?${q}`).then((r) => r.data);
+    if (params.sittingId) q.set("sitting_id", params.sittingId);
+    return apiClient<
+      Array<{
+        id: string;
+        studentId: string;
+        themeId: string;
+        strand: string;
+        level: number;
+        teacherComment?: string | null;
+        submitted: boolean;
+        sittingId?: string | null;
+      }>
+    >(`${BASE}/marks/thematic?${q}`).then((r) => r.data);
   },
 
   bulkThematic(body: {
@@ -231,6 +329,7 @@ export const primaryApi = {
     themeId: string;
     strand: string;
     termId: string;
+    sittingId?: string;
     assessments: Array<{
       studentId: string;
       level: number;
@@ -244,6 +343,7 @@ export const primaryApi = {
         theme_id: body.themeId,
         strand: body.strand,
         term_id: body.termId,
+        sitting_id: body.sittingId ?? null,
         assessments: body.assessments.map((a) => ({
           student_id: a.studentId,
           level: a.level,
@@ -253,24 +353,76 @@ export const primaryApi = {
     }).then((r) => r.data);
   },
 
-  classResults(classId: string, termId: string, examId?: string) {
+  bulkThematicSheet(body: {
+    classId: string;
+    termId: string;
+    sittingId: string;
+    assessments: Array<{
+      studentId: string;
+      themeId: string;
+      strand: string;
+      level: number;
+      teacherComment?: string | null;
+    }>;
+  }) {
+    return apiClient<{ saved: number }>(`${BASE}/marks/thematic/sheet`, {
+      method: "POST",
+      body: {
+        class_id: body.classId,
+        term_id: body.termId,
+        sitting_id: body.sittingId,
+        assessments: body.assessments.map((a) => ({
+          student_id: a.studentId,
+          theme_id: a.themeId,
+          strand: a.strand,
+          level: a.level,
+          teacher_comment: a.teacherComment ?? null,
+        })),
+      },
+    }).then((r) => r.data);
+  },
+
+  submitThematic(sittingId: string) {
+    return apiClient<{ submitted: number }>(
+      `${BASE}/marks/thematic/submit?sitting_id=${sittingId}`,
+      { method: "POST" },
+    ).then((r) => r.data);
+  },
+
+  unlockThematic(sittingId: string) {
+    return apiClient<{ unlocked: number }>(
+      `${BASE}/marks/thematic/unlock?sitting_id=${sittingId}`,
+      { method: "POST" },
+    ).then((r) => r.data);
+  },
+
+  classResults(classId: string, termId: string, examId?: string, sittingId?: string) {
     const q = new URLSearchParams({ term_id: termId });
     if (examId) q.set("exam_id", examId);
+    if (sittingId) q.set("sitting_id", sittingId);
     return apiClient<PrimaryClassResults>(
       `${BASE}/results/class/${classId}?${q.toString()}`,
     ).then((r) => r.data);
   },
 
-  studentResult(studentId: string, termId: string, examId?: string) {
+  studentResult(
+    studentId: string,
+    termId: string,
+    examId?: string,
+    sittingId?: string,
+  ) {
     const q = new URLSearchParams({ term_id: termId });
     if (examId) q.set("exam_id", examId);
+    if (sittingId) q.set("sitting_id", sittingId);
     return apiClient<PrimaryReportCard>(
       `${BASE}/results/student/${studentId}?${q.toString()}`,
     ).then((r) => r.data);
   },
 
-  getReportCard(studentId: string, examId: string) {
-    const q = new URLSearchParams({ exam_id: examId });
+  getReportCard(studentId: string, opts: { examId?: string; sittingId?: string }) {
+    const q = new URLSearchParams();
+    if (opts.examId) q.set("exam_id", opts.examId);
+    if (opts.sittingId) q.set("sitting_id", opts.sittingId);
     return apiClient<PrimaryReportCard>(
       `${BASE}/report-card/${studentId}?${q.toString()}`,
     ).then((r) => r.data);
@@ -278,14 +430,16 @@ export const primaryApi = {
 
   saveReportComment(
     studentId: string,
-    examId: string,
+    opts: { examId?: string; sittingId?: string },
     payload: {
       classTeacherComment?: string | null;
       headTeacherComment?: string | null;
       approve?: boolean;
     },
   ) {
-    const q = new URLSearchParams({ exam_id: examId });
+    const q = new URLSearchParams();
+    if (opts.examId) q.set("exam_id", opts.examId);
+    if (opts.sittingId) q.set("sitting_id", opts.sittingId);
     return apiClient<{ ok: boolean; approved: boolean }>(
       `${BASE}/report-card/${studentId}/comment?${q.toString()}`,
       { method: "POST", body: payload },
@@ -293,7 +447,8 @@ export const primaryApi = {
   },
 
   bulkSaveReportComments(payload: {
-    examId: string;
+    examId?: string;
+    sittingId?: string;
     studentIds: string[];
     classTeacherComment?: string | null;
     headTeacherComment?: string | null;
@@ -557,12 +712,14 @@ export const primaryApi = {
 
   generateReportCards(params: {
     examId?: string;
+    sittingId?: string;
     classId?: string;
     termId?: string;
     studentId?: string;
   }) {
     const q = new URLSearchParams();
     if (params.examId) q.set("exam_id", params.examId);
+    if (params.sittingId) q.set("sitting_id", params.sittingId);
     if (params.classId) q.set("class_id", params.classId);
     if (params.termId) q.set("term_id", params.termId);
     if (params.studentId) q.set("student_id", params.studentId);
@@ -574,5 +731,87 @@ export const primaryApi = {
           : "primary-report-cards.zip",
       }),
     );
+  },
+
+  listSittings(params?: {
+    classId?: string;
+    termId?: string;
+    status?: string;
+    includeDeleted?: boolean;
+  }) {
+    const q = new URLSearchParams();
+    if (params?.classId) q.set("class_id", params.classId);
+    if (params?.termId) q.set("term_id", params.termId);
+    if (params?.status) q.set("status", params.status);
+    if (params?.includeDeleted) q.set("include_deleted", "true");
+    const qs = q.toString() ? `?${q}` : "";
+    return apiClient<PrimaryThematicSitting[]>(`${BASE}/sittings${qs}`).then(
+      (r) => r.data,
+    );
+  },
+
+  createSitting(body: {
+    classId: string;
+    termId: string;
+    examTypeId: string;
+    name?: string | null;
+    notes?: string | null;
+    openNow?: boolean;
+  }) {
+    return apiClient<PrimaryThematicSitting>(`${BASE}/sittings`, {
+      method: "POST",
+      body: {
+        class_id: body.classId,
+        term_id: body.termId,
+        exam_type_id: body.examTypeId,
+        name: body.name,
+        notes: body.notes,
+        open_now: body.openNow ?? false,
+      },
+    }).then((r) => r.data);
+  },
+
+  updateSitting(
+    sittingId: string,
+    body: { name?: string; notes?: string | null },
+  ) {
+    return apiClient<PrimaryThematicSitting>(`${BASE}/sittings/${sittingId}`, {
+      method: "PATCH",
+      body,
+    }).then((r) => r.data);
+  },
+
+  openSitting(sittingId: string) {
+    return apiClient<PrimaryThematicSitting>(
+      `${BASE}/sittings/${sittingId}/open`,
+      { method: "POST" },
+    ).then((r) => r.data);
+  },
+
+  closeSitting(sittingId: string) {
+    return apiClient<PrimaryThematicSitting>(
+      `${BASE}/sittings/${sittingId}/close`,
+      { method: "POST" },
+    ).then((r) => r.data);
+  },
+
+  softDeleteSitting(sittingId: string) {
+    return apiClient<PrimaryThematicSitting>(`${BASE}/sittings/${sittingId}`, {
+      method: "DELETE",
+    }).then((r) => r.data);
+  },
+
+  hardDeleteSitting(sittingId: string) {
+    return apiClient<{ ok: boolean }>(
+      `${BASE}/sittings/${sittingId}?hard=true`,
+      { method: "DELETE" },
+    ).then((r) => r.data);
+  },
+
+  restoreSitting(sittingId: string) {
+    return apiClient<PrimaryThematicSitting>(
+      `${BASE}/sittings/${sittingId}/restore`,
+      { method: "POST" },
+    ).then((r) => r.data);
   },
 };

@@ -10,7 +10,7 @@ import { useSchool } from "@/providers/SchoolProvider";
 import { useToast } from "@/providers/ToastProvider";
 import { useEnsurePrimarySetup, usePrimarySetup, usePrimarySubjects } from "@/hooks/usePrimary";
 import { primaryApi } from "@/lib/api/primary";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export function PrimarySetupContent() {
   const { school } = useSchool();
@@ -257,10 +257,152 @@ export function PrimarySetupContent() {
                   </tbody>
                 </table>
               </div>
+
+              <ThemesAndStrandsPanel />
             </div>
           </>
         ) : null}
       </div>
     </DashboardPage>
+  );
+}
+
+function ThemesAndStrandsPanel() {
+  const { toast } = useToast();
+  const [themeName, setThemeName] = useState("");
+  const [strandName, setStrandName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const themesQ = useQuery({
+    queryKey: ["primary", "themes", "setup"],
+    queryFn: () => primaryApi.themes(undefined, true),
+  });
+  const strandsQ = useQuery({
+    queryKey: ["primary", "strands", "setup"],
+    queryFn: () => primaryApi.listStrands(true),
+  });
+
+  async function addTheme() {
+    if (!themeName.trim()) return;
+    setBusy(true);
+    try {
+      await primaryApi.createTheme({ name: themeName.trim() });
+      setThemeName("");
+      toast.success("Theme added.");
+      await themesQ.refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add theme.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addStrand() {
+    if (!strandName.trim()) return;
+    setBusy(true);
+    try {
+      await primaryApi.createStrand({ name: strandName.trim() });
+      setStrandName("");
+      toast.success("Strand added.");
+      await strandsQ.refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add strand.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleTheme(id: string, isActive: boolean) {
+    try {
+      await primaryApi.updateTheme(id, { isActive: !isActive });
+      await themesQ.refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Update failed.");
+    }
+  }
+
+  async function toggleStrand(id: string, isActive: boolean) {
+    try {
+      await primaryApi.updateStrand(id, { isActive: !isActive });
+      await strandsQ.refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Update failed.");
+    }
+  }
+
+  return (
+    <div className="space-y-4 rounded-xl border border-theme bg-theme-surface p-5">
+      <h2 className="font-semibold text-theme-primary">Themes & strands (P1–P3)</h2>
+      <p className="text-sm text-theme-muted">
+        Manage thematic catalogue used by lower-primary sittings. Deactivate instead of
+        deleting when assessments already exist.
+      </p>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <input
+              className="ms-input flex-1"
+              placeholder="New theme name"
+              value={themeName}
+              onChange={(e) => setThemeName(e.target.value)}
+            />
+            <LoadingButton loading={busy} onClick={() => void addTheme()}>
+              Add
+            </LoadingButton>
+          </div>
+          <ul className="max-h-56 space-y-1 overflow-y-auto text-sm">
+            {(themesQ.data?.themes ?? []).map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center justify-between gap-2 rounded-md border border-theme px-2 py-1.5"
+              >
+                <span className={t.isActive === false ? "text-theme-muted line-through" : ""}>
+                  {t.name}
+                </span>
+                <button
+                  type="button"
+                  className="text-xs text-theme-accent"
+                  onClick={() => void toggleTheme(t.id, t.isActive !== false)}
+                >
+                  {t.isActive === false ? "Activate" : "Deactivate"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <input
+              className="ms-input flex-1"
+              placeholder="New strand name"
+              value={strandName}
+              onChange={(e) => setStrandName(e.target.value)}
+            />
+            <LoadingButton loading={busy} onClick={() => void addStrand()}>
+              Add
+            </LoadingButton>
+          </div>
+          <ul className="max-h-56 space-y-1 overflow-y-auto text-sm">
+            {(strandsQ.data ?? []).map((s) => (
+              <li
+                key={s.id}
+                className="flex items-center justify-between gap-2 rounded-md border border-theme px-2 py-1.5"
+              >
+                <span className={!s.isActive ? "text-theme-muted line-through" : ""}>
+                  {s.name}
+                </span>
+                <button
+                  type="button"
+                  className="text-xs text-theme-accent"
+                  onClick={() => void toggleStrand(s.id, s.isActive)}
+                >
+                  {s.isActive ? "Deactivate" : "Activate"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
   );
 }

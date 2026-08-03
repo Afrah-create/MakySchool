@@ -354,6 +354,7 @@ async def bulk_upsert_thematic(
     strand: str,
     term_id: uuid.UUID,
     assessments: list[dict[str, Any]],
+    sitting_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     await _assert_thematic_allowed(conn, school_id, class_id)
     if len(assessments) > BULK_MARKS_LIMIT:
@@ -361,10 +362,33 @@ async def bulk_upsert_thematic(
             f"Bulk thematic entry is limited to {BULK_MARKS_LIMIT} students per request."
         )
     strand_clean = strand.strip()
-    if strand_clean not in DEFAULT_STRANDS and not strand_clean:
+    if not strand_clean:
         raise ValueError("Strand is required.")
 
-    academic_year_id = await _resolve_term_year(conn, school_id, term_id)
+    from app.services.primary import subjects as subjects_svc
+    from app.services.primary.sittings import assert_sitting_open_for_marks
+
+    allowed_strands = set(await subjects_svc.strand_names(conn, school_id))
+    # Accept defaults during migration before strands table is seeded/used.
+    allowed_strands.update(DEFAULT_STRANDS)
+    if strand_clean not in allowed_strands:
+        raise ValueError(
+            f"Unknown strand '{strand_clean}'. Manage strands under Primary setup."
+        )
+
+    resolved_sitting_id = sitting_id
+    if resolved_sitting_id is not None:
+        sitting = await assert_sitting_open_for_marks(
+            conn, school_id, resolved_sitting_id
+        )
+        if sitting["classId"] != str(class_id):
+            raise ValueError("Sitting does not belong to this class.")
+        if sitting["termId"] != str(term_id):
+            raise ValueError("Sitting does not belong to this term.")
+        academic_year_id = uuid.UUID(sitting["academicYearId"])
+    else:
+        # Legacy term-scoped entry — prefer creating a sitting going forward.
+        academic_year_id = await _resolve_term_year(conn, school_id, term_id)
 
     student_ids: list[uuid.UUID] = []
     levels: list[int] = []
@@ -381,17 +405,151 @@ async def bulk_upsert_thematic(
     if not student_ids:
         return {"saved": 0}
 
+    if resolved_sitting_id is not None:
+        await conn.execute(
+            """
+            INSERT INTO primary_thematic_assessments (
+              school_id, student_id, class_id, theme_id, strand, level,
+              term_id, academic_year_id, sitting_id, teacher_comment,
+              recorded_by, updated_at
+            )
+            SELECT
+              $1, x.student_id, $2, $3, $4, x.level, $5, $6, $7, x.comment, $8, NOW()
+            FROM UNNEST($9::uuid[], $10::int[], $11::text[])
+              AS x(student_id, level, comment)
+            ON CONFLICT (student_id, theme_id, strand, sitting_id)
+              WHERE sitting_id IS NOT NULL
+            DO UPDATE SET
+              level = EXCLUDED.level,
+              teacher_comment = EXCLUDED.teacher_comment,
+              recorded_by = EXCLUDED.recorded_by,
+              updated_at = NOW()
+            WHERE primary_thematic_assessments.submitted = false
+            """,
+            school_id,
+            class_id,
+            theme_id,
+            strand_clean,
+            term_id,
+            academic_year_id,
+            resolved_sitting_id,
+            actor_id,
+            student_ids,
+            levels,
+            comments,
+        )
+    else:
+        await conn.execute(
+            """
+            INSERT INTO primary_thematic_assessments (
+              school_id, student_id, class_id, theme_id, strand, level,
+              term_id, academic_year_id, teacher_comment, recorded_by, updated_at
+            )
+            SELECT
+              $1, x.student_id, $2, $3, $4, x.level, $5, $6, x.comment, $7, NOW()
+            FROM UNNEST($8::uuid[], $9::int[], $10::text[])
+              AS x(student_id, level, comment)
+            ON CONFLICT (student_id, theme_id, strand, term_id)
+              WHERE sitting_id IS NULL
+            DO UPDATE SET
+              level = EXCLUDED.level,
+              teacher_comment = EXCLUDED.teacher_comment,
+              recorded_by = EXCLUDED.recorded_by,
+              updated_at = NOW()
+            WHERE primary_thematic_assessments.submitted = false
+            """,
+            school_id,
+            class_id,
+            theme_id,
+            strand_clean,
+            term_id,
+            academic_year_id,
+            actor_id,
+            student_ids,
+            levels,
+            comments,
+        )
+    return {"saved": len(student_ids)}
+
+
+THEMATIC_SHEET_LIMIT = 2500  # e.g. ~50 students × 12 themes × 4 strands
+
+
+async def bulk_upsert_thematic_sheet(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    *,
+    class_id: uuid.UUID,
+    term_id: uuid.UUID,
+    sitting_id: uuid.UUID,
+    assessments: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Bulk upsert levels + comments across many themes/strands for one sitting."""
+    await _assert_thematic_allowed(conn, school_id, class_id)
+    if len(assessments) > THEMATIC_SHEET_LIMIT:
+        raise ValueError(
+            f"Sheet save is limited to {THEMATIC_SHEET_LIMIT} cells per request."
+        )
+    if not assessments:
+        return {"saved": 0}
+
+    from app.services.primary import subjects as subjects_svc
+    from app.services.primary.sittings import assert_sitting_open_for_marks
+
+    sitting = await assert_sitting_open_for_marks(conn, school_id, sitting_id)
+    if sitting["classId"] != str(class_id):
+        raise ValueError("Sitting does not belong to this class.")
+    if sitting["termId"] != str(term_id):
+        raise ValueError("Sitting does not belong to this term.")
+    academic_year_id = uuid.UUID(sitting["academicYearId"])
+
+    allowed_strands = set(await subjects_svc.strand_names(conn, school_id))
+    allowed_strands.update(DEFAULT_STRANDS)
+
+    theme_ids: list[uuid.UUID] = []
+    student_ids: list[uuid.UUID] = []
+    strands: list[str] = []
+    levels: list[int] = []
+    comments: list[str | None] = []
+
+    for item in assessments:
+        strand_clean = str(item.get("strand") or "").strip()
+        if not strand_clean:
+            raise ValueError("Strand is required for each assessment cell.")
+        if strand_clean not in allowed_strands:
+            raise ValueError(
+                f"Unknown strand '{strand_clean}'. Manage strands under Primary setup."
+            )
+        level = int(item["level"])
+        if level not in (1, 2, 3, 4):
+            raise ValueError("Thematic level must be 1–4.")
+        comment = item.get("teacher_comment")
+        if isinstance(comment, str):
+            comment = comment.strip() or None
+        else:
+            comment = None
+        theme_ids.append(uuid.UUID(str(item["theme_id"])))
+        student_ids.append(uuid.UUID(str(item["student_id"])))
+        strands.append(strand_clean)
+        levels.append(level)
+        comments.append(comment)
+
     await conn.execute(
         """
         INSERT INTO primary_thematic_assessments (
           school_id, student_id, class_id, theme_id, strand, level,
-          term_id, academic_year_id, teacher_comment, recorded_by, updated_at
+          term_id, academic_year_id, sitting_id, teacher_comment,
+          recorded_by, updated_at
         )
         SELECT
-          $1, x.student_id, $2, $3, $4, x.level, $5, $6, x.comment, $7, NOW()
-        FROM UNNEST($8::uuid[], $9::int[], $10::text[])
-          AS x(student_id, level, comment)
-        ON CONFLICT (student_id, theme_id, strand, term_id)
+          $1, x.student_id, $2, x.theme_id, x.strand, x.level,
+          $3, $4, $5, x.comment, $6, NOW()
+        FROM UNNEST(
+          $7::uuid[], $8::uuid[], $9::text[], $10::int[], $11::text[]
+        ) AS x(theme_id, student_id, strand, level, comment)
+        ON CONFLICT (student_id, theme_id, strand, sitting_id)
+          WHERE sitting_id IS NOT NULL
         DO UPDATE SET
           level = EXCLUDED.level,
           teacher_comment = EXCLUDED.teacher_comment,
@@ -401,12 +559,13 @@ async def bulk_upsert_thematic(
         """,
         school_id,
         class_id,
-        theme_id,
-        strand_clean,
         term_id,
         academic_year_id,
+        sitting_id,
         actor_id,
+        theme_ids,
         student_ids,
+        strands,
         levels,
         comments,
     )
@@ -510,23 +669,43 @@ async def list_thematic(
     *,
     class_id: uuid.UUID,
     term_id: uuid.UUID,
+    sitting_id: uuid.UUID | None = None,
 ) -> list[dict[str, Any]]:
-    rows = await conn.fetch(
-        """
-        SELECT
-          ta.id, ta.student_id, s.full_name AS student_name, s.learner_id,
-          ta.theme_id, th.name AS theme_name, ta.strand, ta.level,
-          ta.teacher_comment, ta.submitted
-        FROM primary_thematic_assessments ta
-        JOIN students s ON s.id = ta.student_id
-        JOIN primary_themes th ON th.id = ta.theme_id
-        WHERE ta.school_id = $1 AND ta.class_id = $2 AND ta.term_id = $3
-        ORDER BY th.display_order, ta.strand, s.full_name
-        """,
-        school_id,
-        class_id,
-        term_id,
-    )
+    if sitting_id is not None:
+        rows = await conn.fetch(
+            """
+            SELECT
+              ta.id, ta.student_id, s.full_name AS student_name, s.learner_id,
+              ta.theme_id, th.name AS theme_name, ta.strand, ta.level,
+              ta.teacher_comment, ta.submitted, ta.sitting_id
+            FROM primary_thematic_assessments ta
+            JOIN students s ON s.id = ta.student_id
+            JOIN primary_themes th ON th.id = ta.theme_id
+            WHERE ta.school_id = $1 AND ta.class_id = $2
+              AND ta.sitting_id = $3
+            ORDER BY th.display_order, ta.strand, s.full_name
+            """,
+            school_id,
+            class_id,
+            sitting_id,
+        )
+    else:
+        rows = await conn.fetch(
+            """
+            SELECT
+              ta.id, ta.student_id, s.full_name AS student_name, s.learner_id,
+              ta.theme_id, th.name AS theme_name, ta.strand, ta.level,
+              ta.teacher_comment, ta.submitted, ta.sitting_id
+            FROM primary_thematic_assessments ta
+            JOIN students s ON s.id = ta.student_id
+            JOIN primary_themes th ON th.id = ta.theme_id
+            WHERE ta.school_id = $1 AND ta.class_id = $2 AND ta.term_id = $3
+            ORDER BY th.display_order, ta.strand, s.full_name
+            """,
+            school_id,
+            class_id,
+            term_id,
+        )
     return [
         {
             "id": str(r["id"]),
@@ -539,6 +718,7 @@ async def list_thematic(
             "level": r["level"],
             "teacherComment": r["teacher_comment"],
             "submitted": bool(r["submitted"]),
+            "sittingId": str(r["sitting_id"]) if r["sitting_id"] else None,
         }
         for r in rows
     ]

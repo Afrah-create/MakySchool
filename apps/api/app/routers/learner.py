@@ -382,9 +382,9 @@ async def learner_primary_report_cards(
     return {"data": {"reports": items}}
 
 
-@router.get("/primary/report-cards/{exam_id}")
+@router.get("/primary/report-cards/{report_id}")
 async def learner_primary_report_card_detail(
-    exam_id: uuid.UUID,
+    report_id: uuid.UUID,
     ctx: TenantCtx,
     conn: asyncpg.Connection = Depends(get_db),
 ):
@@ -395,23 +395,36 @@ async def learner_primary_report_card_detail(
     from app.lib.primary_access import assert_primary_enabled
     from app.lib.primary_exam_access import require_exam
     from app.services.primary import results as results_svc
+    from app.services.primary import sittings as sittings_svc
 
     await assert_primary_enabled(conn, school_id)
-    exam = await require_exam(conn, school_id, exam_id)
-    data = await results_svc.student_result(
-        conn,
-        school_id,
-        student_id=student["id"],
-        term_id=uuid.UUID(exam["termId"]),
-        exam_id=exam_id,
-        require_approved=True,
-    )
+    # report_id may be an exam (upper) or sitting (lower)
+    try:
+        exam = await require_exam(conn, school_id, report_id)
+        data = await results_svc.student_result(
+            conn,
+            school_id,
+            student_id=student["id"],
+            term_id=uuid.UUID(exam["termId"]),
+            exam_id=report_id,
+            require_approved=True,
+        )
+    except LookupError:
+        sitting = await sittings_svc.require_sitting(conn, school_id, report_id)
+        data = await results_svc.student_result(
+            conn,
+            school_id,
+            student_id=student["id"],
+            term_id=uuid.UUID(sitting["termId"]),
+            sitting_id=report_id,
+            require_approved=True,
+        )
     return {"data": data}
 
 
-@router.get("/primary/report-cards/{exam_id}/pdf")
+@router.get("/primary/report-cards/{report_id}/pdf")
 async def learner_primary_report_card_pdf(
-    exam_id: uuid.UUID,
+    report_id: uuid.UUID,
     ctx: TenantCtx,
     conn: asyncpg.Connection = Depends(get_db),
 ):
@@ -427,18 +440,30 @@ async def learner_primary_report_card_pdf(
     from app.lib.primary_pdf import generate_primary_report_pdf_bytes
     from app.lib.storage_urls import resolve_storage_data_uri
     from app.services.primary import results as results_svc
+    from app.services.primary import sittings as sittings_svc
 
     await assert_primary_enabled(conn, school_id)
-    exam = await require_exam(conn, school_id, exam_id)
     branding = await load_school_branding(conn, school_id, for_pdf=True)
-    data = await results_svc.student_result(
-        conn,
-        school_id,
-        student_id=student["id"],
-        term_id=uuid.UUID(exam["termId"]),
-        exam_id=exam_id,
-        require_approved=True,
-    )
+    try:
+        exam = await require_exam(conn, school_id, report_id)
+        data = await results_svc.student_result(
+            conn,
+            school_id,
+            student_id=student["id"],
+            term_id=uuid.UUID(exam["termId"]),
+            exam_id=report_id,
+            require_approved=True,
+        )
+    except LookupError:
+        sitting = await sittings_svc.require_sitting(conn, school_id, report_id)
+        data = await results_svc.student_result(
+            conn,
+            school_id,
+            student_id=student["id"],
+            term_id=uuid.UUID(sitting["termId"]),
+            sitting_id=report_id,
+            require_approved=True,
+        )
     data["schoolName"] = branding.get("schoolName")
     data["schoolAddress"] = branding.get("schoolAddress")
     data["schoolPhone"] = branding.get("schoolPhone")
@@ -459,14 +484,18 @@ async def learner_primary_report_card_pdf(
         if str(photo_key).startswith("data:"):
             photo_uri = photo_key
         else:
-            photo_uri = await resolve_storage_data_uri(photo_key, school_id=school_id)
+            try:
+                photo_uri = await resolve_storage_data_uri(
+                    photo_key, school_id=school_id
+                )
+            except Exception:
+                photo_uri = None
     data["photoUrl"] = photo_uri
     if data.get("student"):
         data["student"]["photoUrl"] = photo_uri
 
     pdf = await generate_primary_report_pdf_bytes(data)
-    learner_id = (data.get("student") or {}).get("learnerId") or student["id"]
-    filename = f"{learner_id}-primary-report.pdf".replace(" ", "_")
+    filename = f"primary-report-{report_id}.pdf"
     return Response(
         content=pdf,
         media_type="application/pdf",

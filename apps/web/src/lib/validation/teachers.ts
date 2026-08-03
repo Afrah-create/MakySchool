@@ -4,7 +4,15 @@ export type CreateTeacherInput = {
   phone?: string;
 };
 
-export function validateTeacherForm(data: CreateTeacherInput): Record<string, string> {
+export type TeacherProfileInput = {
+  full_name?: string;
+  phone?: string;
+};
+
+/** Name + phone only — for edit/self-profile flows where email is read-only. */
+export function validateTeacherProfileFields(
+  data: TeacherProfileInput,
+): Record<string, string> {
   const errors: Record<string, string> = {};
 
   if (!data.full_name?.trim()) {
@@ -15,14 +23,21 @@ export function validateTeacherForm(data: CreateTeacherInput): Record<string, st
     errors.full_name = "Full name must be under 100 characters.";
   }
 
+  const phone = data.phone?.trim();
+  if (phone && !/^\+?[0-9\s\-]{7,15}$/.test(phone)) {
+    errors.phone = "Enter a valid phone number.";
+  }
+
+  return errors;
+}
+
+export function validateTeacherForm(data: CreateTeacherInput): Record<string, string> {
+  const errors = validateTeacherProfileFields(data);
+
   if (!data.email?.trim()) {
     errors.email = "Email address is required.";
   } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
     errors.email = "Enter a valid email address.";
-  }
-
-  if (data.phone && !/^\+?[0-9\s\-]{7,15}$/.test(data.phone)) {
-    errors.phone = "Enter a valid phone number.";
   }
 
   return errors;

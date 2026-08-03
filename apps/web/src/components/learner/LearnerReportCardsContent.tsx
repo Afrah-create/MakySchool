@@ -549,19 +549,25 @@ export function LearnerReportCardsContent() {
       });
     }
     for (const r of primaryList.data ?? []) {
+      const reportKey = r.sittingId || r.examId;
+      if (!reportKey) continue;
       out.push({
-        key: `primary:${r.examId}`,
+        key: `primary:${reportKey}`,
         track: 'primary',
-        examId: r.examId,
+        examId: reportKey,
         examName: r.examName,
         termName: r.termName,
         yearLabel: r.academicYearLabel,
         subtitle:
-          r.aggregate != null
-            ? `Agg ${r.aggregate}${r.division ? ` · ${r.division}` : ''}`
-            : r.averagePercent != null
-              ? `${r.averagePercent.toFixed(0)}%${r.overallGrade ? ` · ${r.overallGrade}` : ''}`
-              : r.examTypeName || 'Primary',
+          r.kind === 'sitting' || r.sittingId
+            ? r.averagePercent != null
+              ? `Avg level ${r.averagePercent.toFixed(1)}${r.examTypeName ? ` · ${r.examTypeName}` : ''}`
+              : r.examTypeName || 'Thematic'
+            : r.aggregate != null
+              ? `Agg ${r.aggregate}${r.division ? ` · ${r.division}` : ''}`
+              : r.averagePercent != null
+                ? `${r.averagePercent.toFixed(0)}%${r.overallGrade ? ` · ${r.overallGrade}` : ''}`
+                : r.examTypeName || 'Primary',
       });
     }
     for (const r of olevelList.data ?? []) {
