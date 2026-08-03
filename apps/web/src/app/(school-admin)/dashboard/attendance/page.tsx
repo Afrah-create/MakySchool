@@ -88,13 +88,17 @@ export default function SchoolAdminAttendancePage() {
 
   useEffect(() => {
     if (term?.startDate) {
-      setDateFrom((prev) => prev || term.startDate!);
+      setDateFrom((prev) => {
+        if (prev) return prev > dateTo ? dateTo : prev;
+        return term.startDate! > dateTo ? dateTo : term.startDate!;
+      });
     } else if (!dateFrom) {
       const d = new Date();
       d.setDate(1);
-      setDateFrom(d.toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' }));
+      const monthStart = d.toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
+      setDateFrom(monthStart > dateTo ? dateTo : monthStart);
     }
-  }, [term?.startDate, dateFrom]);
+  }, [term?.startDate, dateFrom, dateTo]);
 
   const termId = term?.id ?? '';
   const queryEnabled = !!selectedClassId && !!termId;

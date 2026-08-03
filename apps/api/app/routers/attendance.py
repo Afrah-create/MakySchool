@@ -447,21 +447,19 @@ async def get_student_attendance_dossier(
         )
 
     today = datetime.now(tz=EAT).date()
-    parsed_from = (
-        datetime.strptime(date_from, "%Y-%m-%d").date()
-        if date_from
-        else (term_row["start_date"] or today.replace(month=1, day=1))
-    )
     parsed_to = (
         datetime.strptime(date_to, "%Y-%m-%d").date()
         if date_to
         else min(term_row["end_date"] or today, today)
     )
+    parsed_from = (
+        datetime.strptime(date_from, "%Y-%m-%d").date()
+        if date_from
+        else (term_row["start_date"] or today.replace(month=1, day=1))
+    )
+    # Future term starts (or inverted client ranges) should not 400 the dossier.
     if parsed_from > parsed_to:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "date_from must be on or before date_to.", "code": "VALIDATION_ERROR"},
-        )
+        parsed_from = parsed_to
 
     class_id = student["current_class_id"]
 
@@ -983,13 +981,7 @@ async def get_admin_overview(
     parsed_from = datetime.strptime(date_from, "%Y-%m-%d").date()
     parsed_to = datetime.strptime(date_to, "%Y-%m-%d").date()
     if parsed_from > parsed_to:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "error": "date_from must be on or before date_to.",
-                "code": "VALIDATION_ERROR",
-            },
-        )
+        parsed_from = parsed_to
 
     # Expected registers = distinct class-period slots on weekdays in range
     # that fall on the period's day_of_week, vs submitted (period+date with rows).

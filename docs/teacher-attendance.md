@@ -1,6 +1,6 @@
 # Teacher Attendance (GPS & Map)
 
-Staff clock-in / clock-out via browser Geolocation, with optional school geofencing. Admins and head teachers see a daily roster and a live Leaflet map. Separate from [period-based student attendance](./attendance.md).
+Staff clock-in / clock-out via browser Geolocation, with optional school geofencing. Admins and head teachers see a daily roster and a live Google Map. Separate from [period-based student attendance](./attendance.md).
 
 Status: **shipped** (migration `054`, API, teacher + admin UI).
 
@@ -30,7 +30,7 @@ teacherAttendanceApi / useTeacherAttendance (React Query)
 | Permissions | `viewTeacherAttendance`, `manageAttendanceSettings`, `manualMarkAttendance` |
 | Web client | `apps/web/src/lib/api/teacherAttendance.ts` |
 | Hooks | `apps/web/src/hooks/useTeacherAttendance.ts` |
-| Map | `react-leaflet` + OpenStreetMap (no API key); assets in `apps/web/public/leaflet/` |
+| Map | Google Maps (`@vis.gl/react-google-maps`) via `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` |
 
 Auth: `require_tenant_with_subscription`. `school_id` always from the tenant context — never from the client body.
 

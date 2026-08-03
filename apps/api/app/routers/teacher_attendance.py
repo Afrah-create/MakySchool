@@ -228,8 +228,7 @@ async def patch_settings(
             UPDATE schools SET
               latitude = COALESCE($2, latitude),
               longitude = COALESCE($3, longitude),
-              attendance_radius_metres = COALESCE($4, attendance_radius_metres),
-              updated_at = NOW()
+              attendance_radius_metres = COALESCE($4, attendance_radius_metres)
             WHERE id = $1
             """,
             school_id,

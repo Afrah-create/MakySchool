@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Line,
   LineChart,
@@ -32,6 +32,13 @@ const DAY_DOT: { [K in AttendanceDayStatus]: string } = {
   none: 'bg-theme-raised',
 };
 
+/** Ensure YYYY-MM-DD from is never after to (e.g. future term start vs today). */
+function clampFromTo(from: string, to: string): string {
+  if (!from) return to;
+  if (!to) return from;
+  return from > to ? to : from;
+}
+
 export function StudentAttendancePanel({
   studentId,
   compact = false,
@@ -43,20 +50,30 @@ export function StudentAttendancePanel({
 }) {
   const { data: term } = useCurrentTerm();
   const termId = term?.id ?? '';
-  const [dateFrom, setDateFrom] = useState(term?.startDate || '');
-  const [dateTo, setDateTo] = useState(todayEAT());
+  const today = todayEAT();
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState(today);
   const [notifyOpen, setNotifyOpen] = useState(false);
-  const [notifyDate, setNotifyDate] = useState(todayEAT());
+  const [notifyDate, setNotifyDate] = useState(today);
 
-  // Sync default from when term loads
-  const effectiveFrom = dateFrom || term?.startDate || '';
+  useEffect(() => {
+    if (!term?.startDate) return;
+    setDateFrom((prev) => {
+      if (prev) return clampFromTo(prev, dateTo || today);
+      return clampFromTo(term.startDate!, dateTo || today);
+    });
+  }, [term?.startDate, dateTo, today]);
+
+  const effectiveFrom = clampFromTo(dateFrom || term?.startDate || '', dateTo || today);
+  const effectiveTo = dateTo || today;
+  const rangeReady = !!effectiveFrom && !!effectiveTo && effectiveFrom <= effectiveTo;
 
   const { data, isPending, isError, error, refetch, isFetching } = useStudentAttendanceDossier(
     studentId,
     termId,
     effectiveFrom,
-    dateTo,
-    !!studentId && !!termId,
+    effectiveTo,
+    !!studentId && !!termId && rangeReady,
   );
 
   const chartData = useMemo(
@@ -107,8 +124,8 @@ export function StudentAttendancePanel({
                 type="date"
                 className="ms-input"
                 value={effectiveFrom}
-                max={dateTo}
-                onChange={(e) => setDateFrom(e.target.value)}
+                max={effectiveTo}
+                onChange={(e) => setDateFrom(clampFromTo(e.target.value, effectiveTo))}
               />
             </label>
             <label className="block">
@@ -118,10 +135,14 @@ export function StudentAttendancePanel({
               <input
                 type="date"
                 className="ms-input"
-                value={dateTo}
+                value={effectiveTo}
                 min={effectiveFrom}
-                max={todayEAT()}
-                onChange={(e) => setDateTo(e.target.value)}
+                max={today}
+                onChange={(e) => {
+                  const nextTo = e.target.value || today;
+                  setDateTo(nextTo);
+                  setDateFrom((prev) => clampFromTo(prev || effectiveFrom, nextTo));
+                }}
               />
             </label>
           </div>
@@ -130,7 +151,7 @@ export function StudentAttendancePanel({
               type="button"
               className="ms-btn-secondary inline-flex items-center gap-2"
               onClick={() => {
-                setNotifyDate(dateTo);
+                setNotifyDate(effectiveTo);
                 setNotifyOpen(true);
               }}
               disabled={!guardian.canNotify}

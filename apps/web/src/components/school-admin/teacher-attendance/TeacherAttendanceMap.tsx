@@ -1,197 +1,250 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from 'react';
 import {
   Circle,
-  MapContainer,
+  InfoWindow,
+  Map,
   Marker,
-  Popup,
-  TileLayer,
+  useApiIsLoaded,
   useMap,
-} from 'react-leaflet';
-import L from 'leaflet';
+} from '@vis.gl/react-google-maps';
 import type {
   TeacherAttendanceSchoolLocation,
   TeacherMapPin,
 } from '@makyschool/shared';
-import 'leaflet/dist/leaflet.css';
+import {
+  GoogleMapsProvider,
+  UGANDA_CENTRE,
+  cssAccent,
+  cssVar,
+} from '@/components/maps/GoogleMapsProvider';
 
-// Fix default marker assets for Next.js bundling.
-delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: '/leaflet/marker-icon-2x.png',
-  iconUrl: '/leaflet/marker-icon.png',
-  shadowUrl: '/leaflet/marker-shadow.png',
-});
+export type TeacherAttendanceMapHandle = {
+  centreOnSchool: () => void;
+  fitPins: () => void;
+};
 
-function cssVar(name: string, fallback: string) {
-  if (typeof window === 'undefined') return fallback;
-  const value = getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim();
-  return value || fallback;
+function MapCameraController({
+  school,
+  pins,
+  mapRef,
+}: {
+  school: TeacherAttendanceSchoolLocation | null | undefined;
+  pins: TeacherMapPin[];
+  mapRef: React.MutableRefObject<TeacherAttendanceMapHandle | null>;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+    const handle: TeacherAttendanceMapHandle = {
+      centreOnSchool() {
+        if (school?.latitude != null && school?.longitude != null) {
+          map.setCenter({ lat: school.latitude, lng: school.longitude });
+          map.setZoom(17);
+        }
+      },
+      fitPins() {
+        const points: google.maps.LatLngLiteral[] = pins.map((p) => ({
+          lat: p.latitude,
+          lng: p.longitude,
+        }));
+        if (school?.latitude != null && school?.longitude != null) {
+          points.push({ lat: school.latitude, lng: school.longitude });
+        }
+        if (points.length === 0) return;
+        if (points.length === 1) {
+          map.setCenter(points[0]!);
+          map.setZoom(16);
+          return;
+        }
+        const bounds = new google.maps.LatLngBounds();
+        for (const p of points) bounds.extend(p);
+        map.fitBounds(bounds, 40);
+      },
+    };
+    mapRef.current = handle;
+    return () => {
+      mapRef.current = null;
+    };
+  }, [map, school, pins, mapRef]);
+
+  return null;
 }
 
-function createTeacherIcon(status: string, initials: string) {
+function statusColor(status: string) {
   const colors: Record<string, string> = {
     present: cssVar('--color-success-text', '#065F46'),
     late: cssVar('--color-warning-text', '#92400E'),
     outside_fence: cssVar('--color-warning-text', '#9A3412'),
     absent: cssVar('--color-danger-text', '#991B1B'),
   };
-  const bg = colors[status] || cssVar('--color-text-muted', '#6B7280');
-  const border = cssVar('--color-surface', '#ffffff');
-
-  return L.divIcon({
-    className: '',
-    html: `
-      <div style="
-        background: ${bg};
-        color: ${border};
-        width: 36px;
-        height: 36px;
-        border-radius: 50% 50% 50% 0;
-        transform: rotate(-45deg);
-        border: 2px solid ${border};
-        box-shadow: 0 2px 6px color-mix(in srgb, black 25%, transparent);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      ">
-        <span style="transform: rotate(45deg); font-size: 11px; font-weight: 700;">
-          ${initials}
-        </span>
-      </div>
-    `,
-    iconSize: [36, 36],
-    iconAnchor: [18, 36],
-    popupAnchor: [0, -36],
-  });
+  return colors[status] || cssVar('--color-text-muted', '#6B7280');
 }
 
-function MapControls({
+function AttendanceMapInner({
   school,
   pins,
-}: {
-  school: TeacherAttendanceSchoolLocation | null | undefined;
-  pins: TeacherMapPin[];
-}) {
-  const map = useMap();
-
-  useEffect(() => {
-    (window as unknown as { __taCentreSchool?: () => void }).__taCentreSchool = () => {
-      if (school?.latitude != null && school?.longitude != null) {
-        map.setView([school.latitude, school.longitude], 17);
-      }
-    };
-    (window as unknown as { __taFitPins?: () => void }).__taFitPins = () => {
-      const points: L.LatLngExpression[] = pins.map((p) => [p.latitude, p.longitude]);
-      if (school?.latitude != null && school?.longitude != null) {
-        points.push([school.latitude, school.longitude]);
-      }
-      if (points.length === 0) return;
-      if (points.length === 1) {
-        map.setView(points[0], 16);
-        return;
-      }
-      map.fitBounds(L.latLngBounds(points), { padding: [40, 40] });
-    };
-    return () => {
-      delete (window as unknown as { __taCentreSchool?: unknown }).__taCentreSchool;
-      delete (window as unknown as { __taFitPins?: unknown }).__taFitPins;
-    };
-  }, [map, school, pins]);
-
-  return null;
-}
-
-export function TeacherAttendanceMap({
-  school,
-  pins,
-  className,
+  mapRef,
 }: {
   school: (TeacherAttendanceSchoolLocation & { name?: string | null }) | null | undefined;
   pins: TeacherMapPin[];
-  className?: string;
+  mapRef: React.MutableRefObject<TeacherAttendanceMapHandle | null>;
 }) {
-  const centre = useMemo((): [number, number] => {
+  const [activePinId, setActivePinId] = useState<string | null>(null);
+  const [schoolOpen, setSchoolOpen] = useState(false);
+  const accent = cssAccent();
+  const apiReady = useApiIsLoaded();
+
+  const centre = useMemo(() => {
     if (school?.latitude != null && school?.longitude != null) {
-      return [school.latitude, school.longitude];
+      return { lat: school.latitude, lng: school.longitude };
     }
-    if (pins[0]) return [pins[0].latitude, pins[0].longitude];
-    return [1.3733, 32.2903];
+    if (pins[0]) return { lat: pins[0].latitude, lng: pins[0].longitude };
+    return UGANDA_CENTRE;
   }, [school, pins]);
 
-  const accent = cssVar('--color-accent', '#4F6EF7');
   const zoom = school?.is_configured ? 16 : 7;
+  const activePin = pins.find((p) => p.teacher_id === activePinId) ?? null;
 
   return (
-    <div className={className ?? 'h-80 w-full overflow-hidden rounded-xl border border-theme'}>
-      <MapContainer
-        center={centre}
-        zoom={zoom}
-        className="h-full w-full"
-        scrollWheelZoom
-      >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OpenStreetMap contributors"
-        />
-        <MapControls school={school} pins={pins} />
-        {school?.is_configured &&
-        school.latitude != null &&
-        school.longitude != null ? (
-          <>
-            <Marker position={[school.latitude, school.longitude]}>
-              <Popup>
-                <strong>{school.name || 'School'}</strong>
-                <br />
-                School location
-              </Popup>
-            </Marker>
-            <Circle
-              center={[school.latitude, school.longitude]}
-              radius={school.radius_metres}
-              pathOptions={{
-                color: accent,
-                fillColor: accent,
-                fillOpacity: 0.08,
-                weight: 2,
-              }}
-            />
-          </>
-        ) : null}
-        {pins.map((pin) => (
+    <Map
+      defaultCenter={centre}
+      defaultZoom={zoom}
+      gestureHandling="greedy"
+      mapTypeControl={false}
+      streetViewControl={false}
+      fullscreenControl={false}
+      className="h-full w-full"
+    >
+      <MapCameraController school={school} pins={pins} mapRef={mapRef} />
+      {school?.is_configured &&
+      school.latitude != null &&
+      school.longitude != null ? (
+        <>
           <Marker
-            key={pin.teacher_id}
-            position={[pin.latitude, pin.longitude]}
-            icon={createTeacherIcon(pin.status, pin.initials)}
-          >
-            <Popup>
-              <strong>{pin.full_name}</strong>
-              <br />
-              Status: {pin.status.replace('_', ' ')}
-              <br />
-              Clocked in: {pin.clock_in_at ?? '—'}
-              <br />
+            position={{ lat: school.latitude, lng: school.longitude }}
+            title={school.name || 'School'}
+            onClick={() => setSchoolOpen(true)}
+          />
+          {schoolOpen ? (
+            <InfoWindow
+              position={{ lat: school.latitude, lng: school.longitude }}
+              onCloseClick={() => setSchoolOpen(false)}
+            >
+              <div className="text-sm text-neutral-900">
+                <p className="font-semibold">{school.name || 'School'}</p>
+                <p>School location</p>
+              </div>
+            </InfoWindow>
+          ) : null}
+          <Circle
+            center={{ lat: school.latitude, lng: school.longitude }}
+            radius={school.radius_metres}
+            strokeColor={accent}
+            strokeOpacity={0.9}
+            strokeWeight={2}
+            fillColor={accent}
+            fillOpacity={0.08}
+          />
+        </>
+      ) : null}
+      {pins.map((pin) => (
+        <Marker
+          key={pin.teacher_id}
+          position={{ lat: pin.latitude, lng: pin.longitude }}
+          title={`${pin.full_name} (${pin.status.replace('_', ' ')})`}
+          onClick={() => setActivePinId(pin.teacher_id)}
+          label={
+            apiReady
+              ? {
+                  text: pin.initials.slice(0, 2).toUpperCase(),
+                  color: '#fff',
+                  fontSize: '11px',
+                  fontWeight: '700',
+                }
+              : undefined
+          }
+          icon={
+            apiReady
+              ? {
+                  path: google.maps.SymbolPath.CIRCLE,
+                  scale: 14,
+                  fillColor: statusColor(pin.status),
+                  fillOpacity: 1,
+                  strokeColor: cssVar('--color-surface', '#ffffff'),
+                  strokeWeight: 2,
+                }
+              : undefined
+          }
+        />
+      ))}
+      {activePin ? (
+        <InfoWindow
+          position={{ lat: activePin.latitude, lng: activePin.longitude }}
+          onCloseClick={() => setActivePinId(null)}
+        >
+          <div className="min-w-[10rem] text-sm text-neutral-900">
+            <p className="font-semibold">{activePin.full_name}</p>
+            <p className="mt-1 capitalize">
+              Status: {activePin.status.replace('_', ' ')}
+            </p>
+            <p>Clocked in: {activePin.clock_in_at ?? '—'}</p>
+            <p>
               Distance:{' '}
-              {pin.distance_metres != null
-                ? `${Math.round(pin.distance_metres)}m`
+              {activePin.distance_metres != null
+                ? `${Math.round(activePin.distance_metres)}m`
                 : '—'}
-              <br />
-              Clock out: {pin.clock_out_at ?? '—'}
-            </Popup>
-          </Marker>
-        ))}
-      </MapContainer>
-    </div>
+            </p>
+            <p>Clock out: {activePin.clock_out_at ?? '—'}</p>
+          </div>
+        </InfoWindow>
+      ) : null}
+    </Map>
   );
 }
 
-export function centreMapOnSchool() {
-  (window as unknown as { __taCentreSchool?: () => void }).__taCentreSchool?.();
-}
+export const TeacherAttendanceMap = forwardRef<
+  TeacherAttendanceMapHandle,
+  {
+    school:
+      | (TeacherAttendanceSchoolLocation & { name?: string | null })
+      | null
+      | undefined;
+    pins: TeacherMapPin[];
+    className?: string;
+  }
+>(function TeacherAttendanceMap({ school, pins, className }, ref) {
+  const mapRef = useMemo(
+    () => ({ current: null as TeacherAttendanceMapHandle | null }),
+    [],
+  );
 
-export function fitMapToPins() {
-  (window as unknown as { __taFitPins?: () => void }).__taFitPins?.();
-}
+  useImperativeHandle(ref, () => ({
+    centreOnSchool() {
+      mapRef.current?.centreOnSchool();
+    },
+    fitPins() {
+      mapRef.current?.fitPins();
+    },
+  }));
+
+  return (
+    <div
+      className={
+        className ?? 'h-80 w-full overflow-hidden rounded-xl border border-theme'
+      }
+    >
+      <GoogleMapsProvider>
+        <AttendanceMapInner school={school} pins={pins} mapRef={mapRef} />
+      </GoogleMapsProvider>
+    </div>
+  );
+});

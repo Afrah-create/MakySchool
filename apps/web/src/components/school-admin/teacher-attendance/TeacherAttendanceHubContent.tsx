@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Download, MapPin, Search } from 'lucide-react';
 import type { TeacherAttendanceStatus, TeacherTodayRow } from '@makyschool/shared';
 import { PageHeader } from '@makyschool/ui/components/ui/PageHeader';
@@ -10,10 +10,7 @@ import { EmptyState } from '@makyschool/ui/components/ui/EmptyState';
 import { LoadingButton } from '@makyschool/ui/components/ui/LoadingButton';
 import { Skeleton } from '@makyschool/ui/components/ui/Skeleton';
 import { CanDo } from '@/components/ui/CanDo';
-import {
-  centreMapOnSchool,
-  fitMapToPins,
-} from '@/components/school-admin/teacher-attendance/TeacherAttendanceMap';
+import type { TeacherAttendanceMapHandle } from '@/components/school-admin/teacher-attendance/TeacherAttendanceMap';
 import { ManualMarkDialog } from '@/components/school-admin/teacher-attendance/ManualMarkDialog';
 import {
   useTeacherAttendanceMap,
@@ -129,6 +126,7 @@ function StatCard({
 }
 
 export function TeacherAttendanceHubContent() {
+  const mapRef = useRef<TeacherAttendanceMapHandle>(null);
   const { data, isLoading, isError, refetch } = useTeacherAttendanceToday();
   const mapQuery = useTeacherAttendanceMap();
   const [filter, setFilter] = useState<StatusFilter>('all');
@@ -363,19 +361,20 @@ export function TeacherAttendanceHubContent() {
             <LoadingButton
               variant="ghost"
               className="!px-3 !py-1.5 text-xs"
-              onClick={() => centreMapOnSchool()}
+              onClick={() => mapRef.current?.centreOnSchool()}
             >
               Centre on school
             </LoadingButton>
             <LoadingButton
               variant="ghost"
               className="!px-3 !py-1.5 text-xs"
-              onClick={() => fitMapToPins()}
+              onClick={() => mapRef.current?.fitPins()}
             >
               Fit all pins
             </LoadingButton>
           </div>
           <TeacherAttendanceMap
+            ref={mapRef}
             school={mapQuery.data?.school_location}
             pins={mapQuery.data?.pins ?? []}
             className="h-[28rem] w-full overflow-hidden rounded-xl border border-theme"

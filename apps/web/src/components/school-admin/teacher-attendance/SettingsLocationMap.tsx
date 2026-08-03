@@ -1,29 +1,12 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Circle, MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: '/leaflet/marker-icon-2x.png',
-  iconUrl: '/leaflet/marker-icon.png',
-  shadowUrl: '/leaflet/marker-shadow.png',
-});
-
-function ClickHandler({
-  onPick,
-}: {
-  onPick: (lat: number, lng: number) => void;
-}) {
-  useMapEvents({
-    click(e) {
-      onPick(e.latlng.lat, e.latlng.lng);
-    },
-  });
-  return null;
-}
+import { Circle, Map, Marker } from '@vis.gl/react-google-maps';
+import {
+  GoogleMapsProvider,
+  UGANDA_CENTRE,
+  cssAccent,
+} from '@/components/maps/GoogleMapsProvider';
 
 export function SettingsLocationMap({
   latitude,
@@ -36,47 +19,49 @@ export function SettingsLocationMap({
   radiusMetres: number;
   onPick: (lat: number, lng: number) => void;
 }) {
-  const centre = useMemo((): [number, number] => {
-    if (latitude != null && longitude != null) return [latitude, longitude];
-    return [1.3733, 32.2903];
-  }, [latitude, longitude]);
-
-  const accent =
-    typeof window !== 'undefined'
-      ? getComputedStyle(document.documentElement)
-          .getPropertyValue('--color-accent')
-          .trim() || '#4F6EF7'
-      : '#4F6EF7';
+  const hasPin = latitude != null && longitude != null;
+  const centre = useMemo(
+    () => (hasPin ? { lat: latitude!, lng: longitude! } : UGANDA_CENTRE),
+    [hasPin, latitude, longitude],
+  );
+  const accent = cssAccent();
 
   return (
     <div className="h-56 w-full overflow-hidden rounded-xl border border-theme">
-      <MapContainer
-        center={centre}
-        zoom={latitude != null ? 16 : 7}
-        className="h-full w-full"
-        scrollWheelZoom
-      >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OpenStreetMap contributors"
-        />
-        <ClickHandler onPick={onPick} />
-        {latitude != null && longitude != null ? (
-          <>
-            <Marker position={[latitude, longitude]} />
-            <Circle
-              center={[latitude, longitude]}
-              radius={radiusMetres}
-              pathOptions={{
-                color: accent,
-                fillColor: accent,
-                fillOpacity: 0.08,
-                weight: 2,
-              }}
-            />
-          </>
-        ) : null}
-      </MapContainer>
+      <GoogleMapsProvider>
+        <Map
+          defaultCenter={centre}
+          defaultZoom={hasPin ? 16 : 7}
+          center={hasPin ? centre : undefined}
+          gestureHandling="greedy"
+          disableDefaultUI={false}
+          mapTypeControl={false}
+          streetViewControl={false}
+          fullscreenControl={false}
+          className="h-full w-full"
+          onClick={(e) => {
+            const lat = e.detail.latLng?.lat;
+            const lng = e.detail.latLng?.lng;
+            if (lat == null || lng == null) return;
+            onPick(lat, lng);
+          }}
+        >
+          {hasPin ? (
+            <>
+              <Marker position={{ lat: latitude!, lng: longitude! }} />
+              <Circle
+                center={{ lat: latitude!, lng: longitude! }}
+                radius={radiusMetres}
+                strokeColor={accent}
+                strokeOpacity={0.9}
+                strokeWeight={2}
+                fillColor={accent}
+                fillOpacity={0.08}
+              />
+            </>
+          ) : null}
+        </Map>
+      </GoogleMapsProvider>
     </div>
   );
 }
