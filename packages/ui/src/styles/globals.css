@@ -366,6 +366,34 @@ textarea {
   box-shadow: var(--auth-input-shadow);
 }
 
+/* Override .ms-input shorthand padding so icons / toggles don't clamp text */
+.ms-input.auth-input-field.auth-input-with-icon {
+  padding-left: 2.75rem;
+}
+
+.ms-input.auth-input-field.auth-input-with-toggle {
+  padding-right: 2.75rem;
+}
+
+.ms-input.auth-input-field.auth-input-with-icon.auth-input-with-toggle {
+  padding-left: 2.75rem;
+  padding-right: 2.75rem;
+}
+
+/* Override .ms-input shorthand padding so icons / toggles don't clamp text */
+.ms-input.auth-input-field.auth-input-with-icon {
+  padding-left: 2.75rem;
+}
+
+.ms-input.auth-input-field.auth-input-with-toggle {
+  padding-right: 2.75rem;
+}
+
+.ms-input.auth-input-field.auth-input-with-icon.auth-input-with-toggle {
+  padding-left: 2.75rem;
+  padding-right: 2.75rem;
+}
+
 .auth-context-chip {
   border-radius: 0.75rem;
   border: 1px solid var(--auth-context-border);

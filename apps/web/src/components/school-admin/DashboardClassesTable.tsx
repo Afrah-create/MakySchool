@@ -28,12 +28,17 @@ export function DashboardClassesTable() {
 
   return (
     <section className="ms-card overflow-hidden">
-      <div className="flex items-center justify-between border-b border-theme px-5 py-4">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-theme px-4 py-3.5 sm:px-5">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-theme-primary">Class overview</h2>
-          <p className="mt-0.5 text-xs text-theme-muted">Enrollment and subject status by class</p>
+          <p className="mt-0.5 text-xs text-theme-muted">
+            Enrolment and subject coverage
+          </p>
         </div>
-        <Link href="/dashboard/classes" className="text-xs font-medium text-theme-accent hover:underline">
+        <Link
+          href="/dashboard/classes"
+          className="shrink-0 text-xs font-medium text-theme-accent hover:underline"
+        >
           View all
         </Link>
       </div>

@@ -27,7 +27,7 @@ export function SettingsLocationMap({
   const accent = cssAccent();
 
   return (
-    <div className="h-56 w-full overflow-hidden rounded-xl border border-theme">
+    <div className="h-72 w-full overflow-hidden rounded-xl border border-theme sm:h-80">
       <GoogleMapsProvider>
         <Map
           defaultCenter={centre}

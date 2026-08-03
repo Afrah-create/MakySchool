@@ -54,6 +54,10 @@ ALTER TABLE primary_thematic_assessments
 ALTER TABLE primary_thematic_assessments
   DROP CONSTRAINT IF EXISTS primary_thematic_assessments_student_id_theme_id_strand_term_id_key;
 
+-- Postgres may truncate long constraint names (seen in production as ..._strand_ter_key).
+ALTER TABLE primary_thematic_assessments
+  DROP CONSTRAINT IF EXISTS primary_thematic_assessments_student_id_theme_id_strand_ter_key;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_primary_thematic_assessments_sitting
   ON primary_thematic_assessments (student_id, theme_id, strand, sitting_id)
   WHERE sitting_id IS NOT NULL;

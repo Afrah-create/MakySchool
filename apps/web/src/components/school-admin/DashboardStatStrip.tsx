@@ -24,7 +24,9 @@ export function DashboardStatStrip() {
     mutate: mutateSubjects,
   } = useSchoolSWR<unknown[]>("/schools/subjects");
 
-  const isLoading = (loadingClasses && classes === undefined) || (loadingSubjects && subjects === undefined);
+  const isLoading =
+    (loadingClasses && classes === undefined) ||
+    (loadingSubjects && subjects === undefined);
   const isValidating = validatingClasses || validatingSubjects;
   const error = classesError ?? subjectsError;
   const hasData = classes !== undefined && subjects !== undefined;
@@ -34,7 +36,8 @@ export function DashboardStatStrip() {
     void mutateSubjects();
   };
 
-  const studentCount = classes?.reduce((sum, row) => sum + (row.student_count ?? 0), 0) ?? 0;
+  const studentCount =
+    classes?.reduce((sum, row) => sum + (row.student_count ?? 0), 0) ?? 0;
 
   const cards = [
     {
@@ -74,43 +77,45 @@ export function DashboardStatStrip() {
       showRefreshing={false}
     >
       {() => (
-        <div>
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-theme-primary">At a glance</h2>
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-theme-primary">
+              At a glance
+            </h2>
             <Link
               href="/dashboard/students"
               className="text-xs font-medium text-theme-accent hover:underline"
             >
-              View all
+              View students
             </Link>
           </div>
-          <div className="mt-4 -mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:gap-4 sm:px-0 [&::-webkit-scrollbar]:hidden">
+          <div className="grid grid-cols-3 gap-3">
             {cards.map((card) => {
               const Icon = card.icon;
               return (
                 <Link
                   key={card.key}
                   href={card.href}
-                  className="ms-card group flex w-44 shrink-0 flex-col justify-between p-4 transition hover:border-accent-soft sm:w-56 sm:p-5"
+                  className="ms-card group flex min-h-[6.5rem] flex-col justify-between p-3.5 transition hover:border-accent-soft sm:min-h-[7.5rem] sm:p-5"
                 >
-                  <div className="flex items-start justify-between">
-                    <span
-                      className={`flex h-10 w-10 items-center justify-center rounded-xl ${card.tone}`}
-                    >
-                      <Icon className="h-5 w-5" />
-                    </span>
-                  </div>
-                  <div className="mt-6">
-                    <p className="text-2xl font-semibold tabular-nums text-theme-primary">
+                  <span
+                    className={`flex h-8 w-8 items-center justify-center rounded-lg sm:h-10 sm:w-10 sm:rounded-xl ${card.tone}`}
+                  >
+                    <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+                  </span>
+                  <div>
+                    <p className="text-lg font-semibold tabular-nums text-theme-primary sm:text-2xl">
                       {card.value}
                     </p>
-                    <p className="mt-1 text-sm text-theme-muted">{card.label}</p>
+                    <p className="mt-0.5 text-[11px] text-theme-muted sm:text-sm">
+                      {card.label}
+                    </p>
                   </div>
                 </Link>
               );
             })}
           </div>
-        </div>
+        </section>
       )}
     </QueryState>
   );

@@ -14,12 +14,12 @@ export function SchoolAdminDashboardHome() {
   const { school } = useSchool();
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="flex flex-col gap-5 sm:gap-6">
       {subscriptionsEnabled() ? <SubscriptionBanner /> : null}
       <DashboardHero school={school} />
       <DisciplineRepeatOffendersBanner />
-      <DashboardQuickActions />
       <DashboardStatStrip />
+      <DashboardQuickActions />
       <DashboardAnalyticsStrip />
       <DashboardClassesTable />
     </div>

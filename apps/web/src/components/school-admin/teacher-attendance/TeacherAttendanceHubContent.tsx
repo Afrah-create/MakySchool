@@ -3,7 +3,13 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useMemo, useRef, useState } from 'react';
-import { Download, MapPin, Search } from 'lucide-react';
+import {
+  Download,
+  MapPin,
+  RefreshCw,
+  Search,
+  Settings2,
+} from 'lucide-react';
 import type { TeacherAttendanceStatus, TeacherTodayRow } from '@makyschool/shared';
 import { PageHeader } from '@makyschool/ui/components/ui/PageHeader';
 import { EmptyState } from '@makyschool/ui/components/ui/EmptyState';
@@ -24,7 +30,7 @@ const TeacherAttendanceMap = dynamic(
     ),
   {
     ssr: false,
-    loading: () => <Skeleton className="h-80 w-full rounded-xl" />,
+    loading: () => <Skeleton className="h-full min-h-[20rem] w-full rounded-2xl" />,
   },
 );
 
@@ -101,26 +107,25 @@ function exportCsv(rows: TeacherTodayRow[], date: string) {
   URL.revokeObjectURL(url);
 }
 
-function StatCard({
+function StatPill({
   label,
   value,
-  hint,
   tone,
 }: {
   label: string;
   value: string | number;
-  hint?: string;
   tone?: string;
 }) {
   return (
-    <div className="rounded-xl border border-theme bg-theme-surface px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-theme-muted">
+    <div className="min-w-0 rounded-xl border border-theme bg-theme-surface px-3 py-2.5 sm:px-4">
+      <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-theme-muted sm:text-[11px]">
         {label}
       </p>
-      <p className={`mt-1 text-2xl font-semibold tabular-nums ${tone ?? 'text-theme-primary'}`}>
+      <p
+        className={`mt-0.5 text-xl font-semibold tabular-nums sm:text-2xl ${tone ?? 'text-theme-primary'}`}
+      >
         {value}
       </p>
-      {hint ? <p className="mt-0.5 text-xs text-theme-muted">{hint}</p> : null}
     </div>
   );
 }
@@ -131,7 +136,7 @@ export function TeacherAttendanceHubContent() {
   const mapQuery = useTeacherAttendanceMap();
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
-  const [mobileTab, setMobileTab] = useState<'list' | 'map'>('list');
+  const [mobileTab, setMobileTab] = useState<'map' | 'list'>('map');
   const [manual, setManual] = useState<{
     id: string;
     name: string;
@@ -169,8 +174,8 @@ export function TeacherAttendanceHubContent() {
     return (
       <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
         <Skeleton className="h-16 w-full rounded-xl" />
-        <Skeleton className="h-24 w-full rounded-xl" />
-        <Skeleton className="h-96 w-full rounded-xl" />
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <Skeleton className="h-[28rem] w-full rounded-2xl" />
       </div>
     );
   }
@@ -193,24 +198,31 @@ export function TeacherAttendanceHubContent() {
     { id: 'present', label: 'Present' },
     { id: 'late', label: 'Late' },
     { id: 'absent', label: 'Absent' },
-    { id: 'outside_fence', label: 'Outside fence' },
+    { id: 'outside_fence', label: 'Outside' },
     { id: 'not_yet_arrived', label: 'Not yet' },
   ];
 
+  const pinCount = mapQuery.data?.pins.length ?? 0;
+  const absentCount = mapQuery.data?.absent_teachers.length ?? 0;
+
   return (
-    <div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-6">
+    <div className="mx-auto max-w-7xl space-y-4 p-4 sm:space-y-5 sm:p-6">
       <PageHeader
         title="Teacher attendance"
-        description="Daily attendance tracking with GPS verification"
+        description={dateLabel || 'Daily attendance with GPS verification'}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link href="/dashboard/teacher-attendance/history" className="ms-btn-ghost">
+            <Link
+              href="/dashboard/teacher-attendance/history"
+              className="ms-btn-ghost"
+            >
               History
             </Link>
             <Link
               href="/dashboard/settings/teacher-attendance"
-              className="ms-btn-ghost"
+              className="ms-btn-ghost inline-flex items-center gap-1.5"
             >
+              <Settings2 className="h-4 w-4" />
               Settings
             </Link>
             <LoadingButton
@@ -218,56 +230,146 @@ export function TeacherAttendanceHubContent() {
               onClick={() => exportCsv(filtered, data.date)}
             >
               <Download className="h-4 w-4" />
-              Export CSV
+              Export
             </LoadingButton>
           </div>
         }
       />
 
-      <p className="text-2xl font-semibold text-theme-primary">{dateLabel}</p>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <StatCard
+      {/* Compact stats */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <StatPill
           label="Present"
           value={summary?.present ?? 0}
-          hint={`${summary?.attendance_rate ?? 0}% arrived`}
           tone="text-theme-success"
         />
-        <StatCard label="Late" value={summary?.late ?? 0} tone="text-theme-warning" />
-        <StatCard label="Absent" value={summary?.absent ?? 0} tone="text-theme-danger" />
-        <StatCard label="Not yet arrived" value={summary?.not_yet_arrived ?? 0} />
-        <StatCard
-          label="Attendance rate"
+        <StatPill
+          label="Late"
+          value={summary?.late ?? 0}
+          tone="text-theme-warning"
+        />
+        <StatPill
+          label="Absent"
+          value={summary?.absent ?? 0}
+          tone="text-theme-danger"
+        />
+        <StatPill label="Not yet" value={summary?.not_yet_arrived ?? 0} />
+        <StatPill
+          label="Rate"
           value={`${summary?.attendance_rate ?? 0}%`}
           tone={rateColor(summary?.attendance_rate ?? 0)}
         />
       </div>
 
-      <div className="flex gap-2 lg:hidden">
+      {/* Mobile tabs — map first */}
+      <div className="flex rounded-xl border border-theme bg-theme-raised/40 p-1 lg:hidden">
         <button
           type="button"
-          className={`ms-btn-ghost flex-1 ${mobileTab === 'list' ? '!bg-theme-accent-muted text-theme-accent' : ''}`}
-          onClick={() => setMobileTab('list')}
-        >
-          List
-        </button>
-        <button
-          type="button"
-          className={`ms-btn-ghost flex-1 ${mobileTab === 'map' ? '!bg-theme-accent-muted text-theme-accent' : ''}`}
+          className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+            mobileTab === 'map'
+              ? 'bg-theme-surface text-theme-primary shadow-sm'
+              : 'text-theme-muted'
+          }`}
           onClick={() => setMobileTab('map')}
         >
           Map
         </button>
+        <button
+          type="button"
+          className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+            mobileTab === 'list'
+              ? 'bg-theme-surface text-theme-primary shadow-sm'
+              : 'text-theme-muted'
+          }`}
+          onClick={() => setMobileTab('list')}
+        >
+          List ({filtered.length})
+        </button>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      {/* Map-first layout: large map on top / left, list secondary */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(18rem,0.9fr)] xl:gap-5">
         <section
-          className={`overflow-hidden rounded-xl border border-theme bg-theme-surface ${
-            mobileTab === 'map' ? 'hidden lg:block' : ''
+          className={`overflow-hidden rounded-2xl border border-theme bg-theme-surface shadow-theme-card ${
+            mobileTab === 'list' ? 'hidden lg:block' : ''
           }`}
         >
-          <div className="flex flex-col gap-3 border-b border-theme p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-theme px-3 py-2.5 sm:px-4">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-theme-primary">Live map</p>
+              <p className="text-xs text-theme-muted">
+                {pinCount} pin{pinCount === 1 ? '' : 's'}
+                {absentCount > 0 ? ` · ${absentCount} not arrived` : ''}
+                {updatedLabel ? ` · Updated ${updatedLabel}` : ''}
+              </p>
+            </div>
             <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                className="ms-btn-ghost !px-2.5 !py-1.5 text-xs"
+                onClick={() => mapRef.current?.centreOnSchool()}
+              >
+                Centre school
+              </button>
+              <button
+                type="button"
+                className="ms-btn-ghost !px-2.5 !py-1.5 text-xs"
+                onClick={() => mapRef.current?.fitPins()}
+              >
+                Fit pins
+              </button>
+              <button
+                type="button"
+                className="ms-btn-ghost !px-2.5 !py-1.5 text-xs"
+                onClick={() => void mapQuery.refetch()}
+                title="Refresh map"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="relative h-[min(70vh,36rem)] w-full min-h-[22rem] sm:h-[min(72vh,40rem)] sm:min-h-[28rem]">
+            <TeacherAttendanceMap
+              ref={mapRef}
+              school={mapQuery.data?.school_location}
+              pins={mapQuery.data?.pins ?? []}
+              className="absolute inset-0 h-full w-full"
+            />
+          </div>
+
+          {absentCount > 0 ? (
+            <div className="border-t border-theme px-3 py-2.5 sm:px-4">
+              <p className="text-xs leading-relaxed text-theme-muted">
+                <span className="font-medium text-theme-secondary">
+                  Not yet arrived:
+                </span>{' '}
+                {mapQuery
+                  .data!.absent_teachers.slice(0, 8)
+                  .map((t) => t.full_name)
+                  .join(', ')}
+                {absentCount > 8 ? ` +${absentCount - 8} more` : ''}
+              </p>
+            </div>
+          ) : null}
+        </section>
+
+        <section
+          className={`flex min-h-0 flex-col overflow-hidden rounded-2xl border border-theme bg-theme-surface shadow-theme-card ${
+            mobileTab === 'map' ? 'hidden lg:flex' : 'flex'
+          }`}
+        >
+          <div className="space-y-2.5 border-b border-theme p-3 sm:p-4">
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-theme-muted" />
+              <input
+                className="ms-input w-full !pl-8"
+                placeholder="Search teachers"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </label>
+            <div className="flex flex-wrap gap-1">
               {filters.map((f) => (
                 <button
                   key={f.id}
@@ -284,26 +386,22 @@ export function TeacherAttendanceHubContent() {
                 </button>
               ))}
             </div>
-            <label className="relative block sm:w-52">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-theme-muted" />
-              <input
-                className="ms-input w-full !pl-8"
-                placeholder="Search teachers"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </label>
           </div>
 
           {filtered.length === 0 ? (
-            <EmptyState
-              title="No teachers match"
-              description="Try another filter or search."
-            />
+            <div className="flex flex-1 items-center justify-center p-4">
+              <EmptyState
+                title="No teachers match"
+                description="Try another filter or search."
+              />
+            </div>
           ) : (
-            <ul className="divide-y divide-[var(--color-border)]">
+            <ul className="max-h-[min(70vh,36rem)] flex-1 divide-y divide-[var(--color-border)] overflow-y-auto sm:max-h-[min(72vh,40rem)]">
               {filtered.map((t) => (
-                <li key={t.teacher_id} className="px-4 py-3 hover:bg-theme-raised/30">
+                <li
+                  key={t.teacher_id}
+                  className="px-3 py-3 hover:bg-theme-raised/30 sm:px-4"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -324,7 +422,7 @@ export function TeacherAttendanceHubContent() {
                         {t.clock_in_distance_metres != null ? (
                           <>
                             <MapPin className="mr-1 inline h-3 w-3" />
-                            {Math.round(t.clock_in_distance_metres)}m from school
+                            {Math.round(t.clock_in_distance_metres)}m
                           </>
                         ) : (
                           'No GPS yet'
@@ -333,8 +431,8 @@ export function TeacherAttendanceHubContent() {
                       </p>
                     </div>
                     <div className="shrink-0 text-right text-xs tabular-nums text-theme-muted">
-                      <p>{formatClock(t.clock_in_at)}</p>
-                      <p className="mt-0.5">Out: {formatClock(t.clock_out_at)}</p>
+                      <p>In {formatClock(t.clock_in_at)}</p>
+                      <p className="mt-0.5">Out {formatClock(t.clock_out_at)}</p>
                       <CanDo action="manualMarkAttendance">
                         <button
                           type="button"
@@ -352,46 +450,6 @@ export function TeacherAttendanceHubContent() {
               ))}
             </ul>
           )}
-        </section>
-
-        <section
-          className={`space-y-3 ${mobileTab === 'list' ? 'hidden lg:block' : ''}`}
-        >
-          <div className="flex flex-wrap gap-2">
-            <LoadingButton
-              variant="ghost"
-              className="!px-3 !py-1.5 text-xs"
-              onClick={() => mapRef.current?.centreOnSchool()}
-            >
-              Centre on school
-            </LoadingButton>
-            <LoadingButton
-              variant="ghost"
-              className="!px-3 !py-1.5 text-xs"
-              onClick={() => mapRef.current?.fitPins()}
-            >
-              Fit all pins
-            </LoadingButton>
-          </div>
-          <TeacherAttendanceMap
-            ref={mapRef}
-            school={mapQuery.data?.school_location}
-            pins={mapQuery.data?.pins ?? []}
-            className="h-[28rem] w-full overflow-hidden rounded-xl border border-theme"
-          />
-          <p className="text-xs text-theme-muted">
-            Last updated: {updatedLabel ?? '—'} · Auto-refreshes every minute
-          </p>
-          {(mapQuery.data?.absent_teachers.length ?? 0) > 0 ? (
-            <p className="text-xs text-theme-muted">
-              {mapQuery.data!.absent_teachers.length} teachers not yet arrived:{' '}
-              {mapQuery.data!.absent_teachers
-                .slice(0, 5)
-                .map((t) => t.full_name)
-                .join(', ')}
-              {mapQuery.data!.absent_teachers.length > 5 ? '…' : ''}
-            </p>
-          ) : null}
         </section>
       </div>
 

@@ -39,7 +39,7 @@ Lower primary (P1–P3) uses **thematic sittings** (same BOT/MID/EOT types), not
 1. **Setup** — Themes & strands CRUD under Primary setup (defaults seeded).
 2. **Exam types** — Shared BOT / MID / EOT catalogue.
 3. **Thematic sittings** — Admin creates a sitting per class × term × type; open for assessment.
-4. **Thematic marks (teachers)** — Scalable sheet: pick open sitting → strand tabs → students × themes with level + comment per cell. Bulk fill column/strand; one-shot sheet save (`POST /marks/thematic/sheet`); submit locks the sitting. Admins do not enter marks — they open/close sittings, unlock, and approve reports.
+4. **Thematic marks (teachers)** — Student-first sheet: pick open sitting → strand checklist → learner list → score themes (levels 1–4, empty until set) + one optional strand comment. Saves only changed scored cells (`POST /marks/thematic/sheet`); submit locks the sitting. Admins do not enter marks — they open/close sittings, unlock, and approve reports.
 5. **Report cards** — Comments + head-teacher approval keyed by `sitting_id`; learner portal lists approved thematic reports alongside upper-primary exams.
 
 ---
@@ -48,7 +48,7 @@ Lower primary (P1–P3) uses **thematic sittings** (same BOT/MID/EOT types), not
 
 | Piece | Path |
 |-------|------|
-| Migrations | `048`–`050`, `053`, **`059_primary_thematic_sittings.sql`** |
+| Migrations | `048`–`050`, `053`, **`059`–`060`** (thematic sittings + unique-constraint fix) |
 | Access | `primary_access.py`, `primary_exam_access.py` |
 | Exams | `services/primary/exams.py` |
 | Sittings | `services/primary/sittings.py` |

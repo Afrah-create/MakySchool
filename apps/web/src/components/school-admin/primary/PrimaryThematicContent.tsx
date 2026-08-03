@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { DashboardPage } from "@makyschool/ui/components/layout/DashboardPage";
 import { EmptyState } from "@makyschool/ui/components/ui/EmptyState";
 import { Skeleton } from "@makyschool/ui/components/ui/Skeleton";
@@ -23,13 +24,17 @@ import { primaryApi } from "@/lib/api/primary";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const LEVEL_OPTIONS = [
-  { value: "4", label: "4 E" },
-  { value: "3", label: "3 G" },
-  { value: "2", label: "2 F" },
-  { value: "1", label: "1 P" },
+  { value: "4", label: "4 · Excellent", short: "E" },
+  { value: "3", label: "3 · Good", short: "G" },
+  { value: "2", label: "2 · Fair", short: "F" },
+  { value: "1", label: "1 · Poor", short: "P" },
 ] as const;
 
-const EMPTY_ROSTER: Array<{ id: string; fullName: string; learnerId: string | null }> = [];
+const EMPTY_ROSTER: Array<{
+  id: string;
+  fullName: string;
+  learnerId: string | null;
+}> = [];
 const EMPTY_THEMES: Array<{ id: string; name: string }> = [];
 const EMPTY_STRANDS: string[] = [];
 const EMPTY_MARKS: Array<{
@@ -43,10 +48,16 @@ const EMPTY_MARKS: Array<{
   sittingId?: string | null;
 }> = [];
 
-type CellDraft = { level: string; comment: string };
+/** Level is null until the teacher explicitly scores the theme. */
+type CellDraft = { level: string | null };
 
 function cellKey(studentId: string, themeId: string) {
   return `${studentId}:${themeId}`;
+}
+
+function levelShort(level: string | null) {
+  if (!level) return "—";
+  return LEVEL_OPTIONS.find((o) => o.value === level)?.short ?? level;
 }
 
 export function PrimaryThematicContent({
@@ -77,8 +88,16 @@ export function PrimaryThematicContent({
   const [classId, setClassId] = useState(search.get("classId") ?? "");
   const [sittingId, setSittingId] = useState(search.get("sittingId") ?? "");
   const [strand, setStrand] = useState("");
+  const [studentId, setStudentId] = useState("");
   const [drafts, setDrafts] = useState<Record<string, CellDraft>>({});
   const [baseline, setBaseline] = useState<Record<string, CellDraft>>({});
+  /** One optional comment per learner for the active strand. */
+  const [strandComments, setStrandComments] = useState<Record<string, string>>(
+    {},
+  );
+  const [baselineComments, setBaselineComments] = useState<
+    Record<string, string>
+  >({});
   const [fillLevel, setFillLevel] = useState("3");
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -111,7 +130,11 @@ export function PrimaryThematicContent({
   const strands = themeData?.strands ?? EMPTY_STRANDS;
 
   const { data: existingData, isPending: marksPending } = useQuery({
-    queryKey: primaryKeys.thematic(classId, term?.id ?? "", sittingId || undefined),
+    queryKey: primaryKeys.thematic(
+      classId,
+      term?.id ?? "",
+      sittingId || undefined,
+    ),
     queryFn: () => {
       if (!term?.id) throw new Error("Term is required.");
       return primaryApi.listThematic({
@@ -133,7 +156,11 @@ export function PrimaryThematicContent({
       setSittingId(openSittings[0].id);
       return;
     }
-    if (sittingId && sittings.length && !sittings.some((s) => s.id === sittingId)) {
+    if (
+      sittingId &&
+      sittings.length &&
+      !sittings.some((s) => s.id === sittingId)
+    ) {
       setSittingId(openSittings[0]?.id ?? "");
     }
   }, [openSittings, sittings, sittingId]);
@@ -144,6 +171,16 @@ export function PrimaryThematicContent({
       setStrand(strands[0] ?? "");
     }
   }, [strands, strand]);
+
+  useEffect(() => {
+    if (!roster.length) {
+      setStudentId("");
+      return;
+    }
+    if (!studentId || !roster.some((r) => r.id === studentId)) {
+      setStudentId(roster[0]!.id);
+    }
+  }, [roster, studentId]);
 
   useEffect(() => {
     const currentClassId = search.get("classId") ?? "";
@@ -174,24 +211,31 @@ export function PrimaryThematicContent({
     if (!hydrateKey || !themes.length || !strand) return;
     if (sittingId && marksPending) return;
 
-    const next: Record<string, CellDraft> = {};
+    const nextDrafts: Record<string, CellDraft> = {};
+    const nextComments: Record<string, string> = {};
+
     for (const student of roster) {
+      const studentRows = existing.filter(
+        (r) => r.studentId === student.id && r.strand === strand,
+      );
+      // Prefer first non-empty comment for this learner × strand.
+      const comment =
+        studentRows.find((r) => r.teacherComment?.trim())?.teacherComment ??
+        "";
+      nextComments[student.id] = comment;
+
       for (const theme of themes) {
         const key = cellKey(student.id, theme.id);
-        const row = existing.find(
-          (r) =>
-            r.studentId === student.id &&
-            r.themeId === theme.id &&
-            r.strand === strand,
-        );
-        next[key] = {
-          level: row ? String(row.level) : "3",
-          comment: row?.teacherComment ?? "",
+        const row = studentRows.find((r) => r.themeId === theme.id);
+        nextDrafts[key] = {
+          level: row ? String(row.level) : null,
         };
       }
     }
-    setDrafts(next);
-    setBaseline(next);
+    setDrafts(nextDrafts);
+    setBaseline(nextDrafts);
+    setStrandComments(nextComments);
+    setBaselineComments(nextComments);
     // Intentionally keyed by hydrateKey to avoid reference-driven loops.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrateKey, marksPending]);
@@ -207,18 +251,51 @@ export function PrimaryThematicContent({
     activeSitting.status === "open" &&
     !locked;
 
+  const strandProgress = useMemo(() => {
+    return strands.map((s) => {
+      const scored = new Set(
+        existing
+          .filter((r) => r.strand === s)
+          .map((r) => `${r.studentId}:${r.themeId}`),
+      );
+      const total = roster.length * themes.length;
+      let filled = scored.size;
+      // Include unsaved drafts for the active strand.
+      if (s === strand) {
+        filled = 0;
+        for (const student of roster) {
+          for (const theme of themes) {
+            const cell = drafts[cellKey(student.id, theme.id)];
+            if (cell?.level) filled += 1;
+          }
+        }
+      }
+      return {
+        name: s,
+        filled,
+        total,
+        complete: total > 0 && filled >= total,
+      };
+    });
+  }, [strands, existing, roster, themes, strand, drafts]);
+
   const dirtyCount = useMemo(() => {
     let n = 0;
     for (const [key, cell] of Object.entries(drafts)) {
       const base = baseline[key];
       if (!base) {
-        n += 1;
+        if (cell.level) n += 1;
         continue;
       }
-      if (base.level !== cell.level || base.comment !== cell.comment) n += 1;
+      if (base.level !== cell.level) n += 1;
+    }
+    for (const student of roster) {
+      const cur = (strandComments[student.id] ?? "").trim();
+      const base = (baselineComments[student.id] ?? "").trim();
+      if (cur !== base) n += 1;
     }
     return n;
-  }, [drafts, baseline]);
+  }, [drafts, baseline, strandComments, baselineComments, roster]);
 
   const progress = useMemo(() => {
     if (!themes.length || !roster.length || !strands.length) {
@@ -229,41 +306,40 @@ export function PrimaryThematicContent({
     return { filled, total };
   }, [existing, roster, themes, strands]);
 
-  function updateCell(key: string, patch: Partial<CellDraft>) {
+  const activeStudent = roster.find((r) => r.id === studentId) ?? null;
+  const studentIndex = roster.findIndex((r) => r.id === studentId);
+
+  const studentScoredCount = useMemo(() => {
+    if (!studentId) return 0;
+    return themes.filter((t) => drafts[cellKey(studentId, t.id)]?.level)
+      .length;
+  }, [studentId, themes, drafts]);
+
+  function updateLevel(themeId: string, level: string | null) {
+    if (!studentId) return;
+    const key = cellKey(studentId, themeId);
     setDrafts((prev) => ({
       ...prev,
-      [key]: { level: prev[key]?.level ?? "3", comment: prev[key]?.comment ?? "", ...patch },
+      [key]: { level },
     }));
   }
 
-  function fillColumn(themeId: string) {
+  function fillStudentThemes() {
+    if (!studentId || !canEdit) return;
     setDrafts((prev) => {
       const next = { ...prev };
-      for (const student of roster) {
-        const key = cellKey(student.id, themeId);
-        next[key] = {
-          level: fillLevel,
-          comment: next[key]?.comment ?? "",
-        };
+      for (const theme of themes) {
+        next[cellKey(studentId, theme.id)] = { level: fillLevel };
       }
       return next;
     });
   }
 
-  function fillStrandSheet() {
-    setDrafts((prev) => {
-      const next = { ...prev };
-      for (const student of roster) {
-        for (const theme of themes) {
-          const key = cellKey(student.id, theme.id);
-          next[key] = {
-            level: fillLevel,
-            comment: next[key]?.comment ?? "",
-          };
-        }
-      }
-      return next;
-    });
+  function goStudent(delta: number) {
+    if (!roster.length) return;
+    const idx = Math.max(0, studentIndex);
+    const next = (idx + delta + roster.length) % roster.length;
+    setStudentId(roster[next]!.id);
   }
 
   async function saveSheet(): Promise<boolean> {
@@ -275,21 +351,72 @@ export function PrimaryThematicContent({
       toast.error("This sitting is not open for assessment.");
       return false;
     }
-    const assessments = roster.flatMap((student) =>
-      themes.map((theme) => {
-        const cell = drafts[cellKey(student.id, theme.id)] ?? {
-          level: "3",
-          comment: "",
-        };
-        return {
+
+    // Save only scored cells (and comment changes for scored themes).
+    const assessments: Array<{
+      studentId: string;
+      themeId: string;
+      strand: string;
+      level: number;
+      teacherComment: string | null;
+    }> = [];
+
+    for (const student of roster) {
+      const comment = (strandComments[student.id] ?? "").trim() || null;
+      const baseComment = (baselineComments[student.id] ?? "").trim() || null;
+      const commentChanged = comment !== baseComment;
+
+      // One comment per learner×strand — attach to the first scored theme only.
+      const canonicalThemeId = themes.find(
+        (t) => drafts[cellKey(student.id, t.id)]?.level,
+      )?.id;
+
+      for (const theme of themes) {
+        const key = cellKey(student.id, theme.id);
+        const cell = drafts[key];
+        const base = baseline[key];
+        if (!cell?.level) continue;
+        const levelChanged = !base || base.level !== cell.level;
+        const isCanonical = theme.id === canonicalThemeId;
+        const shouldWriteComment =
+          isCanonical && (commentChanged || levelChanged || !base);
+        if (!levelChanged && !shouldWriteComment) continue;
+        assessments.push({
           studentId: student.id,
           themeId: theme.id,
           strand,
-          level: Number(cell.level || 3),
-          teacherComment: cell.comment.trim() || null,
-        };
-      }),
-    );
+          level: Number(cell.level),
+          teacherComment: isCanonical ? comment : null,
+        });
+      }
+
+      // Comment-only change with existing levels: force update canonical row.
+      if (
+        commentChanged &&
+        canonicalThemeId &&
+        !assessments.some(
+          (a) =>
+            a.studentId === student.id && a.themeId === canonicalThemeId,
+        )
+      ) {
+        const cell = drafts[cellKey(student.id, canonicalThemeId)];
+        if (cell?.level) {
+          assessments.push({
+            studentId: student.id,
+            themeId: canonicalThemeId,
+            strand,
+            level: Number(cell.level),
+            teacherComment: comment,
+          });
+        }
+      }
+    }
+
+    if (assessments.length === 0) {
+      toast.success("Nothing new to save.");
+      return true;
+    }
+
     setSaving(true);
     try {
       const result = await primaryApi.bulkThematicSheet({
@@ -298,11 +425,10 @@ export function PrimaryThematicContent({
         sittingId,
         assessments,
       });
-      toast.success(
-        `Saved ${result.saved} cells for ${strand} (${themes.length} themes × ${roster.length} learners).`,
-      );
+      toast.success(`Saved ${result.saved} assessment${result.saved === 1 ? "" : "s"}.`);
       await qc.invalidateQueries({ queryKey: ["primary", "thematic"] });
       setBaseline(drafts);
+      setBaselineComments(strandComments);
       return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed.");
@@ -321,7 +447,9 @@ export function PrimaryThematicContent({
         if (!ok) return;
       }
       const result = await primaryApi.submitThematic(sittingId);
-      toast.success(`Submitted and locked ${result.submitted} assessment rows.`);
+      toast.success(
+        `Submitted and locked ${result.submitted} assessment rows.`,
+      );
       setSubmitOpen(false);
       await qc.invalidateQueries({ queryKey: ["primary"] });
     } catch (err) {
@@ -356,7 +484,6 @@ export function PrimaryThematicContent({
     );
   }
 
-  // Admin: lifecycle/progress only — no mark entry
   if (!isTeacher) {
     return (
       <DashboardPage
@@ -364,9 +491,12 @@ export function PrimaryThematicContent({
         maxWidth="5xl"
         eyebrow="Primary"
         title="Thematic progress"
-        description="Teachers enter competence levels and theme comments. Admins open sittings, unlock if needed, then approve report cards."
+        description="Teachers enter competence levels and a strand comment per learner. Admins open sittings, unlock if needed, then approve report cards."
         actions={
-          <Link href="/dashboard/primary/sittings" className="ms-btn-primary text-sm">
+          <Link
+            href="/dashboard/primary/sittings"
+            className="ms-btn-primary text-sm"
+          >
             Manage sittings
           </Link>
         }
@@ -418,7 +548,10 @@ export function PrimaryThematicContent({
               title="Select a sitting"
               description="Open sittings for teachers from Thematic sittings, then track completion here."
               action={
-                <Link href="/dashboard/primary/sittings" className="ms-btn-primary">
+                <Link
+                  href="/dashboard/primary/sittings"
+                  className="ms-btn-primary"
+                >
                   Open sittings
                 </Link>
               }
@@ -440,10 +573,22 @@ export function PrimaryThematicContent({
                 </span>
                 {progress.total > 0 ? ` / ${progress.total}` : ""}
               </p>
-              <p className="text-sm text-theme-muted">
-                Teachers enter levels and theme comments on the teacher thematic
-                grade sheet. After they submit, approve reports under Report cards.
-              </p>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {strandProgress.map((s) => (
+                  <li
+                    key={s.name}
+                    className="flex items-center justify-between rounded-lg border border-theme bg-theme-raised/30 px-3 py-2 text-sm"
+                  >
+                    <span className="text-theme-primary">{s.name}</span>
+                    <span className="tabular-nums text-theme-muted">
+                      {s.filled}/{s.total}
+                      {s.complete ? (
+                        <Check className="ml-1.5 inline h-3.5 w-3.5 text-theme-success" />
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
               {canUnlock ? (
                 <LoadingButton
                   loading={submitting}
@@ -460,7 +605,7 @@ export function PrimaryThematicContent({
     );
   }
 
-  const loading = rosterPending || themesPending || (sittingId && marksPending);
+  const loading = rosterPending || themesPending || (!!sittingId && marksPending);
 
   return (
     <DashboardPage
@@ -468,7 +613,7 @@ export function PrimaryThematicContent({
       maxWidth="7xl"
       eyebrow="Primary"
       title="Thematic grade sheet"
-      description="Enter competence levels (1–4) and a short comment per theme for the selected strand. Save often; submit when the sitting is complete."
+      description="Score one learner at a time. Pick a strand, set theme levels (1–4), add one optional comment, then move to the next learner."
     >
       <div className="space-y-4">
         <div className="flex flex-col gap-3 rounded-xl border border-theme bg-theme-raised/40 p-4 sm:flex-row sm:flex-wrap sm:items-end">
@@ -482,6 +627,7 @@ export function PrimaryThematicContent({
               onChange={(e) => {
                 setClassId(e.target.value);
                 setSittingId("");
+                setStudentId("");
               }}
             >
               {lowerClasses.map((c) => (
@@ -510,33 +656,6 @@ export function PrimaryThematicContent({
                 ))}
             </select>
           </label>
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="block">
-              <span className="mb-1 block text-[11px] font-semibold uppercase text-theme-muted">
-                Fill level
-              </span>
-              <select
-                className="ms-input"
-                value={fillLevel}
-                onChange={(e) => setFillLevel(e.target.value)}
-                disabled={!canEdit}
-              >
-                {LEVEL_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="ms-btn-secondary text-sm"
-              disabled={!canEdit || !themes.length}
-              onClick={fillStrandSheet}
-            >
-              Fill strand
-            </button>
-          </div>
         </div>
 
         {!lowerClasses.length ? (
@@ -561,117 +680,242 @@ export function PrimaryThematicContent({
               </p>
             ) : null}
 
+            {/* Strand checklist */}
             <div className="flex flex-wrap gap-1.5">
-              {strands.map((s) => (
+              {strandProgress.map((s) => (
                 <button
-                  key={s}
+                  key={s.name}
                   type="button"
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                    strand === s
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                    strand === s.name
                       ? "bg-theme-accent text-white"
                       : "bg-theme-raised text-theme-secondary hover:bg-theme-raised/80"
                   }`}
-                  onClick={() => setStrand(s)}
+                  onClick={() => setStrand(s.name)}
                 >
-                  {s}
+                  {s.complete ? (
+                    <Check className="h-3.5 w-3.5 opacity-90" />
+                  ) : null}
+                  {s.name}
+                  <span
+                    className={`text-[11px] tabular-nums ${
+                      strand === s.name ? "text-white/80" : "text-theme-muted"
+                    }`}
+                  >
+                    {s.filled}/{s.total || "—"}
+                  </span>
                 </button>
               ))}
             </div>
 
-            <p className="text-xs text-theme-muted">
-              Strand: <strong className="text-theme-primary">{strand}</strong>
-              {" · "}
-              {themes.length} themes × {roster.length} learners
-              {dirtyCount > 0 ? ` · ${dirtyCount} unsaved changes` : ""}
-              {" · "}
-              Levels: 4 Excellent · 3 Good · 2 Fair · 1 Poor
-            </p>
-
-            <div className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
-                  <thead className="bg-table-header text-[11px] font-semibold uppercase tracking-wide text-theme-muted">
-                    <tr>
-                      <th className="sticky left-0 z-20 bg-table-header px-3 py-2.5 text-left">
-                        Student
-                      </th>
-                      {themes.map((theme) => (
-                        <th
-                          key={theme.id}
-                          className="min-w-[9.5rem] px-2 py-2.5 text-center align-bottom"
-                          title={theme.name}
+            <div className="grid gap-4 lg:grid-cols-[minmax(12rem,16rem)_minmax(0,1fr)]">
+              {/* Roster */}
+              <aside className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+                <div className="border-b border-theme px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-theme-muted">
+                    Learners · {roster.length}
+                  </p>
+                </div>
+                <ul className="max-h-[28rem] overflow-y-auto divide-y divide-[var(--color-border)] lg:max-h-[36rem]">
+                  {roster.map((student) => {
+                    const scored = themes.filter(
+                      (t) => drafts[cellKey(student.id, t.id)]?.level,
+                    ).length;
+                    const done = themes.length > 0 && scored >= themes.length;
+                    const active = student.id === studentId;
+                    return (
+                      <li key={student.id}>
+                        <button
+                          type="button"
+                          className={`flex w-full items-center gap-2 px-3 py-2.5 text-left transition ${
+                            active
+                              ? "bg-theme-accent-muted"
+                              : "hover:bg-theme-raised/40"
+                          }`}
+                          onClick={() => setStudentId(student.id)}
                         >
-                          <span className="block max-w-[9rem] truncate normal-case">
-                            {theme.name}
+                          <span
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
+                              done
+                                ? "bg-theme-success-bg text-theme-success"
+                                : scored > 0
+                                  ? "bg-theme-warning-bg text-theme-warning"
+                                  : "bg-theme-raised text-theme-muted"
+                            }`}
+                          >
+                            {done ? <Check className="h-3 w-3" /> : scored}
                           </span>
-                          {canEdit ? (
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-theme-primary">
+                              {student.fullName}
+                            </span>
+                            <span className="block font-mono text-[10px] text-theme-muted">
+                              {student.learnerId || "—"}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </aside>
+
+              {/* Student card */}
+              <section className="overflow-hidden rounded-xl border border-theme bg-theme-surface">
+                {!activeStudent ? (
+                  <EmptyState
+                    title="Select a learner"
+                    description="Choose someone from the list to begin scoring."
+                  />
+                ) : (
+                  <div className="flex flex-col">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-theme px-4 py-3 sm:px-5">
+                      <div className="min-w-0">
+                        <p className="truncate text-base font-semibold text-theme-primary">
+                          {activeStudent.fullName}
+                        </p>
+                        <p className="text-xs text-theme-muted">
+                          {strand} · {studentScoredCount}/{themes.length} themes
+                          scored
+                          {studentIndex >= 0
+                            ? ` · ${studentIndex + 1} of ${roster.length}`
+                            : ""}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          className="ms-btn-ghost !px-2.5 !py-1.5"
+                          disabled={roster.length < 2}
+                          onClick={() => goStudent(-1)}
+                          aria-label="Previous learner"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="ms-btn-ghost !px-2.5 !py-1.5"
+                          disabled={roster.length < 2}
+                          onClick={() => goStudent(1)}
+                          aria-label="Next learner"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                        {canEdit ? (
+                          <>
+                            <select
+                              className="ms-input !py-1.5 text-xs"
+                              value={fillLevel}
+                              onChange={(e) => setFillLevel(e.target.value)}
+                              aria-label="Fill level"
+                            >
+                              {LEVEL_OPTIONS.map((o) => (
+                                <option key={o.value} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
                             <button
                               type="button"
-                              className="mt-1 text-[10px] font-medium normal-case text-theme-accent hover:underline"
-                              onClick={() => fillColumn(theme.id)}
+                              className="ms-btn-secondary text-xs"
+                              onClick={fillStudentThemes}
                             >
-                              Fill col
+                              Fill all themes
                             </button>
-                          ) : null}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {roster.map((student) => (
-                      <tr key={student.id} className="border-t border-theme">
-                        <td className="sticky left-0 z-10 bg-theme-surface px-3 py-2">
-                          <p className="font-medium text-theme-primary">
-                            {student.fullName}
-                          </p>
-                          <p className="font-mono text-[11px] text-theme-muted">
-                            {student.learnerId || "—"}
-                          </p>
-                        </td>
-                        {themes.map((theme) => {
-                          const key = cellKey(student.id, theme.id);
-                          const cell = drafts[key] ?? { level: "3", comment: "" };
-                          return (
-                            <td
-                              key={theme.id}
-                              className="px-1.5 py-2 align-top"
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 p-3 sm:p-4">
+                      <div className="mb-2 hidden grid-cols-[minmax(0,1fr)_auto] gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-theme-muted sm:grid">
+                        <span>Theme</span>
+                        <span className="w-[11.5rem] text-center sm:w-[13rem]">
+                          Level
+                        </span>
+                      </div>
+                      {themes.map((theme) => {
+                        const key = cellKey(activeStudent.id, theme.id);
+                        const level = drafts[key]?.level ?? null;
+                        return (
+                          <div
+                            key={theme.id}
+                            className="grid gap-2 rounded-lg border border-theme bg-theme-raised/20 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-theme-primary">
+                                {theme.name}
+                              </p>
+                              <p className="text-[11px] text-theme-muted sm:hidden">
+                                Level: {levelShort(level)}
+                              </p>
+                            </div>
+                            <div
+                              className="flex flex-wrap gap-1"
+                              role="group"
+                              aria-label={`${theme.name} level`}
                             >
-                              <div className="flex flex-col gap-1">
-                                <select
-                                  className="ms-input w-full text-center text-xs"
+                              <button
+                                type="button"
+                                disabled={!canEdit}
+                                onClick={() => updateLevel(theme.id, null)}
+                                className={`rounded-md px-2 py-1.5 text-xs font-medium ${
+                                  level === null
+                                    ? "bg-theme-raised text-theme-muted ring-1 ring-theme"
+                                    : "text-theme-muted hover:bg-theme-raised"
+                                }`}
+                                title="Clear"
+                              >
+                                —
+                              </button>
+                              {LEVEL_OPTIONS.map((o) => (
+                                <button
+                                  key={o.value}
+                                  type="button"
                                   disabled={!canEdit}
-                                  value={cell.level}
-                                  onChange={(e) =>
-                                    updateCell(key, { level: e.target.value })
+                                  onClick={() =>
+                                    updateLevel(theme.id, o.value)
                                   }
-                                  aria-label={`${student.fullName} ${theme.name} level`}
+                                  className={`min-w-[2.25rem] rounded-md px-2 py-1.5 text-xs font-semibold tabular-nums transition ${
+                                    level === o.value
+                                      ? "bg-theme-accent text-white"
+                                      : "bg-theme-surface text-theme-secondary ring-1 ring-[var(--color-border)] hover:bg-theme-raised"
+                                  }`}
+                                  title={o.label}
                                 >
-                                  {LEVEL_OPTIONS.map((o) => (
-                                    <option key={o.value} value={o.value}>
-                                      {o.label}
-                                    </option>
-                                  ))}
-                                </select>
-                                <input
-                                  className="ms-input w-full text-xs"
-                                  disabled={!canEdit}
-                                  placeholder="Comment"
-                                  maxLength={500}
-                                  value={cell.comment}
-                                  onChange={(e) =>
-                                    updateCell(key, { comment: e.target.value })
-                                  }
-                                  aria-label={`${student.fullName} ${theme.name} comment`}
-                                />
-                              </div>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                                  {o.short}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="border-t border-theme px-4 py-3 sm:px-5">
+                      <label className="block">
+                        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-theme-muted">
+                          Strand comment (optional)
+                        </span>
+                        <textarea
+                          className="ms-input w-full"
+                          rows={2}
+                          maxLength={500}
+                          disabled={!canEdit}
+                          placeholder={`Note for ${activeStudent.fullName} · ${strand}`}
+                          value={strandComments[activeStudent.id] ?? ""}
+                          onChange={(e) =>
+                            setStrandComments((prev) => ({
+                              ...prev,
+                              [activeStudent.id]: e.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </section>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -680,7 +924,7 @@ export function PrimaryThematicContent({
                 disabled={!canEdit || themes.length === 0}
                 onClick={() => void saveSheet()}
               >
-                Save {strand} sheet
+                Save changes
                 {dirtyCount > 0 ? ` (${dirtyCount})` : ""}
               </LoadingButton>
               <LoadingButton
@@ -695,7 +939,11 @@ export function PrimaryThematicContent({
                 <span className="text-xs text-theme-muted">
                   Unsaved changes will be saved before submit.
                 </span>
-              ) : null}
+              ) : (
+                <span className="text-xs text-theme-muted">
+                  Levels: E Excellent · G Good · F Fair · P Poor
+                </span>
+              )}
             </div>
           </>
         )}
@@ -706,7 +954,7 @@ export function PrimaryThematicContent({
         onCancel={() => setSubmitOpen(false)}
         onConfirm={() => void submitSitting()}
         title="Submit thematic sitting?"
-        description="Learners’ levels and theme comments will be locked. An admin must unlock the sitting before further edits."
+        description="Learners’ levels and strand comments will be locked. An admin must unlock the sitting before further edits."
         confirmLabel="Submit & lock"
         variant="danger"
         loading={submitting || saving}

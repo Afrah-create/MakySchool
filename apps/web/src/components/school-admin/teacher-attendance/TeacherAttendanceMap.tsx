@@ -121,7 +121,8 @@ function AttendanceMapInner({
       gestureHandling="greedy"
       mapTypeControl={false}
       streetViewControl={false}
-      fullscreenControl={false}
+      fullscreenControl={true}
+      zoomControl={true}
       className="h-full w-full"
     >
       <MapCameraController school={school} pins={pins} mapRef={mapRef} />
@@ -239,7 +240,8 @@ export const TeacherAttendanceMap = forwardRef<
   return (
     <div
       className={
-        className ?? 'h-80 w-full overflow-hidden rounded-xl border border-theme'
+        className ??
+        'h-full min-h-[20rem] w-full overflow-hidden rounded-2xl border border-theme'
       }
     >
       <GoogleMapsProvider>

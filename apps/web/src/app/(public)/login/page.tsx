@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { headers } from "next/headers";
 import { DEFAULT_ROOT_DOMAIN } from "@makyschool/shared/constants";
 import { AuthBrandPanel, fetchSchoolPreview } from "@/components/auth/AuthBrandPanel";
@@ -51,15 +50,6 @@ export default async function LoginPage() {
               </p>
             </div>
           ) : undefined
-        }
-        footer={
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-theme-muted no-underline transition hover:text-theme-primary"
-          >
-            <span aria-hidden>←</span>
-            Back to home
-          </Link>
         }
       >
         <LoginForm initialSchoolSlug={schoolSlug} lockedSchoolSlug={schoolSlug} />

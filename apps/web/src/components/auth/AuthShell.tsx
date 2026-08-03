@@ -38,11 +38,16 @@ export function AuthInput({
 
   return (
     <label htmlFor={id} className="block">
-      <span className="mb-2 block text-[0.8125rem] font-medium text-theme-muted">{label}</span>
+      <span className="mb-2 block text-[0.8125rem] font-medium text-theme-muted">
+        {label}
+      </span>
       <div className="relative">
         {Icon ? (
-          <Icon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-theme-muted z-10" />
-        ) : null}
+          <Icon
+            className="pointer-events-none absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-theme-muted"
+            aria-hidden
+          />
+          ) : null}
         <input
           id={id}
           name={name}
@@ -51,36 +56,49 @@ export function AuthInput({
           disabled={disabled}
           autoComplete={autoComplete}
           placeholder={placeholder}
-          onChange={onChange ? (event) => onChange(event.target.value) : undefined}
+          onChange={
+            onChange ? (event) => onChange(event.target.value) : undefined
+          }
           aria-invalid={Boolean(error)}
-          aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
+          aria-describedby={
+            error ? `${id}-error` : hint ? `${id}-hint` : undefined
+          }
           className={cn(
-            "ms-input auth-input-field py-3 transition w-full",
+            "ms-input auth-input-field w-full py-3 transition",
             error && "border-red-400 focus:border-red-400",
             disabled && "cursor-not-allowed opacity-55",
-            // Placed at the end to guarantee padding styles take layout precedence
-            Icon ? "pl-11" : "pl-3.5",
-            isPassword ? "pr-11" : "pr-3.5"
+            Icon && "auth-input-with-icon",
+            isPassword && "auth-input-with-toggle",
           )}
         />
         {isPassword ? (
           <button
             type="button"
             onClick={() => setShowPassword((current) => !current)}
-            className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-theme-muted transition hover:bg-nav-hover hover:text-theme-primary z-10"
+            className="absolute right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-theme-muted transition hover:bg-nav-hover hover:text-theme-primary"
             aria-label={showPassword ? "Hide password" : "Show password"}
             aria-pressed={showPassword}
           >
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {showPassword ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
           </button>
         ) : null}
       </div>
       {error ? (
-        <span id={`${id}-error`} className="mt-2 block text-xs text-red-600 dark:text-red-400">
+        <span
+          id={`${id}-error`}
+          className="mt-2 block text-xs text-red-600 dark:text-red-400"
+        >
           {error}
         </span>
       ) : hint ? (
-        <span id={`${id}-hint`} className="mt-2 block text-xs leading-relaxed text-theme-faint">
+        <span
+          id={`${id}-hint`}
+          className="mt-2 block text-xs leading-relaxed text-theme-faint"
+        >
           {hint}
         </span>
       ) : null}
@@ -203,7 +221,10 @@ export function AuthStepIndicator({
   total: number;
 }) {
   return (
-    <div className="flex items-center gap-2" aria-label={`Step ${current} of ${total}`}>
+    <div
+      className="flex items-center gap-2"
+      aria-label={`Step ${current} of ${total}`}
+    >
       {Array.from({ length: total }, (_, index) => {
         const stepNumber = index + 1;
         const active = stepNumber <= current;
@@ -219,5 +240,21 @@ export function AuthStepIndicator({
         );
       })}
     </div>
+  );
+}
+
+/** Full page navigation (not Next Link) so auth → home always reloads cleanly. */
+export function AuthBackHomeLink({ className }: { className?: string }) {
+  return (
+    <a
+      href="/"
+      className={cn(
+        "inline-flex items-center gap-1.5 text-xs font-medium text-theme-muted no-underline transition hover:text-theme-primary",
+        className,
+      )}
+    >
+      <span aria-hidden>←</span>
+      Back to home
+    </a>
   );
 }

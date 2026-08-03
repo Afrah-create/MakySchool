@@ -101,15 +101,54 @@ export interface AttendanceTrendsMetric {
   items: [];
 }
 
+export interface BestStudentItem {
+  studentId: string;
+  fullName: string;
+  className: string;
+  scoreLabel: string;
+  scoreValue: number;
+}
+
+export interface BestStudentsMetric {
+  available: true;
+  items: BestStudentItem[];
+}
+
+export interface WeakSubjectItem {
+  subjectId: string;
+  subjectName: string;
+  averagePercent: number;
+  sampleSize: number;
+}
+
+export interface WeakSubjectsMetric {
+  available: true;
+  items: WeakSubjectItem[];
+}
+
+export interface CompetencyStrandItem {
+  strand: string;
+  averageLevel: number;
+  count: number;
+}
+
+export interface CompetencyAchievementMetric {
+  available: true;
+  averageLevel: number;
+  averageLabel: string;
+  assessedCells: number;
+  byStrand: CompetencyStrandItem[];
+}
+
 export interface AnalyticsOverview {
   termId: string | null;
   studentClassCounts: StudentClassCountsMetric;
   feeCollectionRate: FeeCollectionRateMetric;
   teacherMarksSubmission: TeacherMarksSubmissionMetric;
-  bestStudents: StubAnalyticsMetric;
-  weakSubjects: StubAnalyticsMetric;
+  bestStudents: BestStudentsMetric | StubAnalyticsMetric;
+  weakSubjects: WeakSubjectsMetric | StubAnalyticsMetric;
   attendanceTrends: AttendanceTrendsMetric | StubAnalyticsMetric;
-  competencyAchievement: StubAnalyticsMetric;
+  competencyAchievement: CompetencyAchievementMetric | StubAnalyticsMetric;
 }
 
 export interface SuperadminAnalytics {

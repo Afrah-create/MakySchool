@@ -51,6 +51,15 @@ def _http(exc: Exception) -> HTTPException:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"error": str(exc), "code": "VALIDATION_ERROR"},
         )
+    # Surface unique violations clearly (e.g. leftover term-scoped constraint).
+    if exc.__class__.__name__ in ("UniqueViolationError", "ForeignKeyViolationError"):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "error": str(exc).split("\n", 1)[0][:240],
+                "code": "CONSTRAINT_ERROR",
+            },
+        )
     return HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail={"error": "Something went wrong. Please try again.", "code": "SERVER_ERROR"},
