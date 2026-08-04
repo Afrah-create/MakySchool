@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 export function SlideOver({
@@ -18,12 +19,30 @@ export function SlideOver({
   children: ReactNode;
   footer?: ReactNode;
 }) {
-  if (!open) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open, onClose]);
+
+  if (!open || !mounted) {
     return null;
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex justify-end">
       <button
         aria-label="Close panel"
         className="absolute inset-0 bg-theme-overlay backdrop-blur-sm transition-opacity"
@@ -66,6 +85,7 @@ export function SlideOver({
           </footer>
         ) : null}
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -3,7 +3,7 @@
 import { createContext, useContext } from "react";
 import type { MakySchoolRole } from "@makyschool/shared/types";
 
-const PortalRoleContext = createContext<MakySchoolRole | null>(null);
+const PortalRoleContext = createContext<MakySchoolRole | undefined>(undefined);
 
 export function PortalRoleProvider({
   role,
@@ -15,6 +15,7 @@ export function PortalRoleProvider({
   return <PortalRoleContext.Provider value={role}>{children}</PortalRoleContext.Provider>;
 }
 
-export function usePortalRole() {
+/** Server-verified role for the current portal layout. Undefined outside a portal. */
+export function usePortalRole(): MakySchoolRole | undefined {
   return useContext(PortalRoleContext);
 }

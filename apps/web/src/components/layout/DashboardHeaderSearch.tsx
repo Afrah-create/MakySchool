@@ -20,6 +20,7 @@ import { cn } from "@makyschool/ui/lib/cn";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useSchoolSWR } from "@/hooks/useSchoolSWR";
 import { useAuth } from "@/hooks/useAuth";
+import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { useOptionalSchool } from "@/providers/SchoolProvider";
 import {
   filterNavGroupsByRole,
@@ -106,8 +107,8 @@ export function DashboardHeaderSearch({
   const { state } = useAuth();
   const schoolCtx = useOptionalSchool();
   const school = schoolCtx?.school ?? null;
-  const role = state.user?.role;
-  const authLoading = state.loading;
+  // Prefer server portal role — /auth/me can lag on soft navigation.
+  const role = useCurrentRole() ?? state.user?.role ?? undefined;
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -301,9 +302,34 @@ export function DashboardHeaderSearch({
     setQuery("");
   }
 
-  // Keep chrome stable while auth hydrates — avoid flashing away on soft nav.
-  if (!authLoading && !role) return null;
-  if (!authLoading && role && !hasSearchAccess) return null;
+  // Keep a stable chrome slot while role resolves; hide only when access is known-denied.
+  if (role && !hasSearchAccess) {
+    return null;
+  }
+
+  if (!role) {
+    if (variant === "mobile") {
+      return (
+        <div className={cn("relative", className)}>
+          <span
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-theme-faint"
+            aria-hidden
+          >
+            <Search className="h-4 w-4" />
+          </span>
+        </div>
+      );
+    }
+    return (
+      <div
+        className={cn(
+          "h-10 min-w-[12rem] max-w-xl flex-1 rounded-lg border border-theme bg-theme-raised/40",
+          className,
+        )}
+        aria-hidden
+      />
+    );
+  }
 
   function go(href: string) {
     closeSearch();
@@ -429,7 +455,6 @@ export function DashboardHeaderSearch({
         aria-controls={listId}
         aria-expanded={open}
         autoComplete="off"
-        disabled={authLoading && !role}
       />
       {query ? (
         <button
@@ -456,7 +481,6 @@ export function DashboardHeaderSearch({
       )}
       aria-haspopup="listbox"
       aria-expanded={scopeOpen}
-      disabled={authLoading && !role}
       onClick={() => {
         setScopeOpen((v) => !v);
         setOpen(true);
@@ -531,10 +555,9 @@ export function DashboardHeaderSearch({
       <div className={cn("relative", className)}>
         <button
           type="button"
-          className="rounded-lg p-2 text-theme-muted transition hover:bg-nav-hover hover:text-theme-primary disabled:opacity-50"
+          className="rounded-lg p-2 text-theme-muted transition hover:bg-nav-hover hover:text-theme-primary"
           aria-label="Search"
           aria-expanded={open}
-          disabled={authLoading && !role}
           onClick={() => setOpen(true)}
         >
           <Search className="h-4 w-4" />

@@ -30,8 +30,8 @@ export function DashboardShell({
           <div className="relative z-40 shrink-0 lg:hidden">{mobileChrome}</div>
         ) : null}
 
-        <div className="flex min-h-0 flex-1 overflow-hidden xl:gap-4">
-          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 overflow-hidden 2xl:gap-4">
+          <div className="relative z-0 flex min-h-0 min-w-0 flex-1 flex-col">
             {topBar ? (
               <div className="relative z-40 hidden shrink-0 lg:block">{topBar}</div>
             ) : null}
@@ -43,8 +43,9 @@ export function DashboardShell({
             </div>
           </div>
 
+          {/* Keep below overlays (SlideOver portals to body at z-200). Only on wide desktops. */}
           {rightRail ? (
-            <div className="hidden h-full shrink-0 xl:block">{rightRail}</div>
+            <div className="relative z-0 hidden h-full shrink-0 2xl:block">{rightRail}</div>
           ) : null}
         </div>
       </div>

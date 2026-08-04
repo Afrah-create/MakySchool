@@ -7,14 +7,14 @@ import type { AcademicYearSummary } from "@makyschool/shared/types";
 import { cn } from "@makyschool/ui/lib/cn";
 import { useSchoolSWR } from "@/hooks/useSchoolSWR";
 import { useCurrentTerm } from "@/hooks/useCurrentTerm";
+import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { apiClient } from "@/lib/api/client";
-import { useAuth } from "@/hooks/useAuth";
 import { useOptionalSchool } from "@/providers/SchoolProvider";
 import { useToast } from "@/providers/ToastProvider";
 
 /**
  * Academic year dropdown for admins, plus current term label.
- * Stays visible while auth/years hydrate so soft navigation does not hide it.
+ * Uses server portal role so soft navigation does not wait on /auth/me.
  */
 export function AcademicYearTopSwitch({
   className,
@@ -23,12 +23,10 @@ export function AcademicYearTopSwitch({
   className?: string;
   compact?: boolean;
 }) {
-  const { state } = useAuth();
+  const role = useCurrentRole();
   const schoolCtx = useOptionalSchool();
   const schoolSlug = schoolCtx?.schoolSlug ?? "";
   const { toast } = useToast();
-  const role = state.user?.role;
-  const authLoading = state.loading;
   const canSwitch = role ? can(role, "manageAcademicYear") : false;
 
   const { data: term } = useCurrentTerm();
@@ -41,11 +39,23 @@ export function AcademicYearTopSwitch({
   const yearLabel = current?.year ?? term?.academicYear ?? null;
   const termLabel = term?.name?.trim() || null;
 
-  // Hide only when we know the user cannot manage years and has no term context.
-  if (!authLoading && !canSwitch && !yearLabel && !termLabel) {
-    return null;
+  // Still mounting portal chrome — keep a stable slot so soft nav does not blank the header.
+  if (!role && !yearLabel && !termLabel) {
+    return (
+      <div className={cn("flex items-center gap-1.5", className)} aria-hidden>
+        <span
+          className={cn(
+            "inline-flex items-center rounded-lg border border-theme bg-theme-raised/40 px-2 font-semibold tabular-nums text-theme-faint",
+            compact ? "h-7 text-[11px]" : "h-8 text-xs",
+          )}
+        >
+          ····
+        </span>
+      </div>
+    );
   }
-  if (!authLoading && !role) {
+
+  if (!canSwitch && !yearLabel && !termLabel) {
     return null;
   }
 
@@ -69,8 +79,10 @@ export function AcademicYearTopSwitch({
     }
   }
 
-  const showSelect = canSwitch && years && years.length > 0;
-  const showPlaceholder = canSwitch && (authLoading || isLoading || (!years?.length && !error));
+  const showSelect = Boolean(canSwitch && years && years.length > 0);
+  const showPlaceholder = Boolean(
+    canSwitch && !showSelect && (isLoading || !error),
+  );
 
   return (
     <div
@@ -85,12 +97,12 @@ export function AcademicYearTopSwitch({
               "ms-input !w-auto !py-0 !text-xs",
               compact ? "!h-7 !min-w-[4.25rem] !max-w-[6.5rem]" : "!h-8 !min-w-[5.5rem]",
             )}
-            disabled={busy || years.length < 2}
+            disabled={busy || (years?.length ?? 0) < 2}
             value={current?.id ?? ""}
             onChange={(e) => void onChange(e.target.value)}
             aria-label="Switch academic year"
           >
-            {years.map((y) => (
+            {(years ?? []).map((y) => (
               <option key={y.id} value={y.id}>
                 {compact ? y.year : `${y.year}${y.isCurrent ? " · current" : ""}`}
               </option>
@@ -119,7 +131,7 @@ export function AcademicYearTopSwitch({
       ) : null}
 
       {termLabel && !compact ? (
-        <span className="hidden max-w-[6.5rem] truncate text-xs font-medium text-theme-muted md:inline">
+        <span className="hidden max-w-[6.5rem] truncate text-xs font-medium text-theme-muted lg:inline">
           {termLabel}
         </span>
       ) : null}

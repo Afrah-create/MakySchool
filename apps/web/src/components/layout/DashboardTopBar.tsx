@@ -10,6 +10,7 @@ import { AcademicYearTopSwitch } from "@/components/layout/AcademicYearTopSwitch
 import { DashboardHeaderSearch } from "@/components/layout/DashboardHeaderSearch";
 import { DashboardNavProgress } from "@/components/layout/DashboardNavProgress";
 import { useAuth } from "@/hooks/useAuth";
+import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { useSchool } from "@/providers/SchoolProvider";
 import { performLogout } from "@/lib/auth/logout";
 import { resolveMobilePageTitle } from "@/lib/roles/mobile-page-titles";
@@ -34,17 +35,19 @@ function SchoolMark({
 export function DashboardTopBar() {
   const pathname = usePathname();
   const { state } = useAuth();
+  const portalRole = useCurrentRole();
   const { school } = useSchool();
   const title = resolveMobilePageTitle(pathname);
   const user = state.user;
+  const role = portalRole ?? user?.role;
   const firstName = user?.name?.split(" ")[0] ?? null;
   const schoolName = school?.name ?? null;
 
   return (
     <header className="relative z-40 border-b border-theme bg-theme-surface/90 backdrop-blur-md">
       <DashboardNavProgress />
-      <div className="flex h-14 items-center gap-3 px-4 sm:gap-4 sm:px-6 lg:px-8">
-        <div className="flex min-w-0 shrink-0 items-center gap-3 lg:max-w-[14rem] xl:max-w-[16rem]">
+      <div className="flex h-14 items-center gap-3 px-4 sm:gap-4 lg:px-6 xl:px-8">
+        <div className="flex min-w-0 shrink-0 items-center gap-3 max-w-[10rem] lg:max-w-[12rem] xl:max-w-[15rem]">
           <SchoolMark logoUrl={school?.logo_url} />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold leading-tight text-theme-primary">
@@ -52,18 +55,19 @@ export function DashboardTopBar() {
             </p>
             <p className="truncate text-[11px] leading-tight text-theme-muted">
               {schoolName ?? "MakySchool"}
-              {user?.role ? ` · ${roleLabel(user.role)}` : ""}
+              {role ? ` · ${roleLabel(role)}` : ""}
             </p>
           </div>
         </div>
 
-        <DashboardHeaderSearch className="mx-auto hidden min-w-0 md:flex" />
+        {/* Full field only when there is room; icon otherwise — avoids flex-shrink to 0 */}
+        <DashboardHeaderSearch className="mx-auto hidden min-w-[16rem] max-w-xl flex-1 2xl:flex" />
 
-        <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2.5">
-          <DashboardHeaderSearch variant="mobile" className="md:hidden" />
+        <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <DashboardHeaderSearch variant="mobile" className="2xl:hidden" />
           <AcademicYearTopSwitch />
           {firstName ? (
-            <div className="hidden items-center gap-2 xl:flex">
+            <div className="hidden items-center gap-2 2xl:flex">
               <span
                 className={cn(
                   "flex h-8 w-8 items-center justify-center rounded-full bg-theme-accent-muted text-xs font-semibold text-theme-accent",
@@ -74,8 +78,8 @@ export function DashboardTopBar() {
               </span>
               <div className="min-w-0 leading-tight">
                 <p className="truncate text-sm font-medium text-theme-primary">{firstName}</p>
-                {user?.role ? (
-                  <p className="truncate text-[11px] text-theme-muted">{roleLabel(user.role)}</p>
+                {role ? (
+                  <p className="truncate text-[11px] text-theme-muted">{roleLabel(role)}</p>
                 ) : null}
               </div>
             </div>

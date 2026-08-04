@@ -9,12 +9,15 @@ export function TenantDashboardShell({
   sidebar,
   mobileChrome,
   children,
+  showRightRail = false,
 }: {
   sidebar: ReactNode;
   /** Mobile top bar only (legacy); prefer `mobileChrome`. */
   header?: ReactNode;
   mobileChrome?: ReactNode;
   children: ReactNode;
+  /** School-admin desktop attention rail (2xl+). */
+  showRightRail?: boolean;
 }) {
   return (
     <DashboardShell
@@ -22,7 +25,7 @@ export function TenantDashboardShell({
       mobileChrome={mobileChrome}
       mobileBottomInset={Boolean(mobileChrome)}
       topBar={<DashboardTopBar />}
-      rightRail={<DashboardRightRail />}
+      rightRail={showRightRail ? <DashboardRightRail /> : null}
     >
       <DashboardContent>{children}</DashboardContent>
     </DashboardShell>

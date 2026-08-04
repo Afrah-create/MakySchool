@@ -63,6 +63,7 @@ export default async function SchoolAdminDashboardLayout({
         setupStatus={status}
       >
         <TenantDashboardShell
+        showRightRail
         sidebar={
           <SchoolAdminSidebar
             schoolSlug={tenant.schoolSlug}
