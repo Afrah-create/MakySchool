@@ -9,11 +9,12 @@ import { useSchoolSWR } from "@/hooks/useSchoolSWR";
 import { useCurrentTerm } from "@/hooks/useCurrentTerm";
 import { apiClient } from "@/lib/api/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useSchool } from "@/providers/SchoolProvider";
+import { useOptionalSchool } from "@/providers/SchoolProvider";
 import { useToast } from "@/providers/ToastProvider";
 
 /**
  * Academic year dropdown for admins, plus current term label.
+ * Stays visible while auth/years hydrate so soft navigation does not hide it.
  */
 export function AcademicYearTopSwitch({
   className,
@@ -23,13 +24,16 @@ export function AcademicYearTopSwitch({
   compact?: boolean;
 }) {
   const { state } = useAuth();
-  const { schoolSlug } = useSchool();
+  const schoolCtx = useOptionalSchool();
+  const schoolSlug = schoolCtx?.schoolSlug ?? "";
   const { toast } = useToast();
-  const canSwitch = state.user?.role ? can(state.user.role, "manageAcademicYear") : false;
+  const role = state.user?.role;
+  const authLoading = state.loading;
+  const canSwitch = role ? can(role, "manageAcademicYear") : false;
 
   const { data: term } = useCurrentTerm();
-  const { data: years, isLoading } = useSchoolSWR<AcademicYearSummary[]>(
-    canSwitch ? "/schools/settings/academic-years?visibility=hot" : null,
+  const { data: years, isLoading, error } = useSchoolSWR<AcademicYearSummary[]>(
+    canSwitch && schoolSlug ? "/schools/settings/academic-years?visibility=hot" : null,
   );
   const [busy, setBusy] = useState(false);
 
@@ -37,15 +41,16 @@ export function AcademicYearTopSwitch({
   const yearLabel = current?.year ?? term?.academicYear ?? null;
   const termLabel = term?.name?.trim() || null;
 
-  if (canSwitch && (isLoading || !years?.length) && !yearLabel && !termLabel) {
+  // Hide only when we know the user cannot manage years and has no term context.
+  if (!authLoading && !canSwitch && !yearLabel && !termLabel) {
     return null;
   }
-  if (!canSwitch && !yearLabel && !termLabel) {
+  if (!authLoading && !role) {
     return null;
   }
 
   async function onChange(yearId: string) {
-    if (!yearId || yearId === current?.id) return;
+    if (!yearId || yearId === current?.id || !schoolSlug) return;
     const target = years?.find((y) => y.id === yearId);
     setBusy(true);
     try {
@@ -64,18 +69,21 @@ export function AcademicYearTopSwitch({
     }
   }
 
+  const showSelect = canSwitch && years && years.length > 0;
+  const showPlaceholder = canSwitch && (authLoading || isLoading || (!years?.length && !error));
+
   return (
     <div
-      className={cn("flex items-center gap-2", className)}
+      className={cn("flex items-center gap-1.5", className)}
       title={[yearLabel ? `Year ${yearLabel}` : null, termLabel].filter(Boolean).join(" · ")}
     >
-      {canSwitch && years && years.length > 0 ? (
+      {showSelect ? (
         <label className="inline-flex items-center" title="Current academic year">
           <span className="sr-only">Academic year</span>
           <select
             className={cn(
               "ms-input !w-auto !py-0 !text-xs",
-              compact ? "!h-7 !min-w-[4.5rem]" : "!h-8 !min-w-[5.5rem]",
+              compact ? "!h-7 !min-w-[4.25rem] !max-w-[6.5rem]" : "!h-8 !min-w-[5.5rem]",
             )}
             disabled={busy || years.length < 2}
             value={current?.id ?? ""}
@@ -84,12 +92,21 @@ export function AcademicYearTopSwitch({
           >
             {years.map((y) => (
               <option key={y.id} value={y.id}>
-                {y.year}
-                {y.isCurrent ? " · current" : ""}
+                {compact ? y.year : `${y.year}${y.isCurrent ? " · current" : ""}`}
               </option>
             ))}
           </select>
         </label>
+      ) : showPlaceholder ? (
+        <span
+          className={cn(
+            "inline-flex items-center rounded-lg border border-theme bg-theme-raised/40 px-2 font-semibold tabular-nums text-theme-muted",
+            compact ? "h-7 text-[11px]" : "h-8 text-xs",
+          )}
+          aria-busy="true"
+        >
+          {yearLabel ?? "····"}
+        </span>
       ) : yearLabel ? (
         <span
           className={cn(
@@ -101,13 +118,8 @@ export function AcademicYearTopSwitch({
         </span>
       ) : null}
 
-      {termLabel ? (
-        <span
-          className={cn(
-            "hidden max-w-[6.5rem] truncate font-medium text-theme-muted sm:inline",
-            compact ? "text-[11px]" : "text-xs",
-          )}
-        >
+      {termLabel && !compact ? (
+        <span className="hidden max-w-[6.5rem] truncate text-xs font-medium text-theme-muted md:inline">
           {termLabel}
         </span>
       ) : null}

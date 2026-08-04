@@ -10,7 +10,7 @@ export default function DataRetentionSettingsPage() {
       eyebrow="Settings"
       title="Data retention"
       description="Control which academic years stay hot in day-to-day selectors versus warm or archived historical access. Data is never deleted."
-      maxWidth="2xl"
+      maxWidth="5xl"
     >
       <DataRetentionSettingsLoader />
     </DashboardPage>

@@ -23,7 +23,7 @@ export function SettingsPanel({
   const { settings, loading, error, reload } = useSchoolSettings();
 
   return (
-    <DashboardPage embedded eyebrow={eyebrow} title={title} description={description} maxWidth="2xl">
+    <DashboardPage embedded eyebrow={eyebrow} title={title} description={description} maxWidth="5xl">
       <QueryState
         isLoading={loading}
         error={error}

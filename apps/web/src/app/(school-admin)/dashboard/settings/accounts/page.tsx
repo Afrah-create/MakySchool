@@ -10,7 +10,7 @@ export default function ChartOfAccountsPage() {
       eyebrow="Settings"
       title="Chart of accounts"
       description="Income and expense accounts for invoicing, other income, and budgets."
-      maxWidth="2xl"
+      maxWidth="5xl"
     >
       <ChartOfAccountsContent embedded />
     </DashboardPage>

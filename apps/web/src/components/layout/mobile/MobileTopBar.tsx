@@ -28,7 +28,7 @@ export function MobileTopBar({
   return (
     <header className="relative z-40 border-b border-theme bg-theme-surface/90 backdrop-blur-md">
       <DashboardNavProgress />
-      <div className="flex h-14 items-center justify-between gap-2 px-3 sm:px-4">
+      <div className="flex h-14 items-center gap-2 px-3 sm:gap-2.5 sm:px-4">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <BrandLogo size={28} rounded="md" className="shrink-0" />
           <div className="min-w-0">
@@ -40,9 +40,9 @@ export function MobileTopBar({
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           <DashboardHeaderSearch variant="mobile" />
-          <AcademicYearTopSwitch compact />
+          <AcademicYearTopSwitch compact className="max-w-[5.75rem]" />
           <ThemeToggle />
           <button
             type="button"

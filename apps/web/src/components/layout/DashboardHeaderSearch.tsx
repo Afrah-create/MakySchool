@@ -20,7 +20,7 @@ import { cn } from "@makyschool/ui/lib/cn";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useSchoolSWR } from "@/hooks/useSchoolSWR";
 import { useAuth } from "@/hooks/useAuth";
-import { useSchool } from "@/providers/SchoolProvider";
+import { useOptionalSchool } from "@/providers/SchoolProvider";
 import {
   filterNavGroupsByRole,
   filterNavGroupsBySchoolType,
@@ -82,26 +82,16 @@ function studentHrefForRole(role: UserRole, student: { id: string; class_id: str
   return `/dashboard/students/${student.id}`;
 }
 
-function teacherHrefForRole(_role: UserRole, teacherId: string) {
-  return `/dashboard/teachers/${teacherId}`;
-}
-
 function viewAllHref(role: UserRole, scope: SearchScope, query: string) {
   const portal = portalForRole(role);
   const q = query.trim();
   const qs = q ? `?search=${encodeURIComponent(q)}` : "";
 
-  if (portal === "teacher") {
-    return "/teacher/classes";
-  }
+  if (portal === "teacher") return "/teacher/classes";
   if (portal === "bursar") {
-    return q
-      ? `/bursar/payments/new?search=${encodeURIComponent(q)}`
-      : "/bursar/payments/new";
+    return q ? `/bursar/payments/new?search=${encodeURIComponent(q)}` : "/bursar/payments/new";
   }
-  if (scope === "teachers") {
-    return `/dashboard/teachers${qs}`;
-  }
+  if (scope === "teachers") return `/dashboard/teachers${qs}`;
   return `/dashboard/students${qs}`;
 }
 
@@ -114,8 +104,10 @@ export function DashboardHeaderSearch({
 }) {
   const router = useRouter();
   const { state } = useAuth();
-  const { school } = useSchool();
+  const schoolCtx = useOptionalSchool();
+  const school = schoolCtx?.school ?? null;
   const role = state.user?.role;
+  const authLoading = state.loading;
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -141,15 +133,16 @@ export function DashboardHeaderSearch({
     : false;
   const canTeachers = role ? can(role, "viewAllStaff") : false;
   const canPages = isAdmin || isTeacher || isBursar;
+  const hasSearchAccess = canStudents || canTeachers || canPages;
 
   const availableScopes = useMemo(() => {
     return SCOPE_OPTIONS.filter((opt) => {
       if (opt.value === "students") return canStudents;
       if (opt.value === "teachers") return canTeachers;
       if (opt.value === "pages") return canPages;
-      return canStudents || canTeachers || canPages;
+      return hasSearchAccess;
     });
-  }, [canStudents, canTeachers, canPages]);
+  }, [canStudents, canTeachers, canPages, hasSearchAccess]);
 
   useEffect(() => {
     if (!availableScopes.some((s) => s.value === scope)) {
@@ -158,26 +151,20 @@ export function DashboardHeaderSearch({
   }, [availableScopes, scope]);
 
   const fetchStudents =
-    debounced.length >= 2 &&
-    canStudents &&
-    (scope === "all" || scope === "students");
+    debounced.length >= 2 && canStudents && (scope === "all" || scope === "students");
   const fetchTeachers =
-    debounced.length >= 2 &&
-    canTeachers &&
-    (scope === "all" || scope === "teachers");
+    debounced.length >= 2 && canTeachers && (scope === "all" || scope === "teachers");
 
-  const { data: studentsData, isLoading: studentsLoading } =
-    useSchoolSWR<StudentsListResponse>(
-      fetchStudents
-        ? `/schools/students?search=${encodeURIComponent(debounced)}&status=active&limit=6`
-        : null,
-    );
-  const { data: teachersData, isLoading: teachersLoading } =
-    useSchoolSWR<TeachersListResponse>(
-      fetchTeachers
-        ? `/schools/teachers?search=${encodeURIComponent(debounced)}&limit=6`
-        : null,
-    );
+  const { data: studentsData, isLoading: studentsLoading } = useSchoolSWR<StudentsListResponse>(
+    fetchStudents
+      ? `/schools/students?search=${encodeURIComponent(debounced)}&status=active&limit=6`
+      : null,
+  );
+  const { data: teachersData, isLoading: teachersLoading } = useSchoolSWR<TeachersListResponse>(
+    fetchTeachers
+      ? `/schools/teachers?search=${encodeURIComponent(debounced)}&limit=6`
+      : null,
+  );
 
   const pageResults = useMemo(() => {
     if (!role || !canPages) return [] as ResultItem[];
@@ -246,7 +233,7 @@ export function DashboardHeaderSearch({
           kind: "teacher",
           title: t.full_name,
           subtitle: t.email,
-          href: teacherHrefForRole(role, t.id),
+          href: `/dashboard/teachers/${t.id}`,
         });
       }
     }
@@ -256,21 +243,19 @@ export function DashboardHeaderSearch({
 
   const loading = (fetchStudents && studentsLoading) || (fetchTeachers && teachersLoading);
   const showResults = open && query.trim().length > 0;
-  const showFloating = showResults || scopeOpen;
 
   function updatePanelPos() {
     const el = anchorRef.current;
-    if (!el) return;
+    if (!el || typeof window === "undefined") return;
     const rect = el.getBoundingClientRect();
-    setPanelPos({
-      top: rect.bottom + 6,
-      left: rect.left,
-      width: Math.max(rect.width, variant === "mobile" ? 280 : 320),
-    });
+    const width = Math.min(Math.max(rect.width, 360), window.innerWidth - 16);
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    setPanelPos({ top: rect.bottom + 6, left, width });
   }
 
   useLayoutEffect(() => {
-    if (!showFloating) {
+    if (variant !== "desktop") return;
+    if (!showResults && !scopeOpen) {
       setPanelPos(null);
       return;
     }
@@ -284,7 +269,7 @@ export function DashboardHeaderSearch({
       window.removeEventListener("resize", onReposition);
       window.removeEventListener("scroll", onReposition, true);
     };
-  }, [showFloating, variant, query, scopeOpen]);
+  }, [variant, showResults, scopeOpen, query]);
 
   useEffect(() => {
     if (!open) return;
@@ -293,16 +278,10 @@ export function DashboardHeaderSearch({
       if (rootRef.current?.contains(target)) return;
       const portalEl = document.getElementById(listId);
       if (portalEl?.contains(target)) return;
-      setOpen(false);
-      setScopeOpen(false);
-      if (variant === "mobile") setQuery("");
+      closeSearch();
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setOpen(false);
-        setScopeOpen(false);
-        if (variant === "mobile") setQuery("");
-      }
+      if (e.key === "Escape") closeSearch();
     }
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
@@ -310,22 +289,24 @@ export function DashboardHeaderSearch({
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open, variant, listId]);
+  }, [open, listId]);
 
   useEffect(() => {
-    if (open && variant === "mobile") {
-      inputRef.current?.focus();
-    }
-  }, [open, variant]);
+    if (open) inputRef.current?.focus();
+  }, [open]);
 
-  if (!role || (!canStudents && !canTeachers && !canPages)) {
-    return null;
-  }
-
-  function go(href: string) {
+  function closeSearch() {
     setOpen(false);
     setScopeOpen(false);
     setQuery("");
+  }
+
+  // Keep chrome stable while auth hydrates — avoid flashing away on soft nav.
+  if (!authLoading && !role) return null;
+  if (!authLoading && role && !hasSearchAccess) return null;
+
+  function go(href: string) {
+    closeSearch();
     router.push(href);
   }
 
@@ -341,13 +322,92 @@ export function DashboardHeaderSearch({
         ? "Search teachers…"
         : scope === "pages"
           ? "Search pages…"
-          : isTeacher
+          : isTeacher || isBursar
             ? "Search students or pages…"
-            : isBursar
-              ? "Search students or pages…"
-              : "Search students, teachers, pages…";
+            : "Search students, teachers, pages…";
 
-  const field = (
+  function renderResultsList() {
+    if (!showResults) return null;
+    if (debounced.length < 2) {
+      return <p className="px-3 py-3 text-xs text-theme-muted">Type at least 2 characters…</p>;
+    }
+    if (loading) {
+      return <p className="px-3 py-3 text-xs text-theme-muted">Searching…</p>;
+    }
+    if (results.length === 0) {
+      return (
+        <p className="px-3 py-3 text-xs text-theme-muted">No matches for “{debounced}”.</p>
+      );
+    }
+    return (
+      <ul className="max-h-[min(24rem,50dvh)] overflow-y-auto py-1">
+        {results.map((item) => (
+          <li key={item.id}>
+            <button
+              type="button"
+              className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-nav-hover"
+              onClick={() => go(item.href)}
+            >
+              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-theme-raised text-theme-muted">
+                {item.kind === "student" ? (
+                  <UserRound className="h-3.5 w-3.5" />
+                ) : item.kind === "teacher" ? (
+                  <UsersRound className="h-3.5 w-3.5" />
+                ) : (
+                  <BookOpen className="h-3.5 w-3.5" />
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-theme-primary">
+                  {item.title}
+                </span>
+                {item.subtitle ? (
+                  <span className="block truncate text-[11px] text-theme-muted">{item.subtitle}</span>
+                ) : null}
+              </span>
+              <span className="ml-2 shrink-0 self-center text-[10px] uppercase tracking-wide text-theme-faint">
+                {item.kind}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  const scopeMenu = scopeOpen ? (
+    <ul role="listbox" className="border-b border-theme py-1">
+      {availableScopes.map((opt) => {
+        const Icon = opt.icon;
+        const active = opt.value === scope;
+        return (
+          <li key={opt.value}>
+            <button
+              type="button"
+              role="option"
+              aria-selected={active}
+              className={cn(
+                "flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm",
+                active
+                  ? "bg-theme-accent-muted font-medium text-theme-accent"
+                  : "text-theme-primary hover:bg-nav-hover",
+              )}
+              onClick={() => {
+                setScope(opt.value);
+                setScopeOpen(false);
+                inputRef.current?.focus();
+              }}
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {opt.label}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  ) : null;
+
+  const searchField = (
     <div className="relative flex min-w-0 flex-1 items-center">
       <Search
         className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-theme-muted"
@@ -364,11 +424,12 @@ export function DashboardHeaderSearch({
         }}
         onFocus={() => setOpen(true)}
         placeholder={placeholder}
-        className="ms-input !h-9 w-full !rounded-l-none !border-l-0 !py-0 !pl-8 !pr-8 !text-sm"
+        className="ms-input !h-10 w-full !rounded-l-none !border-l-0 !py-0 !pl-8 !pr-8 !text-sm"
         aria-label="Search"
         aria-controls={listId}
-        aria-expanded={showFloating}
+        aria-expanded={open}
         autoComplete="off"
+        disabled={authLoading && !role}
       />
       {query ? (
         <button
@@ -390,165 +451,131 @@ export function DashboardHeaderSearch({
     <button
       type="button"
       className={cn(
-        "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-l-lg border border-theme bg-theme-raised/60 px-2.5 text-xs font-medium text-theme-primary",
+        "inline-flex h-10 shrink-0 items-center gap-1.5 rounded-l-lg border border-theme bg-theme-raised/60 px-2.5 text-xs font-medium text-theme-primary",
         "transition hover:bg-nav-hover",
       )}
       aria-haspopup="listbox"
       aria-expanded={scopeOpen}
+      disabled={authLoading && !role}
       onClick={() => {
         setScopeOpen((v) => !v);
         setOpen(true);
       }}
     >
       <Filter className="h-3.5 w-3.5 text-theme-muted" aria-hidden />
-      <span className="hidden sm:inline">{scopeLabel(scope)}</span>
+      <span className="max-w-[4.5rem] truncate sm:max-w-none">{scopeLabel(scope)}</span>
       <ChevronDown className="h-3 w-3 text-theme-muted" aria-hidden />
     </button>
   );
 
+  // —— Mobile: full-width fixed sheet (avoids mis-positioned portal clipping) ——
+  if (variant === "mobile") {
+    const sheet =
+      mounted && open
+        ? createPortal(
+            <div className="fixed inset-0 z-[200] flex flex-col bg-theme-page/80 backdrop-blur-sm">
+              <div
+                className="border-b border-theme bg-theme-surface px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] shadow-theme-panel"
+                ref={rootRef}
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-theme-primary">Search</p>
+                  <button
+                    type="button"
+                    className="rounded-lg p-2 text-theme-muted hover:bg-nav-hover hover:text-theme-primary"
+                    aria-label="Close search"
+                    onClick={closeSearch}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex min-w-0 items-stretch">
+                  {scopeButton}
+                  {searchField}
+                </div>
+              </div>
+              <div
+                id={listId}
+                className="min-h-0 flex-1 overflow-y-auto bg-theme-surface"
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) closeSearch();
+                }}
+              >
+                <div className="mx-auto w-full max-w-lg border-b border-theme bg-theme-surface">
+                  {scopeMenu}
+                  {renderResultsList()}
+                  {showResults && debounced.length >= 2 && canStudents ? (
+                    <div className="border-t border-theme">
+                      <button
+                        type="button"
+                        className="w-full px-3 py-3 text-left text-xs font-medium text-theme-accent hover:bg-theme-accent-muted"
+                        onClick={viewAll}
+                      >
+                        View all results
+                      </button>
+                    </div>
+                  ) : null}
+                  {!showResults && !scopeOpen ? (
+                    <p className="px-4 py-6 text-center text-xs text-theme-muted">
+                      Search students, staff, or pages
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null;
+
+    return (
+      <div className={cn("relative", className)}>
+        <button
+          type="button"
+          className="rounded-lg p-2 text-theme-muted transition hover:bg-nav-hover hover:text-theme-primary disabled:opacity-50"
+          aria-label="Search"
+          aria-expanded={open}
+          disabled={authLoading && !role}
+          onClick={() => setOpen(true)}
+        >
+          <Search className="h-4 w-4" />
+        </button>
+        {sheet}
+      </div>
+    );
+  }
+
+  // —— Desktop ——
   const floatingUi =
-    mounted && showFloating && panelPos
+    mounted && (showResults || scopeOpen) && panelPos
       ? createPortal(
           <div
             id={listId}
             className="fixed z-[200] overflow-hidden rounded-xl border border-theme bg-theme-surface shadow-theme-panel"
-            style={{
-              top: panelPos.top,
-              left: Math.min(panelPos.left, window.innerWidth - panelPos.width - 8),
-              width: Math.min(panelPos.width, window.innerWidth - 16),
-            }}
+            style={{ top: panelPos.top, left: panelPos.left, width: panelPos.width }}
           >
-            {scopeOpen ? (
-              <ul role="listbox" className="border-b border-theme py-1">
-                {availableScopes.map((opt) => {
-                  const Icon = opt.icon;
-                  const active = opt.value === scope;
-                  return (
-                    <li key={opt.value}>
-                      <button
-                        type="button"
-                        role="option"
-                        aria-selected={active}
-                        className={cn(
-                          "flex w-full items-center gap-2 px-3 py-2 text-left text-sm",
-                          active
-                            ? "bg-theme-accent-muted font-medium text-theme-accent"
-                            : "text-theme-primary hover:bg-nav-hover",
-                        )}
-                        onClick={() => {
-                          setScope(opt.value);
-                          setScopeOpen(false);
-                          inputRef.current?.focus();
-                        }}
-                      >
-                        <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                        {opt.label}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-
-            {showResults ? (
-              <>
-                {debounced.length < 2 ? (
-                  <p className="px-3 py-3 text-xs text-theme-muted">
-                    Type at least 2 characters…
-                  </p>
-                ) : loading ? (
-                  <p className="px-3 py-3 text-xs text-theme-muted">Searching…</p>
-                ) : results.length === 0 ? (
-                  <p className="px-3 py-3 text-xs text-theme-muted">
-                    No matches for “{debounced}”.
-                  </p>
-                ) : (
-                  <ul className="max-h-72 overflow-y-auto py-1">
-                    {results.map((item) => (
-                      <li key={item.id}>
-                        <button
-                          type="button"
-                          className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-nav-hover"
-                          onClick={() => go(item.href)}
-                        >
-                          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-theme-raised text-theme-muted">
-                            {item.kind === "student" ? (
-                              <UserRound className="h-3.5 w-3.5" />
-                            ) : item.kind === "teacher" ? (
-                              <UsersRound className="h-3.5 w-3.5" />
-                            ) : (
-                              <BookOpen className="h-3.5 w-3.5" />
-                            )}
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium text-theme-primary">
-                              {item.title}
-                            </span>
-                            {item.subtitle ? (
-                              <span className="block truncate text-[11px] text-theme-muted">
-                                {item.subtitle}
-                              </span>
-                            ) : null}
-                          </span>
-                          <span className="ml-auto shrink-0 self-center text-[10px] uppercase tracking-wide text-theme-faint">
-                            {item.kind}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {debounced.length >= 2 && canStudents ? (
-                  <div className="border-t border-theme">
-                    <button
-                      type="button"
-                      className="w-full px-3 py-2.5 text-left text-xs font-medium text-theme-accent hover:bg-theme-accent-muted"
-                      onClick={viewAll}
-                    >
-                      View all results
-                    </button>
-                  </div>
-                ) : null}
-              </>
+            {scopeMenu}
+            {renderResultsList()}
+            {showResults && debounced.length >= 2 && canStudents ? (
+              <div className="border-t border-theme">
+                <button
+                  type="button"
+                  className="w-full px-3 py-2.5 text-left text-xs font-medium text-theme-accent hover:bg-theme-accent-muted"
+                  onClick={viewAll}
+                >
+                  View all results
+                </button>
+              </div>
             ) : null}
           </div>,
           document.body,
         )
       : null;
 
-  if (variant === "mobile") {
-    return (
-      <div ref={rootRef} className={cn("relative", className)}>
-        <button
-          type="button"
-          className="rounded-lg p-2 text-theme-muted transition hover:bg-nav-hover hover:text-theme-primary"
-          aria-label="Search"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-        >
-          <Search className="h-4 w-4" />
-        </button>
-        {open ? (
-          <div className="absolute right-0 top-[calc(100%+0.35rem)] z-[60] w-[min(100vw-1.5rem,22rem)]">
-            <div
-              ref={anchorRef}
-              className="flex items-stretch rounded-xl border border-theme bg-theme-surface p-2 shadow-theme-panel"
-            >
-              {scopeButton}
-              {field}
-            </div>
-          </div>
-        ) : null}
-        {floatingUi}
-      </div>
-    );
-  }
-
   return (
     <div ref={rootRef} className={cn("relative z-[60] min-w-0 max-w-xl flex-1", className)}>
       <div ref={anchorRef} className="flex min-w-0 items-stretch">
         {scopeButton}
-        {field}
+        {searchField}
       </div>
       {floatingUi}
     </div>
