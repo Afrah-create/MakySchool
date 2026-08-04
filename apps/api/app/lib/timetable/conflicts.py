@@ -99,11 +99,15 @@ async def validate_teacher_assigned(
     row = await conn.fetchrow(
         """
         SELECT 1
-        FROM teacher_class_assignments
-        WHERE school_id = $1
-          AND teacher_id = $2
-          AND class_id = $3
-          AND subject_id = $4
+        FROM teacher_class_assignments tca
+        JOIN academic_years ay
+          ON ay.id = tca.academic_year_id
+         AND ay.school_id = tca.school_id
+         AND ay.is_current = true
+        WHERE tca.school_id = $1
+          AND tca.teacher_id = $2
+          AND tca.class_id = $3
+          AND tca.subject_id = $4
         LIMIT 1
         """,
         school_id,

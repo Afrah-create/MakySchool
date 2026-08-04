@@ -242,42 +242,22 @@ async def create_academic_year(
             detail={"error": "Year and terms are required"},
         )
 
-    async with conn.transaction():
-        await conn.execute(
-            "UPDATE academic_years SET is_current = false WHERE school_id = $1",
-            school_id,
-        )
+    from app.lib.academic_years import AcademicYearError, upsert_academic_year
 
-        academic_year_id = uuid.uuid4()
-        await conn.execute(
-            """
-            INSERT INTO academic_years (id, school_id, year, is_current)
-            VALUES ($1, $2, $3, true)
-            """,
-            academic_year_id,
-            school_id,
-            body.year,
-        )
-
-        await conn.execute("DELETE FROM terms WHERE school_id = $1", school_id)
-
-        for term in body.terms:
-            await conn.execute(
-                """
-                INSERT INTO terms (id, school_id, academic_year_id, name, start_date, end_date, is_current)
-                VALUES ($1, $2, $3, $4, $5, $6, false)
-                """,
-                uuid.uuid4(),
+    try:
+        async with conn.transaction():
+            academic_year_id = await upsert_academic_year(
+                conn,
                 school_id,
-                academic_year_id,
-                term.name or "",
-                term.startDate,
-                term.endDate,
+                year=body.year,
+                terms=body.terms,
+                make_current=True,
             )
-
-        from app.lib.terms import sync_term_current_flags
-
-        await sync_term_current_flags(conn, school_id)
+    except AcademicYearError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": exc.message, "code": exc.code},
+        ) from exc
 
     return {"data": {"id": str(academic_year_id)}}
 

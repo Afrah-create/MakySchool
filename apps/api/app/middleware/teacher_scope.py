@@ -19,14 +19,23 @@ async def get_allowed_class_ids(
     if role != "teacher":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "Forbidden"})
 
+    from app.lib.academic_years import get_current_academic_year_id
+
+    year_id = await get_current_academic_year_id(conn, school_id)
+    if year_id is None:
+        return []
+
     rows = await conn.fetch(
         """
         SELECT DISTINCT class_id
         FROM teacher_class_assignments
-        WHERE school_id = $1 AND teacher_id = $2
+        WHERE school_id = $1
+          AND teacher_id = $2
+          AND academic_year_id = $3
         """,
         school_id,
         user["user_db_id"],
+        year_id,
     )
     return [row["class_id"] for row in rows]
 

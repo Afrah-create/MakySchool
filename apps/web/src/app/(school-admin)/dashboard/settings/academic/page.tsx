@@ -8,7 +8,7 @@ export default function SchoolSettingsAcademicPage() {
     <SettingsPanel
       eyebrow="Settings"
       title="Academic year"
-      description="Set the current academic year and term dates."
+      description="Switch between academic years, or edit the current year's term dates."
     >
       {({ settings, reload }) => (
         <AcademicSettingsForm settings={settings} onSaved={() => void reload()} />

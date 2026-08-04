@@ -141,6 +141,10 @@ async def teacher_alevel_subject_ids(
         """
         SELECT DISTINCT als.id
         FROM teacher_class_assignments tca
+        JOIN academic_years ay
+          ON ay.id = tca.academic_year_id
+         AND ay.school_id = tca.school_id
+         AND ay.is_current = true
         JOIN alevel_subjects als
           ON als.school_subject_id = tca.subject_id
          AND als.school_id = tca.school_id
@@ -169,6 +173,10 @@ async def teacher_assigned_alevel_class_ids(
         """
         SELECT DISTINCT sc.id
         FROM teacher_class_assignments tca
+        JOIN academic_years ay
+          ON ay.id = tca.academic_year_id
+         AND ay.school_id = tca.school_id
+         AND ay.is_current = true
         JOIN school_classes sc ON sc.id = tca.class_id
         WHERE tca.school_id = $1
           AND tca.teacher_id = $2

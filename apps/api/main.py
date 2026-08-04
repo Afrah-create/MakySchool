@@ -39,6 +39,7 @@ from app.routers import (
     olevel,
     primary_reports,
     resources,
+    rollover,
     school_settings,
     setup,
     students,
@@ -188,6 +189,7 @@ def create_app() -> FastAPI:
 
     mount_v1_and_legacy(app, setup.router, "/api/schools/setup")
     mount_v1_and_legacy(app, school_settings.router, "/api/schools/settings")
+    mount_v1_and_legacy(app, rollover.router, "/api/schools/rollover")
     mount_v1_and_legacy(app, classes.router, "/api/schools/classes")
     mount_v1_and_legacy(app, subjects.router, "/api/schools/subjects")
     mount_v1_and_legacy(app, users.router, "/api/schools/users")

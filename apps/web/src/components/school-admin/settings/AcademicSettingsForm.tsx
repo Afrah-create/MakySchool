@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { CalendarDays } from "lucide-react";
 import type { SchoolSettingsResponse } from "@makyschool/shared/types";
 import { AcademicYearStep } from "@/components/school-admin/setup/steps/AcademicYearStep";
+import { AcademicYearSwitcher } from "@/components/school-admin/settings/AcademicYearSwitcher";
 import {
   SettingsFormFooter,
   SettingsSection,
@@ -44,6 +46,10 @@ export function AcademicSettingsForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setValue(toFormValue(settings));
+  }, [settings]);
+
   async function handleSave() {
     setSaving(true);
     setError(null);
@@ -71,14 +77,29 @@ export function AcademicSettingsForm({
     }
   }
 
+  const years = settings.academic_years ?? [];
+
   return (
     <div className="space-y-6">
+      <AcademicYearSwitcher
+        years={years}
+        currentYearId={settings.academic_year.id}
+        onSwitched={onSaved}
+      />
+
       <SettingsSection
         icon={CalendarDays}
-        title="Current academic year"
-        description="Replacing the year updates term dates for your school. Existing records are not deleted."
+        title="Edit current year terms"
+        description="Update term dates for the selected year number, or enter a new year number to create another year. Previous years and their terms are kept."
       >
         <AcademicYearStep value={value} onChange={setValue} />
+        <p className="mt-3 text-sm text-theme-muted">
+          Ready for a new school year with student promotion?{" "}
+          <Link href="/dashboard/settings/year-rollover" className="text-theme-primary underline">
+            Open year rollover
+          </Link>
+          .
+        </p>
       </SettingsSection>
 
       {error ? (

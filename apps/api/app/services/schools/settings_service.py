@@ -32,7 +32,7 @@ async def fetch_school_settings(
 
     year_row = await conn.fetchrow(
         """
-        SELECT id, year, is_current
+        SELECT id, year, is_current, status
         FROM academic_years
         WHERE school_id = $1 AND is_current = true
         ORDER BY created_at DESC
@@ -82,6 +82,7 @@ async def fetch_school_settings(
         "academic_year": {
             "id": str(year_row["id"]) if year_row else None,
             "year": year_row["year"] if year_row else None,
+            "status": year_row["status"] if year_row else None,
             "terms": [
                 {
                     "id": str(term["id"]),
@@ -96,6 +97,7 @@ async def fetch_school_settings(
                 for term in terms
             ],
         },
+        "academic_years": await _list_years_summary(conn, school_id),
         "grading_scale": {
             "bands": [
                 {
@@ -114,6 +116,15 @@ async def fetch_school_settings(
             "mode": school["learner_id_mode"],
         },
     }
+
+
+async def _list_years_summary(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+) -> list[dict[str, Any]]:
+    from app.lib.academic_years import list_academic_years
+
+    return await list_academic_years(conn, school_id, include_terms=False)
 
 
 async def update_student_id_settings(

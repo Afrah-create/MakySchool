@@ -51,6 +51,17 @@ export {
 } from "./academic";
 
 export {
+  DEFAULT_NEXT_LEVEL,
+  GRADUATION_LEVELS,
+  MANUAL_NEXT_ENROLLMENT_LEVELS,
+  PROMOTION_ACTIONS,
+  ROLLOVER_TRACKS,
+  rolloverTrackForLevel,
+  type PromotionAction,
+  type RolloverTrack,
+} from "./promotion";
+
+export {
   A_LEVEL_CLASS_LEVELS,
   O_LEVEL_CLASS_LEVELS,
   PRIMARY_CLASS_LEVELS,

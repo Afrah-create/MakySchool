@@ -421,18 +421,36 @@ async def create_structure(
     total_amount = sum(item.amount for item in body.items)
     actor_id = fees_actor_id(user)
 
+    year_row = await conn.fetchrow(
+        """
+        SELECT id
+        FROM academic_years
+        WHERE school_id = $1 AND year = $2
+        LIMIT 1
+        """,
+        school_id,
+        body.academic_year,
+    )
+    academic_year_id = year_row["id"] if year_row else None
+    if academic_year_id is None:
+        from app.lib.academic_years import get_current_academic_year_id
+
+        academic_year_id = await get_current_academic_year_id(conn, school_id)
+
     async with conn.transaction():
         row = await conn.fetchrow(
             """
             INSERT INTO fee_structures (
-              school_id, class_id, term_name, academic_year, amount, description, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+              school_id, class_id, term_name, academic_year, academic_year_id,
+              amount, description, created_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING id
             """,
             school_id,
             class_uuid,
             term,
             body.academic_year,
+            academic_year_id,
             total_amount,
             body.description.strip() if body.description else None,
             actor_id,

@@ -240,6 +240,10 @@ async def _fetch_teacher_detail(
         FROM teacher_class_assignments tca
         JOIN school_classes sc ON sc.id = tca.class_id
         LEFT JOIN school_subjects s ON s.id = tca.subject_id
+        JOIN academic_years ay
+          ON ay.id = tca.academic_year_id
+         AND ay.school_id = tca.school_id
+         AND ay.is_current = true
         WHERE tca.school_id = $1 AND tca.teacher_id = $2
         ORDER BY sc.level, sc.stream, s.name
         """,
@@ -292,6 +296,10 @@ async def _fetch_teacher_detail(
         """
         SELECT COUNT(DISTINCT s.id)::int
         FROM teacher_class_assignments tca
+        JOIN academic_years ay
+          ON ay.id = tca.academic_year_id
+         AND ay.school_id = tca.school_id
+         AND ay.is_current = true
         JOIN students s
           ON s.current_class_id = tca.class_id
          AND s.school_id = tca.school_id
@@ -308,6 +316,10 @@ async def _fetch_teacher_detail(
           tca.class_id,
           COUNT(DISTINCT s.id)::int AS student_count
         FROM teacher_class_assignments tca
+        JOIN academic_years ay
+          ON ay.id = tca.academic_year_id
+         AND ay.school_id = tca.school_id
+         AND ay.is_current = true
         LEFT JOIN students s
           ON s.current_class_id = tca.class_id
          AND s.school_id = tca.school_id
@@ -394,6 +406,10 @@ async def list_teachers(
         conditions.append(
             f"""EXISTS (
               SELECT 1 FROM teacher_class_assignments tca_f
+              JOIN academic_years ay_f
+                ON ay_f.id = tca_f.academic_year_id
+               AND ay_f.school_id = tca_f.school_id
+               AND ay_f.is_current = true
               WHERE tca_f.teacher_id = u.id AND tca_f.school_id = u.school_id
                 AND tca_f.class_id = ${param_index}
             )"""
@@ -447,6 +463,10 @@ async def list_teachers(
           COALESCE((
             SELECT COUNT(DISTINCT learners.id)::int
             FROM teacher_class_assignments tca2
+            JOIN academic_years ay2
+              ON ay2.id = tca2.academic_year_id
+             AND ay2.school_id = tca2.school_id
+             AND ay2.is_current = true
             LEFT JOIN students learners
               ON learners.current_class_id = tca2.class_id
              AND learners.school_id = tca2.school_id
@@ -455,7 +475,14 @@ async def list_teachers(
           ), 0) AS total_students
         FROM users u
         LEFT JOIN teacher_class_assignments tca
-          ON tca.teacher_id = u.id AND tca.school_id = u.school_id
+          ON tca.teacher_id = u.id
+         AND tca.school_id = u.school_id
+         AND EXISTS (
+           SELECT 1 FROM academic_years ay
+           WHERE ay.id = tca.academic_year_id
+             AND ay.school_id = tca.school_id
+             AND ay.is_current = true
+         )
         LEFT JOIN school_classes sc ON sc.id = tca.class_id
         LEFT JOIN school_subjects s ON s.id = tca.subject_id
         WHERE {where_clause}

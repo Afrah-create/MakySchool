@@ -15,18 +15,35 @@ async def sync_term_current_flags(
     *,
     today: date | None = None,
 ) -> None:
-    """Mark terms whose date range includes *today* as current; clear the rest."""
+    """Mark exactly one term as current (date match, prefer current academic year)."""
     on = today or date.today()
     await conn.execute(
         """
         UPDATE terms
-        SET is_current = (
-          start_date IS NOT NULL
-          AND end_date IS NOT NULL
-          AND start_date <= $2::date
-          AND end_date >= $2::date
+        SET is_current = false
+        WHERE school_id = $1 AND is_current = true
+        """,
+        school_id,
+    )
+    await conn.execute(
+        """
+        UPDATE terms
+        SET is_current = true
+        WHERE id = (
+          SELECT t.id
+          FROM terms t
+          LEFT JOIN academic_years ay ON ay.id = t.academic_year_id
+          WHERE t.school_id = $1
+            AND t.start_date IS NOT NULL
+            AND t.end_date IS NOT NULL
+            AND t.start_date <= $2::date
+            AND t.end_date >= $2::date
+          ORDER BY
+            (ay.is_current IS TRUE) DESC,
+            t.start_date DESC NULLS LAST,
+            t.id DESC
+          LIMIT 1
         )
-        WHERE school_id = $1
         """,
         school_id,
         on,

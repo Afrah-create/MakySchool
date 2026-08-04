@@ -59,19 +59,35 @@ async def get_current_term_id(
     return await resolve_current_term_id(conn, school_id)
 
 
+async def _resolve_academic_year_id(
+    conn: asyncpg.Connection,
+    school_id: uuid.UUID,
+    academic_year_id: uuid.UUID | None = None,
+) -> uuid.UUID:
+    if academic_year_id is not None:
+        return academic_year_id
+    from app.lib.academic_years import require_current_academic_year_id
+
+    return await require_current_academic_year_id(conn, school_id)
+
+
 async def _fetch_existing_assignments(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
     teacher_id: uuid.UUID,
+    academic_year_id: uuid.UUID,
 ) -> list[ExistingAssignment]:
     rows = await conn.fetch(
         """
         SELECT id, class_id, subject_id
         FROM teacher_class_assignments
-        WHERE school_id = $1 AND teacher_id = $2
+        WHERE school_id = $1
+          AND teacher_id = $2
+          AND academic_year_id = $3
         """,
         school_id,
         teacher_id,
+        academic_year_id,
     )
     return [
         ExistingAssignment(id=r["id"], class_id=r["class_id"], subject_id=r["subject_id"])
@@ -253,8 +269,11 @@ async def preview_assignment_sync(
     school_id: uuid.UUID,
     teacher_id: uuid.UUID,
     desired: list[AssignmentInput],
+    *,
+    academic_year_id: uuid.UUID | None = None,
 ) -> AssignmentSyncPreview:
-    existing = await _fetch_existing_assignments(conn, school_id, teacher_id)
+    year_id = await _resolve_academic_year_id(conn, school_id, academic_year_id)
+    existing = await _fetch_existing_assignments(conn, school_id, teacher_id, year_id)
     to_add, to_remove = plan_assignment_sync(existing, desired)
     term_id = await get_current_term_id(conn, school_id)
     vacated = _fully_vacated_class_ids(to_remove, desired)
@@ -277,8 +296,16 @@ async def sync_teacher_assignments(
     desired: list[AssignmentInput],
     *,
     acknowledge_warnings: bool = False,
+    academic_year_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
-    preview = await preview_assignment_sync(conn, school_id, teacher_id, desired)
+    year_id = await _resolve_academic_year_id(conn, school_id, academic_year_id)
+    preview = await preview_assignment_sync(
+        conn,
+        school_id,
+        teacher_id,
+        desired,
+        academic_year_id=year_id,
+    )
     preview_dict = _preview_to_dict(preview)
 
     if preview.blocks:
@@ -310,28 +337,34 @@ async def sync_teacher_assignments(
 
     for item in preview.to_add:
         if item.subject_id:
-            # One teacher per subject slot: displace any other teacher holding it.
+            # One teacher per subject slot (within the academic year).
             await conn.execute(
                 """
                 DELETE FROM teacher_class_assignments
-                WHERE school_id = $1 AND class_id = $2 AND subject_id = $3 AND teacher_id <> $4
+                WHERE school_id = $1
+                  AND class_id = $2
+                  AND subject_id = $3
+                  AND academic_year_id = $4
+                  AND teacher_id <> $5
                 """,
                 school_id,
                 item.class_id,
                 item.subject_id,
+                year_id,
                 teacher_id,
             )
         await conn.execute(
             """
             INSERT INTO teacher_class_assignments
-              (id, school_id, teacher_id, class_id, subject_id, assigned_by, assigned_at)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NOW())
-            ON CONFLICT (school_id, teacher_id, class_id, subject_id) DO NOTHING
+              (id, school_id, teacher_id, class_id, subject_id, academic_year_id, assigned_by, assigned_at)
+            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, NOW())
+            ON CONFLICT (school_id, teacher_id, class_id, subject_id, academic_year_id) DO NOTHING
             """,
             school_id,
             teacher_id,
             item.class_id,
             item.subject_id,
+            year_id,
             assigned_by,
         )
 

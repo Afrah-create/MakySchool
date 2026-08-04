@@ -625,15 +625,20 @@ async def promote_class(
                     student["id"],
                     school_id,
                 )
+                from app.lib.academic_years import get_current_academic_year_id
+
+                year_id = await get_current_academic_year_id(conn, school_id)
                 await conn.execute(
                     """
                     INSERT INTO student_class_history (
-                      id, school_id, student_id, class_id, enrolled_at, reason, moved_by
-                    ) VALUES (gen_random_uuid(), $1, $2, $3, NOW(), $4, $5)
+                      id, school_id, student_id, class_id, academic_year_id,
+                      enrolled_at, reason, moved_by
+                    ) VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), $5, $6)
                     """,
                     school_id,
                     student["id"],
                     body.to_class_id,
+                    year_id,
                     body.reason,
                     actor_id,
                 )

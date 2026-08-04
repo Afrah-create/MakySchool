@@ -15,6 +15,8 @@ export const CAN = {
   manageSchool: ["admin"],
   manageBilling: ["admin"],
   manageUsers: ["admin"],
+  /** Year-end rollover and academic year lifecycle — admin only. */
+  manageAcademicYear: ["admin"],
   manageStaff: ["admin", "head_teacher"],
   viewAllClasses: ["admin", "head_teacher"],
   viewAllStaff: ["admin", "head_teacher"],

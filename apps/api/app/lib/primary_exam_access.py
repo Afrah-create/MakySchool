@@ -222,6 +222,10 @@ async def teacher_primary_subject_ids(
         """
         SELECT DISTINCT ps.id
         FROM teacher_class_assignments tca
+        JOIN academic_years ay
+          ON ay.id = tca.academic_year_id
+         AND ay.school_id = tca.school_id
+         AND ay.is_current = true
         JOIN primary_subjects ps
           ON ps.school_subject_id = tca.subject_id
          AND ps.school_id = tca.school_id
@@ -247,6 +251,10 @@ async def teacher_assigned_primary_class_ids(
         """
         SELECT DISTINCT tca.class_id
         FROM teacher_class_assignments tca
+        JOIN academic_years ay
+          ON ay.id = tca.academic_year_id
+         AND ay.school_id = tca.school_id
+         AND ay.is_current = true
         JOIN school_classes sc ON sc.id = tca.class_id
         WHERE tca.school_id = $1
           AND tca.teacher_id = $2

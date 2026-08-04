@@ -7,6 +7,7 @@ import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
 import { cn } from "@makyschool/ui/lib/cn";
 import { DashboardNavProgress } from "@/components/layout/DashboardNavProgress";
+import { AcademicYearTopSwitch } from "@/components/layout/AcademicYearTopSwitch";
 import { useAuth } from "@/hooks/useAuth";
 import { useSchool } from "@/providers/SchoolProvider";
 import { performLogout } from "@/lib/auth/logout";
@@ -58,6 +59,7 @@ export function DashboardTopBar() {
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          <AcademicYearTopSwitch />
           {firstName ? (
             <div className="hidden items-center gap-2 sm:flex">
               <span

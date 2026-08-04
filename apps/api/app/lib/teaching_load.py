@@ -43,6 +43,12 @@ async def fetch_teaching_load_matrix(
             ON tca.school_id = cs.school_id
            AND tca.class_id = cs.class_id
            AND tca.subject_id = cs.subject_id
+           AND EXISTS (
+             SELECT 1 FROM academic_years ay
+             WHERE ay.id = tca.academic_year_id
+               AND ay.school_id = tca.school_id
+               AND ay.is_current = true
+           )
           LEFT JOIN users teacher
             ON teacher.id = tca.teacher_id
            AND teacher.school_id = cs.school_id
@@ -66,6 +72,10 @@ async def fetch_teaching_load_matrix(
           (
             SELECT COUNT(*)::int
             FROM teacher_class_assignments tca
+            JOIN academic_years ay
+              ON ay.id = tca.academic_year_id
+             AND ay.school_id = tca.school_id
+             AND ay.is_current = true
             WHERE tca.school_id = u.school_id
               AND tca.teacher_id = u.id
               AND tca.subject_id IS NOT NULL
@@ -147,9 +157,13 @@ async def _current_teacher_assignments(
 ) -> list[AssignmentInput]:
     rows = await conn.fetch(
         """
-        SELECT class_id, subject_id
-        FROM teacher_class_assignments
-        WHERE school_id = $1 AND teacher_id = $2 AND subject_id IS NOT NULL
+        SELECT tca.class_id, tca.subject_id
+        FROM teacher_class_assignments tca
+        JOIN academic_years ay
+          ON ay.id = tca.academic_year_id
+         AND ay.school_id = tca.school_id
+         AND ay.is_current = true
+        WHERE tca.school_id = $1 AND tca.teacher_id = $2 AND tca.subject_id IS NOT NULL
         """,
         school_id,
         teacher_id,
@@ -248,6 +262,12 @@ async def apply_slot_updates(
             WHERE tca.school_id = $1
               AND tca.class_id = slot.class_id
               AND tca.subject_id = slot.subject_id
+              AND EXISTS (
+                SELECT 1 FROM academic_years ay
+                WHERE ay.id = tca.academic_year_id
+                  AND ay.school_id = tca.school_id
+                  AND ay.is_current = true
+              )
               AND NOT EXISTS (
                 SELECT 1
                 FROM users u

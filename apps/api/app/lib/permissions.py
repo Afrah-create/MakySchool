@@ -6,6 +6,7 @@ CAN: dict[str, list[str]] = {
     "manageSchool": ["admin"],
     "manageBilling": ["admin"],
     "manageUsers": ["admin"],
+    "manageAcademicYear": ["admin"],
     "manageStaff": ["admin", "head_teacher"],
     "viewAllClasses": ["admin", "head_teacher"],
     "viewAllStaff": ["admin", "head_teacher"],

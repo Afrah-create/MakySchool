@@ -75,10 +75,23 @@ export interface TermSettings {
   academicYearId?: string | null;
 }
 
+export type AcademicYearStatus = "draft" | "active" | "closed";
+
 export interface AcademicYearSettings {
   id: string | null;
   year: number | null;
+  status?: AcademicYearStatus;
   terms: TermSettings[];
+}
+
+export interface AcademicYearSummary {
+  id: string;
+  year: number;
+  isCurrent: boolean;
+  status: AcademicYearStatus | null;
+  termCount?: number;
+  createdAt?: string | null;
+  terms?: TermSettings[];
 }
 
 export interface SchoolSettingsResponse {
@@ -89,6 +102,8 @@ export interface SchoolSettingsResponse {
     setup_completed_at?: string | null;
   };
   academic_year: AcademicYearSettings;
+  /** All years for the school (newest first). */
+  academic_years?: AcademicYearSummary[];
   grading_scale: { bands: GradingBandSettings[] };
   student_ids: StudentIdSettings;
 }

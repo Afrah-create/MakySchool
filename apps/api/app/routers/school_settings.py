@@ -4,7 +4,7 @@ import uuid
 from typing import Annotated, Any
 
 import asyncpg
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 
 from app.db.pool import get_db
@@ -179,44 +179,90 @@ async def update_academic_year(
             detail={"error": "Year and terms are required"},
         )
 
-    async with conn.transaction():
-        await conn.execute(
-            "UPDATE academic_years SET is_current = false WHERE school_id = $1",
-            school_id,
-        )
+    from app.lib.academic_years import AcademicYearError, upsert_academic_year
 
-        academic_year_id = uuid.uuid4()
-        await conn.execute(
-            """
-            INSERT INTO academic_years (id, school_id, year, is_current)
-            VALUES ($1, $2, $3, true)
-            """,
-            academic_year_id,
-            school_id,
-            body.year,
-        )
-
-        await conn.execute("DELETE FROM terms WHERE school_id = $1", school_id)
-
-        for term in body.terms:
-            await conn.execute(
-                """
-                INSERT INTO terms (id, school_id, academic_year_id, name, start_date, end_date, is_current)
-                VALUES ($1, $2, $3, $4, $5, $6, false)
-                """,
-                uuid.uuid4(),
+    try:
+        async with conn.transaction():
+            academic_year_id = await upsert_academic_year(
+                conn,
                 school_id,
-                academic_year_id,
-                term.name or "",
-                term.startDate,
-                term.endDate,
+                year=body.year,
+                terms=body.terms,
+                make_current=True,
             )
-
-        from app.lib.terms import sync_term_current_flags
-
-        await sync_term_current_flags(conn, school_id)
+    except AcademicYearError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": exc.message, "code": exc.code},
+        ) from exc
 
     return {"data": {"id": str(academic_year_id)}}
+
+
+@router.get("/academic-years")
+async def list_academic_years_endpoint(
+    ctx: TenantCtx,
+    include_terms: bool = Query(False, alias="includeTerms"),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """List all academic years for the school (newest first)."""
+    school_id, actor = ctx
+    # Readable by anyone who can manage school settings or academic year.
+    if not (
+        can(actor["role"], "manageSchool")
+        or can(actor["role"], "manageAcademicYear")
+        or can(actor["role"], "viewAllClasses")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "Forbidden.", "code": "FORBIDDEN"},
+        )
+
+    from app.lib.academic_years import list_academic_years
+
+    data = await list_academic_years(conn, school_id, include_terms=include_terms)
+    return {"data": data}
+
+
+@router.post("/academic-years/{academic_year_id}/activate")
+async def activate_academic_year(
+    academic_year_id: uuid.UUID,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """
+    Switch the school's current academic year.
+
+    Admin only. Does not delete or alter historical records — only flips
+    which year is treated as current across the app.
+    """
+    school_id, actor = ctx
+    if not can(actor["role"], "manageAcademicYear"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "Only the school admin can switch the academic year.",
+                "code": "FORBIDDEN",
+            },
+        )
+
+    from app.lib.academic_years import AcademicYearError, set_current_academic_year
+
+    try:
+        async with conn.transaction():
+            data = await set_current_academic_year(conn, school_id, academic_year_id)
+    except AcademicYearError as exc:
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if exc.code == "NOT_FOUND"
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(
+            status_code=code,
+            detail={"error": exc.message, "code": exc.code},
+        ) from exc
+
+    return {"data": data}
 
 
 @router.put("/grading-scale")

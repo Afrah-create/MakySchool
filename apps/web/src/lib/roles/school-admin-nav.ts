@@ -17,6 +17,7 @@ import {
   ListOrdered,
   MapPin,
   Receipt,
+  RefreshCw,
   Settings2,
   Shield,
   ShieldCheck,
@@ -84,6 +85,13 @@ const schoolAdminOLevelNavChildren: NavItem[] = [
 const schoolAdminSettingsNavChildren: NavItem[] = [
   { href: "/dashboard/settings", label: "Profile", icon: Building2, exact: true, requiredAction: "manageSchool" },
   { href: "/dashboard/settings/academic", label: "Academic year", icon: CalendarDays, exact: false, requiredAction: "manageSchool" },
+  {
+    href: "/dashboard/settings/year-rollover",
+    label: "Year rollover",
+    icon: RefreshCw,
+    exact: false,
+    requiredAction: "manageAcademicYear",
+  },
   { href: "/dashboard/settings/grading", label: "Grading scale", icon: ListOrdered, exact: false, requiredAction: "manageSchool" },
   { href: "/dashboard/settings/students", label: "Student IDs", icon: Hash, exact: false, requiredAction: "manageSchool" },
   {

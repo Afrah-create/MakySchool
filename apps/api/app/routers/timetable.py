@@ -225,16 +225,39 @@ async def _replace_class_timetable(
 ) -> list[asyncpg.Record]:
     await validate_bulk_replace(conn, school_id, class_id, term_id, periods)
 
+    academic_year_id: uuid.UUID | None = None
+    if term_id is not None:
+        term_row = await conn.fetchrow(
+            """
+            SELECT academic_year_id
+            FROM terms
+            WHERE id = $1 AND school_id = $2
+            """,
+            term_id,
+            school_id,
+        )
+        if term_row:
+            academic_year_id = term_row["academic_year_id"]
+    if academic_year_id is None:
+        from app.lib.academic_years import AcademicYearError, require_current_academic_year_id
+
+        try:
+            academic_year_id = await require_current_academic_year_id(conn, school_id)
+        except AcademicYearError as exc:
+            raise TimetableValidationError(exc.message, exc.code) from exc
+
     # Reconcile slot-by-slot so rows referenced by attendance keep their identity.
     existing = await conn.fetch(
         """
         SELECT id, day_of_week, period_number
         FROM timetable_periods
         WHERE school_id = $1 AND class_id = $2
-          AND term_id IS NOT DISTINCT FROM $3::uuid
+          AND academic_year_id = $3
+          AND term_id IS NOT DISTINCT FROM $4::uuid
         """,
         school_id,
         class_id,
+        academic_year_id,
         term_id,
     )
     existing_ids = {
@@ -262,6 +285,7 @@ async def _replace_class_timetable(
                     subject_id = $4,
                     teacher_id = $5,
                     track = $6,
+                    academic_year_id = $7,
                     updated_at = NOW()
                 WHERE id = $1
                 """,
@@ -271,19 +295,21 @@ async def _replace_class_timetable(
                 period.subject_id,
                 period.teacher_id,
                 period.track,
+                academic_year_id,
             )
             continue
 
         await conn.execute(
             """
             INSERT INTO timetable_periods (
-              school_id, class_id, term_id, day_of_week, period_number,
+              school_id, class_id, term_id, academic_year_id, day_of_week, period_number,
               start_time, end_time, subject_id, teacher_id, track
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             """,
             school_id,
             class_id,
             term_id,
+            academic_year_id,
             period.day_of_week,
             period.period_number,
             period.start_time,

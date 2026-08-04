@@ -31,6 +31,23 @@ All endpoints are mounted at **legacy** paths (`/api/...`) and **versioned** pat
 
 Uses repo-root `.env` (see `.env.example`). Required: `DATABASE_URL`, `TENANT_JWT_SECRET`, `SUPERADMIN_JWT_SECRET`.
 
+### Database connection (Supabase / Postgres)
+
+Use the **connection pooler** in production, not the direct Postgres port:
+
+| Mode | Port | When |
+|------|------|------|
+| Transaction pooler (recommended for API) | **6543** | FastAPI / serverless / many concurrent requests |
+| Direct connection | 5432 | Migrations, long sessions, admin tools only |
+
+Example (Supabase transaction mode):
+
+```env
+DATABASE_URL=postgresql://postgres.PROJECT_REF:PASSWORD@aws-0-REGION.pooler.supabase.com:6543/postgres
+```
+
+Using port `5432` for the API will exhaust Postgres connection limits as school concurrency grows.
+
 ### Rate limiting (Redis)
 
 The API uses **slowapi** with a **fixed-window** counter stored in Redis (default). Limits apply per IP (auth routes), per school (PDF/SMS/import), and per authenticated user (catch-all middleware).
