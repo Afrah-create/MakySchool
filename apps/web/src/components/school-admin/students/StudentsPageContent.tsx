@@ -57,7 +57,7 @@ export function StudentsPageContent() {
   const searchParams = useSearchParams();
   const canManage = useCan("manageStaff");
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [classId, setClassId] = useState("");
   const [gender, setGender] = useState("");
   const [status, setStatus] = useState<"active" | "withdrawn">("active");

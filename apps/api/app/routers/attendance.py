@@ -1397,13 +1397,14 @@ async def save_bulk_attendance(
             """
             INSERT INTO attendance
               (school_id, class_id, timetable_period_id, student_id, term_id,
-               date, status, notes, recorded_by)
+               academic_year_id, date, status, notes, recorded_by)
             SELECT
               $1,
               $2,
               $3,
               u.student_id,
               $4,
+              (SELECT academic_year_id FROM terms WHERE id = $4 AND school_id = $1),
               $5,
               u.status,
               u.notes,

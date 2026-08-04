@@ -6,6 +6,7 @@ import { DashboardHero } from "@/components/school-admin/DashboardHero";
 import { DashboardQuickActions } from "@/components/school-admin/DashboardQuickActions";
 import { DashboardStatStrip } from "@/components/school-admin/DashboardStatStrip";
 import { DashboardAnalyticsStrip } from "@/components/school-admin/DashboardAnalyticsStrip";
+import { DashboardMultiYearTrends } from "@/components/school-admin/DashboardMultiYearTrends";
 import { DisciplineRepeatOffendersBanner } from "@/components/school-admin/DisciplineRepeatOffendersBanner";
 import { RolloverResumeBanner } from "@/components/school-admin/RolloverResumeBanner";
 import { SubscriptionBanner } from "@/components/school-admin/SubscriptionBanner";
@@ -23,6 +24,7 @@ export function SchoolAdminDashboardHome() {
       <DashboardStatStrip />
       <DashboardQuickActions />
       <DashboardAnalyticsStrip />
+      <DashboardMultiYearTrends />
       <DashboardClassesTable />
     </div>
   );

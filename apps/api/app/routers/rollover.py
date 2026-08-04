@@ -195,6 +195,20 @@ async def execute_session(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": exc.message, "code": exc.code},
         ) from exc
+
+    # Best-effort analytics refresh so the new year appears in dashboard trends.
+    try:
+        from app.lib.analytics.matviews import refresh_analytics_matviews
+
+        await refresh_analytics_matviews(conn, concurrently=True)
+    except Exception:
+        try:
+            from app.lib.analytics.matviews import refresh_analytics_matviews
+
+            await refresh_analytics_matviews(conn, concurrently=False)
+        except Exception:
+            pass
+
     return {"data": data}
 
 

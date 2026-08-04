@@ -7,8 +7,6 @@ export type StudentLifecycleStatus =
   | "graduated"
   | "transferred";
 
-export type AcademicYearStatus = "draft" | "active" | "closed";
-
 export type RolloverSessionStatus = "in_progress" | "completed" | "cancelled" | "failed";
 
 export interface PromotionPreviewRow {

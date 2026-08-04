@@ -99,6 +99,7 @@ export function AcademicYearSwitcher({
             <tr>
               <th>Year</th>
               <th>Status</th>
+              <th>Visibility</th>
               <th>Terms</th>
               <th />
             </tr>
@@ -120,6 +121,7 @@ export function AcademicYearSwitcher({
                       {statusLabel(year.status, isCurrent)}
                     </span>
                   </td>
+                  <td className="text-sm capitalize text-theme-muted">{year.visibility ?? "—"}</td>
                   <td className="text-sm text-theme-muted">{year.termCount ?? "—"}</td>
                   <td className="text-right">
                     {isCurrent ? (

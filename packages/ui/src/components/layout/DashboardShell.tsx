@@ -26,14 +26,18 @@ export function DashboardShell({
       {sidebar}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {mobileChrome ? <div className="shrink-0 lg:hidden">{mobileChrome}</div> : null}
+        {mobileChrome ? (
+          <div className="relative z-40 shrink-0 lg:hidden">{mobileChrome}</div>
+        ) : null}
 
         <div className="flex min-h-0 flex-1 overflow-hidden xl:gap-4">
           <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-            {topBar ? <div className="hidden shrink-0 lg:block">{topBar}</div> : null}
+            {topBar ? (
+              <div className="relative z-40 hidden shrink-0 lg:block">{topBar}</div>
+            ) : null}
 
             <div
-              className={`dashboard-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain ${scrollPadding}`}
+              className={`dashboard-scroll relative z-0 min-h-0 flex-1 overflow-y-auto overscroll-contain ${scrollPadding}`}
             >
               {children}
             </div>

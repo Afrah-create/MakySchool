@@ -25,6 +25,12 @@ class StudentIdSettingsBody(BaseModel):
     mode: str | None = None
 
 
+class DataRetentionBody(BaseModel):
+    hotYears: int | None = Field(default=None, ge=1, le=20)
+    warmYears: int | None = Field(default=None, ge=0, le=20)
+    archiveAfterYears: int | None = Field(default=None, ge=1, le=50)
+
+
 def _require_manage_school(actor: dict[str, Any]) -> None:
     if not can(actor["role"], "manageSchool"):
         raise HTTPException(
@@ -46,9 +52,31 @@ async def get_current_term(
     from app.lib.terms import fetch_current_term, serialize_term_row
 
     row = await fetch_current_term(conn, school_id)
-    if not row:
+    if row:
+        return {"data": serialize_term_row(row)}
+
+    # No term yet — still expose the current academic year for chrome/context.
+    year_row = await conn.fetchrow(
+        """
+        SELECT id, year
+        FROM academic_years
+        WHERE school_id = $1 AND is_current = true
+        LIMIT 1
+        """,
+        school_id,
+    )
+    if not year_row:
         return {"data": None}
-    return {"data": serialize_term_row(row)}
+    return {
+        "data": {
+            "name": "",
+            "startDate": None,
+            "endDate": None,
+            "isCurrent": True,
+            "academicYearId": str(year_row["id"]),
+            "academicYear": int(year_row["year"]),
+        }
+    }
 
 
 @router.get("")
@@ -203,9 +231,13 @@ async def update_academic_year(
 async def list_academic_years_endpoint(
     ctx: TenantCtx,
     include_terms: bool = Query(False, alias="includeTerms"),
+    visibility: str | None = Query(
+        None,
+        description="Filter by retention bucket: hot | warm | archive | historical | all",
+    ),
     conn: asyncpg.Connection = Depends(get_db),
 ):
-    """List all academic years for the school (newest first)."""
+    """List academic years for the school (newest first), with retention visibility."""
     school_id, actor = ctx
     # Readable by anyone who can manage school settings or academic year.
     if not (
@@ -218,10 +250,25 @@ async def list_academic_years_endpoint(
             detail={"error": "Forbidden.", "code": "FORBIDDEN"},
         )
 
-    from app.lib.academic_years import list_academic_years
+    from app.services.schools.retention import list_years_with_visibility
 
-    data = await list_academic_years(conn, school_id, include_terms=include_terms)
-    return {"data": data}
+    bucket = (visibility or "all").strip().lower()
+    if bucket not in {"hot", "warm", "archive", "historical", "all"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "visibility must be hot, warm, archive, historical, or all.",
+                "code": "VALIDATION_ERROR",
+            },
+        )
+
+    classified = await list_years_with_visibility(
+        conn,
+        school_id,
+        visibility=bucket,  # type: ignore[arg-type]
+        include_terms=include_terms,
+    )
+    return {"data": classified["years"]}
 
 
 @router.post("/academic-years/{academic_year_id}/activate")
@@ -333,3 +380,80 @@ async def patch_student_id_settings(
         ) from exc
 
     return {"data": updated}
+
+
+@router.get("/data-retention")
+async def get_data_retention(
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    if not (
+        can(actor["role"], "manageSchool")
+        or can(actor["role"], "manageAcademicYear")
+        or can(actor["role"], "viewAllClasses")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "Forbidden.", "code": "FORBIDDEN"},
+        )
+
+    from app.services.schools.retention import get_or_create_retention_settings, list_years_with_visibility
+
+    settings = await get_or_create_retention_settings(conn, school_id)
+    classified = await list_years_with_visibility(conn, school_id, visibility="all")
+    return {
+        "data": {
+            **settings,
+            "preview": classified["years"],
+            "currentYear": classified["currentYear"],
+        }
+    }
+
+
+@router.patch("/data-retention")
+async def patch_data_retention(
+    body: DataRetentionBody,
+    ctx: TenantCtx,
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    school_id, actor = ctx
+    if not can(actor["role"], "manageAcademicYear"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "Only the school admin can update data retention settings.",
+                "code": "FORBIDDEN",
+            },
+        )
+
+    from app.services.schools.retention import (
+        RetentionSettingsError,
+        list_years_with_visibility,
+        update_retention_settings,
+    )
+
+    try:
+        async with conn.transaction():
+            settings = await update_retention_settings(
+                conn,
+                school_id,
+                hot_years=body.hotYears,
+                warm_years=body.warmYears,
+                archive_after_years=body.archiveAfterYears,
+                actor_id=uuid.UUID(str(actor["sub"])),
+            )
+    except RetentionSettingsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": exc.message, "code": exc.code},
+        ) from exc
+
+    classified = await list_years_with_visibility(conn, school_id, visibility="all")
+    return {
+        "data": {
+            **settings,
+            "preview": classified["years"],
+            "currentYear": classified["currentYear"],
+        }
+    }

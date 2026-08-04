@@ -264,12 +264,6 @@ export function LoginForm({
           <AuthSecondaryButton onClick={() => setStep("password")}>Back</AuthSecondaryButton>
         </div>
       ) : null}
-
-      <p className="border-t border-theme/80 pt-4 text-center text-xs leading-relaxed text-theme-faint">
-        Access is managed by your school administrator.
-        <br />
-        There is no public registration.
-      </p>
     </form>
   );
 }

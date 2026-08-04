@@ -71,7 +71,14 @@ async def fetch_current_term(
 
     return await conn.fetchrow(
         """
-        SELECT t.id, t.name, t.start_date, t.end_date, t.is_current, t.academic_year_id
+        SELECT
+          t.id,
+          t.name,
+          t.start_date,
+          t.end_date,
+          t.is_current,
+          t.academic_year_id,
+          ay.year AS academic_year
         FROM terms t
         LEFT JOIN academic_years ay ON ay.id = t.academic_year_id
         WHERE t.school_id = $1
@@ -112,6 +119,7 @@ def serialize_term_row(row: asyncpg.Record) -> dict[str, Any]:
     start = row.get("start_date")
     end = row.get("end_date")
     by_dates = term_is_current_by_dates(start, end)
+    academic_year = row.get("academic_year")
     return {
         "id": str(row["id"]),
         "name": row["name"],
@@ -119,4 +127,5 @@ def serialize_term_row(row: asyncpg.Record) -> dict[str, Any]:
         "endDate": end.isoformat() if end else None,
         "isCurrent": by_dates or bool(row.get("is_current")),
         "academicYearId": str(row["academic_year_id"]) if row.get("academic_year_id") else None,
+        "academicYear": int(academic_year) if academic_year is not None else None,
     }

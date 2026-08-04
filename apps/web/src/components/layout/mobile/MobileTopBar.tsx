@@ -3,6 +3,8 @@
 import { LogOut } from "lucide-react";
 import { BrandLogo } from "@makyschool/ui/components/ui/BrandLogo";
 import { ThemeToggle } from "@makyschool/ui/components/ui/ThemeToggle";
+import { AcademicYearTopSwitch } from "@/components/layout/AcademicYearTopSwitch";
+import { DashboardHeaderSearch } from "@/components/layout/DashboardHeaderSearch";
 import { DashboardNavProgress } from "@/components/layout/DashboardNavProgress";
 import { performLogout } from "@/lib/auth/logout";
 import { resolveMobilePageTitle } from "@/lib/roles/mobile-page-titles";
@@ -24,11 +26,11 @@ export function MobileTopBar({
   }
 
   return (
-    <header>
+    <header className="relative z-40 border-b border-theme bg-theme-surface/90 backdrop-blur-md">
       <DashboardNavProgress />
-      <div className="flex h-14 items-center justify-between gap-3 px-4">
-        <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <BrandLogo size={30} rounded="md" className="shrink-0" />
+      <div className="flex h-14 items-center justify-between gap-2 px-3 sm:px-4">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <BrandLogo size={28} rounded="md" className="shrink-0" />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold leading-tight text-theme-primary">
               {title}
@@ -38,7 +40,9 @@ export function MobileTopBar({
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+          <DashboardHeaderSearch variant="mobile" />
+          <AcademicYearTopSwitch compact />
           <ThemeToggle />
           <button
             type="button"

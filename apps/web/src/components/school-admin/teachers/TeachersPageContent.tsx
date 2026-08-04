@@ -47,7 +47,7 @@ export function TeachersPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const canManage = useCan("manageStaff");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [status, setStatus] = useState<"" | "true" | "false">("");
   const [classId, setClassId] = useState("");
   const [page, setPage] = useState(1);

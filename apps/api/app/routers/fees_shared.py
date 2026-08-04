@@ -368,8 +368,20 @@ async def record_fee_payment(
         """
         INSERT INTO fee_payments (
           school_id, student_id, fee_account_id, receipt_number, amount,
-          payment_method, payment_reference, payment_date, notes, recorded_by, invoice_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          payment_method, payment_reference, payment_date, notes, recorded_by, invoice_id,
+          academic_year_id
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+          (
+            SELECT COALESCE(fs.academic_year_id, ay.id)
+            FROM student_fee_accounts sfa
+            JOIN fee_structures fs ON fs.id = sfa.fee_structure_id
+            LEFT JOIN academic_years ay
+              ON ay.school_id = fs.school_id AND ay.year = fs.academic_year
+            WHERE sfa.id = $3
+            LIMIT 1
+          )
+        )
         RETURNING id
         """,
         school_id,

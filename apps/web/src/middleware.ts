@@ -46,6 +46,11 @@ function platformAppUrl() {
   ).replace(/\/$/, "");
 }
 
+function isMobileUserAgent(ua: string | null) {
+  if (!ua) return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua);
+}
+
 function portalPathPrefix(portal: ReturnType<typeof portalForRole>) {
   switch (portal) {
     case "school-admin":
@@ -79,6 +84,17 @@ export async function middleware(request: NextRequest) {
     request.cookies.get(TENANT_ACCESS_COOKIE) ?? request.cookies.get(TENANT_REFRESH_COOKIE);
 
   const tenantPayload = hasTenantSession ? await getTenantPayloadFromRequest(request) : null;
+
+  // Phones/tablets: skip marketing landing and go straight to sign-in.
+  if (
+    pathname === "/" &&
+    !hasTenantSession &&
+    isMobileUserAgent(request.headers.get("user-agent"))
+  ) {
+    const response = NextResponse.redirect(new URL("/login", request.url));
+    applyNoCacheHeaders(response);
+    return response;
+  }
 
   const isProtected = isProtectedPath(pathname);
 

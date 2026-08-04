@@ -78,6 +78,7 @@ def mount_v1_and_legacy(app: FastAPI, router, legacy_prefix: str) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.lib.analytics.scheduler import start_analytics_refresh_task
     from app.services.storage.errors import StorageConfigError, StorageError
     from app.services.storage.wasabi import validate_wasabi_connection
 
@@ -90,12 +91,21 @@ async def lifespan(app: FastAPI):
 
     await run_migrations_on_startup()
     await get_pool()
+    refresh_task, stop_event = start_analytics_refresh_task()
     logger.info(
         "MakySchool API started storage_backend=%s",
         "wasabi" if settings.use_wasabi_storage else "local",
     )
-    yield
-    await close_pool()
+    try:
+        yield
+    finally:
+        stop_event.set()
+        refresh_task.cancel()
+        try:
+            await refresh_task
+        except asyncio.CancelledError:
+            pass
+        await close_pool()
 
 
 def create_app() -> FastAPI:

@@ -73,6 +73,8 @@ export interface TermSettings {
   endDate: string | null;
   isCurrent?: boolean;
   academicYearId?: string | null;
+  /** Calendar year of the term's academic year (e.g. 2026). */
+  academicYear?: number | null;
 }
 
 export type AcademicYearStatus = "draft" | "active" | "closed";
@@ -92,6 +94,8 @@ export interface AcademicYearSummary {
   termCount?: number;
   createdAt?: string | null;
   terms?: TermSettings[];
+  /** Retention bucket — hot | warm | archive */
+  visibility?: "hot" | "warm" | "archive";
 }
 
 export interface SchoolSettingsResponse {

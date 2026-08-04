@@ -295,6 +295,8 @@ Phasing recommendation for Cursor to follow
 
 Cursor must implement this in exactly this sequence. Do not start a later phase until the earlier phase is verified working end to end.
 
+**Status (Aug 2026):** Phases 1–4 and Phase 6 (retention/archive UI) are implemented end-to-end. Phase 5 (live table partition swap) is prepared only — year columns + indexes exist; follow `docs/partitioning-academic-year.md` for a rehearsed zero-downtime cutover. Do not swap production tables without a snapshot rehearsal.
+
 Phase 1 — Foundation fixes (implement first, everything else depends on this)
 
 Academic year scoping audit and fixes. Add academic_year_id to any tables missing it. Verify teacher_class_assignments is properly year-scoped. Write the rollover log migration. Add graduation fields to students. Verify the production database connection uses the pooled endpoint. This phase has no frontend changes — it is purely backend and database.

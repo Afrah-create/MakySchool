@@ -95,7 +95,7 @@ export function RecordPaymentContent() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [classId, setClassId] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | "unpaid" | "partial">("");
   const [page, setPage] = useState(1);

@@ -16,10 +16,10 @@ export default async function LoginPage() {
 
   const title = schoolSlug
     ? `Welcome to ${school?.name ?? "your school"}`
-    : "Sign in to MakySchool";
+    : "Sign in";
   const subtitle = schoolSlug
-    ? "Enter your credentials to access your school workspace."
-    : "Use the email and password provided by your administrator.";
+    ? "Enter your school credentials to continue."
+    : "Use the email and password from your administrator.";
 
   return (
     <AuthLayout
@@ -34,7 +34,7 @@ export default async function LoginPage() {
           schoolSlug ? (
             <AuthMobileBanner
               headline={school?.name ?? `${schoolSlug} workspace`}
-              description={`Admin & staff portal · ${schoolSlug}.${rootDomain}`}
+              description={`${schoolSlug}.${rootDomain}`}
             />
           ) : undefined
         }

@@ -122,9 +122,12 @@ async def _list_years_summary(
     conn: asyncpg.Connection,
     school_id: uuid.UUID,
 ) -> list[dict[str, Any]]:
-    from app.lib.academic_years import list_academic_years
+    from app.services.schools.retention import list_years_with_visibility
 
-    return await list_academic_years(conn, school_id, include_terms=False)
+    classified = await list_years_with_visibility(
+        conn, school_id, visibility="all", include_terms=False
+    )
+    return classified["years"]
 
 
 async def update_student_id_settings(

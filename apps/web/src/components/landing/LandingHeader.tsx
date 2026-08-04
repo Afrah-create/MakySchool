@@ -16,17 +16,19 @@ export function LandingHeader() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduceMotion ? 0 : 0.45, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
-        <Link href="/" className="flex items-center gap-2.5">
-          <BrandLogo size={36} className="shadow-theme-accent" />
-          <span className="text-sm font-bold tracking-tight text-theme-primary">MakySchool</span>
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3.5 sm:px-6 sm:py-4">
+        <Link href="/" className="flex min-w-0 items-center gap-2.5">
+          <BrandLogo size={32} className="shrink-0 shadow-theme-accent" />
+          <span className="truncate text-sm font-bold tracking-tight text-theme-primary">
+            MakySchool
+          </span>
         </Link>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <ThemeToggle />
           <Link
             href="/login"
-            className="ms-btn-primary rounded-full px-5 py-2 text-sm shadow-theme-accent"
+            className="ms-btn-primary rounded-full px-3.5 py-1.5 text-xs shadow-theme-accent sm:px-5 sm:py-2 sm:text-sm"
           >
             Sign in
           </Link>

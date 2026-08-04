@@ -1,5 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  AlertCircle,
+  Archive,
   Award,
   BookOpenCheck,
   Building2,
@@ -10,12 +12,14 @@ import {
   FileText,
   GraduationCap,
   Hash,
+  History,
   Landmark,
   Layers,
   LayoutDashboard,
   Library,
   ListOrdered,
   MapPin,
+  PieChart,
   Receipt,
   RefreshCw,
   Settings2,
@@ -24,6 +28,7 @@ import {
   Sigma,
   UserRound,
   UsersRound,
+  Wallet,
 } from "lucide-react";
 import { can, schoolOffersALevel, schoolOffersOLevel, schoolOffersPrimary, type PermissionAction } from "@makyschool/shared/constants";
 import type { SchoolType, UserRole } from "@makyschool/shared/types";
@@ -39,14 +44,14 @@ export type NavItem = {
 };
 
 const schoolAdminFeesNavChildren: NavItem[] = [
-  { href: "/dashboard/fees", label: "Overview", exact: true, requiredAction: null },
-  { href: "/dashboard/fees/structures", label: "Fee structures", exact: false, requiredAction: null },
-  { href: "/dashboard/fees/payments", label: "Payment history", exact: false, requiredAction: null },
-  { href: "/dashboard/fees/outstanding", label: "Outstanding", exact: false, requiredAction: "viewFees" },
-  { href: "/dashboard/fees/invoices", label: "Invoices", exact: false, requiredAction: "viewInvoices" },
-  { href: "/dashboard/fees/other-income", label: "Other income", exact: false, requiredAction: "viewFees" },
-  { href: "/dashboard/fees/budget", label: "Budget", exact: false, requiredAction: "viewBudget" },
-  { href: "/dashboard/fees/reports", label: "Reports", exact: false, requiredAction: "viewReports" },
+  { href: "/dashboard/fees", label: "Overview", icon: LayoutDashboard, exact: true, requiredAction: null },
+  { href: "/dashboard/fees/structures", label: "Fee structures", icon: ListOrdered, exact: false, requiredAction: null },
+  { href: "/dashboard/fees/payments", label: "Payment history", icon: History, exact: false, requiredAction: null },
+  { href: "/dashboard/fees/outstanding", label: "Outstanding", icon: AlertCircle, exact: false, requiredAction: "viewFees" },
+  { href: "/dashboard/fees/invoices", label: "Invoices", icon: Receipt, exact: false, requiredAction: "viewInvoices" },
+  { href: "/dashboard/fees/other-income", label: "Other income", icon: Wallet, exact: false, requiredAction: "viewFees" },
+  { href: "/dashboard/fees/budget", label: "Budget", icon: PieChart, exact: false, requiredAction: "viewBudget" },
+  { href: "/dashboard/fees/reports", label: "Reports", icon: FileText, exact: false, requiredAction: "viewReports" },
 ];
 
 const schoolAdminALevelNavChildren: NavItem[] = [
@@ -92,6 +97,13 @@ const schoolAdminSettingsNavChildren: NavItem[] = [
     exact: false,
     requiredAction: "manageAcademicYear",
   },
+  {
+    href: "/dashboard/settings/data-retention",
+    label: "Data retention",
+    icon: Archive,
+    exact: false,
+    requiredAction: "manageAcademicYear",
+  },
   { href: "/dashboard/settings/grading", label: "Grading scale", icon: ListOrdered, exact: false, requiredAction: "manageSchool" },
   { href: "/dashboard/settings/students", label: "Student IDs", icon: Hash, exact: false, requiredAction: "manageSchool" },
   {
@@ -123,6 +135,13 @@ export const schoolAdminNavGroups: NavGroup[] = [
         icon: LayoutDashboard,
         exact: true,
         requiredAction: null,
+      },
+      {
+        href: "/dashboard/archive",
+        label: "Historical records",
+        icon: Archive,
+        exact: false,
+        requiredAction: "viewAnalytics",
       },
     ],
   },
