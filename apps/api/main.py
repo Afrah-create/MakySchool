@@ -57,6 +57,7 @@ from app.routers import (
     users,
     webhooks,
 )
+from app.routers.notifications import router as notifications_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -215,6 +216,7 @@ def create_app() -> FastAPI:
         app, teacher_attendance.router, "/api/schools/teacher-attendance"
     )
     mount_v1_and_legacy(app, discipline.router, "/api/schools/discipline")
+    mount_v1_and_legacy(app, notifications_router, "/api/schools/notifications")
     mount_v1_and_legacy(app, resources.router, "/api/schools/resources")
     mount_v1_and_legacy(app, primary_reports.router, "/api/schools/primary")
     mount_v1_and_legacy(app, alevel.router, "/api/schools/alevel")
