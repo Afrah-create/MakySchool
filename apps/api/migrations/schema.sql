@@ -841,6 +841,9 @@ CREATE TABLE public.schools (
   learner_id_mode text NOT NULL DEFAULT 'sequential'::text CHECK (learner_id_mode = ANY (ARRAY['sequential'::text, 'random'::text])),
   phones ARRAY NOT NULL DEFAULT '{}'::text[],
   emails ARRAY NOT NULL DEFAULT '{}'::text[],
+  latitude numeric,
+  longitude numeric,
+  attendance_radius_metres integer NOT NULL DEFAULT 200,
   CONSTRAINT schools_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.submissions (
@@ -920,6 +923,7 @@ CREATE TABLE public.school_subjects (
   name text NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  track text NOT NULL DEFAULT 'secular'::text CHECK (track = ANY (ARRAY['secular'::text, 'theology'::text, 'both'::text])),
   CONSTRAINT school_subjects_pkey PRIMARY KEY (id),
   CONSTRAINT school_subjects_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id)
 );
@@ -940,6 +944,7 @@ CREATE TABLE public.academic_years (
   year integer NOT NULL,
   is_current boolean DEFAULT false,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['draft'::text, 'active'::text, 'closed'::text])),
   CONSTRAINT academic_years_pkey PRIMARY KEY (id),
   CONSTRAINT academic_years_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id)
 );
@@ -1015,12 +1020,14 @@ CREATE TABLE public.teacher_class_assignments (
   subject_id uuid,
   assigned_at timestamp with time zone DEFAULT now(),
   assigned_by uuid,
+  academic_year_id uuid NOT NULL,
   CONSTRAINT teacher_class_assignments_pkey PRIMARY KEY (id),
   CONSTRAINT teacher_class_assignments_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
   CONSTRAINT teacher_class_assignments_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES public.users(id),
   CONSTRAINT teacher_class_assignments_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
   CONSTRAINT teacher_class_assignments_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES public.school_subjects(id),
-  CONSTRAINT teacher_class_assignments_assigned_by_fkey FOREIGN KEY (assigned_by) REFERENCES public.users(id)
+  CONSTRAINT teacher_class_assignments_assigned_by_fkey FOREIGN KEY (assigned_by) REFERENCES public.users(id),
+  CONSTRAINT teacher_class_assignments_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id)
 );
 CREATE TABLE public.teacher_term_submissions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -1047,18 +1054,23 @@ CREATE TABLE public.students (
   gender text CHECK (gender = ANY (ARRAY['male'::text, 'female'::text, 'other'::text])),
   photo_url text,
   current_class_id uuid,
-  status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'inactive'::text, 'withdrawn'::text])),
+  status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'inactive'::text, 'withdrawn'::text, 'graduated'::text, 'transferred'::text])),
   withdrawal_reason text,
   withdrawn_at timestamp with time zone,
   created_by uuid,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   user_id uuid UNIQUE,
+  graduation_year integer,
+  graduation_class_id uuid,
+  graduated_at timestamp with time zone,
+  transferred_at timestamp with time zone,
   CONSTRAINT students_pkey PRIMARY KEY (id),
   CONSTRAINT students_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
   CONSTRAINT students_current_class_id_fkey FOREIGN KEY (current_class_id) REFERENCES public.school_classes(id),
   CONSTRAINT students_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id),
-  CONSTRAINT students_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+  CONSTRAINT students_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
+  CONSTRAINT students_graduation_class_id_fkey FOREIGN KEY (graduation_class_id) REFERENCES public.school_classes(id)
 );
 CREATE TABLE public.student_guardians (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -1084,11 +1096,13 @@ CREATE TABLE public.student_class_history (
   reason text,
   moved_by uuid,
   created_at timestamp with time zone DEFAULT now(),
+  academic_year_id uuid,
   CONSTRAINT student_class_history_pkey PRIMARY KEY (id),
   CONSTRAINT student_class_history_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
   CONSTRAINT student_class_history_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id),
   CONSTRAINT student_class_history_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
-  CONSTRAINT student_class_history_moved_by_fkey FOREIGN KEY (moved_by) REFERENCES public.users(id)
+  CONSTRAINT student_class_history_moved_by_fkey FOREIGN KEY (moved_by) REFERENCES public.users(id),
+  CONSTRAINT student_class_history_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id)
 );
 CREATE TABLE public.learner_id_sequences (
   school_id uuid NOT NULL,
@@ -1131,12 +1145,14 @@ CREATE TABLE public.fee_structures (
   locked_reason text,
   deleted_at timestamp with time zone,
   deleted_by uuid,
+  academic_year_id uuid,
   CONSTRAINT fee_structures_pkey PRIMARY KEY (id),
   CONSTRAINT fee_structures_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
   CONSTRAINT fee_structures_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
   CONSTRAINT fee_structures_term_id_fkey FOREIGN KEY (term_id) REFERENCES public.terms(id),
   CONSTRAINT fee_structures_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id),
-  CONSTRAINT fee_structures_deleted_by_fkey FOREIGN KEY (deleted_by) REFERENCES public.users(id)
+  CONSTRAINT fee_structures_deleted_by_fkey FOREIGN KEY (deleted_by) REFERENCES public.users(id),
+  CONSTRAINT fee_structures_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id)
 );
 CREATE TABLE public.student_fee_accounts (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -1175,13 +1191,15 @@ CREATE TABLE public.fee_payments (
   void_reason text,
   created_at timestamp with time zone DEFAULT now(),
   invoice_id uuid,
+  academic_year_id uuid,
   CONSTRAINT fee_payments_pkey PRIMARY KEY (id),
   CONSTRAINT fee_payments_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
   CONSTRAINT fee_payments_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id),
   CONSTRAINT fee_payments_fee_account_id_fkey FOREIGN KEY (fee_account_id) REFERENCES public.student_fee_accounts(id),
   CONSTRAINT fee_payments_recorded_by_fkey FOREIGN KEY (recorded_by) REFERENCES public.users(id),
   CONSTRAINT fee_payments_voided_by_fkey FOREIGN KEY (voided_by) REFERENCES public.users(id),
-  CONSTRAINT fee_payments_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id)
+  CONSTRAINT fee_payments_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id),
+  CONSTRAINT fee_payments_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id)
 );
 CREATE TABLE public.receipt_number_sequences (
   school_id uuid NOT NULL,
@@ -1204,12 +1222,14 @@ CREATE TABLE public.timetable_periods (
   track text NOT NULL DEFAULT 'secular'::text CHECK (track = ANY (ARRAY['secular'::text, 'theology'::text, 'both'::text])),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  academic_year_id uuid NOT NULL,
   CONSTRAINT timetable_periods_pkey PRIMARY KEY (id),
   CONSTRAINT timetable_periods_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
   CONSTRAINT timetable_periods_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
   CONSTRAINT timetable_periods_term_id_fkey FOREIGN KEY (term_id) REFERENCES public.terms(id),
   CONSTRAINT timetable_periods_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES public.school_subjects(id),
-  CONSTRAINT timetable_periods_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES public.users(id)
+  CONSTRAINT timetable_periods_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES public.users(id),
+  CONSTRAINT timetable_periods_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id)
 );
 CREATE TABLE public.school_period_templates (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -1407,13 +1427,15 @@ CREATE TABLE public.attendance (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   timetable_period_id uuid,
+  academic_year_id uuid,
   CONSTRAINT attendance_pkey PRIMARY KEY (id),
   CONSTRAINT attendance_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
   CONSTRAINT attendance_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.school_classes(id),
   CONSTRAINT attendance_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id),
   CONSTRAINT attendance_term_id_fkey FOREIGN KEY (term_id) REFERENCES public.terms(id),
   CONSTRAINT attendance_recorded_by_fkey FOREIGN KEY (recorded_by) REFERENCES public.users(id),
-  CONSTRAINT attendance_timetable_period_id_fkey FOREIGN KEY (timetable_period_id) REFERENCES public.timetable_periods(id)
+  CONSTRAINT attendance_timetable_period_id_fkey FOREIGN KEY (timetable_period_id) REFERENCES public.timetable_periods(id),
+  CONSTRAINT attendance_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id)
 );
 CREATE TABLE public.attendance_notifications (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -1477,6 +1499,7 @@ CREATE TABLE public.alevel_subjects (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   school_subject_id uuid NOT NULL,
+  track text NOT NULL DEFAULT 'secular'::text CHECK (track = ANY (ARRAY['secular'::text, 'theology'::text, 'both'::text])),
   CONSTRAINT alevel_subjects_pkey PRIMARY KEY (id),
   CONSTRAINT alevel_subjects_school_id_fkey FOREIGN KEY (school_id) REFERENCES public.schools(id),
   CONSTRAINT alevel_subjects_school_subject_id_fkey FOREIGN KEY (school_subject_id) REFERENCES public.school_subjects(id)
