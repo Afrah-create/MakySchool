@@ -1,7 +1,10 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { PortalShell } from "@/components/layout/shared/PortalShell";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { NotificationDrawer } from "@/components/notifications/NotificationDrawer";
 import { SessionManager } from "@/components/session/SessionManager";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 import { getTenantPayloadFromCookies } from "@/lib/auth/server-tenant";
 import { apiFetch } from "@/lib/api/server";
 import { requirePortalSession } from "@/lib/roles";
@@ -42,14 +45,17 @@ export default async function TeacherPortalLayout({
         school={status?.school ?? null}
         setupStatus={status}
       >
-        <PortalShell
-          schoolName={status?.school?.name}
-          role={session.role}
-          portal="teacher"
-        >
-          <SessionManager />
-          {children}
-        </PortalShell>
+        <NotificationProvider>
+          <PortalShell
+            schoolName={status?.school?.name}
+            role={session.role}
+            portal="teacher"
+          >
+            <SessionManager />
+            {children}
+          </PortalShell>
+          <NotificationDrawer />
+        </NotificationProvider>
       </SchoolProvider>
     </PortalRoleProvider>
   );

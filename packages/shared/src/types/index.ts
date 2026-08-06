@@ -47,3 +47,4 @@ export * from "./resources";
 export * from "./primary";
 export * from "./rollover";
 export * from "./analytics-trends";
+export * from "./notifications";

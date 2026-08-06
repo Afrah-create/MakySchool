@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  Bell,
   CircleDollarSign,
   FileText,
   History,
@@ -84,6 +85,14 @@ export const bursarNavGroups: PortalNavGroup[] = [
         href: "/bursar/dashboard",
         label: "Dashboard",
         icon: LayoutDashboard,
+        exact: true,
+        roles: bursarRole,
+      },
+      {
+        id: "bursar-notifications",
+        href: "/bursar/notifications",
+        label: "Notifications",
+        icon: Bell,
         exact: true,
         roles: bursarRole,
       },

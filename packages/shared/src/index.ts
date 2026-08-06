@@ -7,3 +7,4 @@ export * from "./types/resources";
 export * from "./types/primary";
 export * from "./types/olevel";
 export * from "./types/teacher-attendance";
+export * from "./types/notifications";

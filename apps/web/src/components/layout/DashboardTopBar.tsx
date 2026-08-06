@@ -9,6 +9,7 @@ import { cn } from "@makyschool/ui/lib/cn";
 import { AcademicYearTopSwitch } from "@/components/layout/AcademicYearTopSwitch";
 import { DashboardHeaderSearch } from "@/components/layout/DashboardHeaderSearch";
 import { DashboardNavProgress } from "@/components/layout/DashboardNavProgress";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useAuth } from "@/hooks/useAuth";
 import { useCurrentRole } from "@/hooks/useCurrentRole";
 import { useSchool } from "@/providers/SchoolProvider";
@@ -86,6 +87,7 @@ export function DashboardTopBar() {
           ) : null}
 
           <ThemeToggle />
+          <NotificationBell />
 
           <button
             type="button"

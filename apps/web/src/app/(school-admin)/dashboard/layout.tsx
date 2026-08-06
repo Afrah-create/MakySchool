@@ -3,8 +3,11 @@ import { redirect } from "next/navigation";
 import { SchoolAdminMobileChrome } from "@/components/layout/school-admin/SchoolAdminMobileChrome";
 import { SchoolAdminSidebar } from "@/components/layout/school-admin/SchoolAdminSidebar";
 import { TenantDashboardShell } from "@/components/layout/TenantDashboardShell";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { NotificationDrawer } from "@/components/notifications/NotificationDrawer";
 import { SubscriptionLockout } from "@/components/school-admin/SubscriptionLockout";
 import { SessionManager } from "@/components/session/SessionManager";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 import { subscriptionsEnabled } from "@makyschool/shared/constants";
 import { getTenantPayloadFromCookies } from "@/lib/auth/server-tenant";
 import { apiFetch } from "@/lib/api/server";
@@ -48,8 +51,10 @@ export default async function SchoolAdminDashboardLayout({
           school={status?.school ?? null}
           setupStatus={status}
         >
-          <SessionManager />
-          {children}
+          <NotificationProvider>
+            <SessionManager />
+            {children}
+          </NotificationProvider>
         </SchoolProvider>
       </PortalRoleProvider>
     );
@@ -62,27 +67,30 @@ export default async function SchoolAdminDashboardLayout({
         school={status?.school ?? null}
         setupStatus={status}
       >
-        <TenantDashboardShell
-        showRightRail
-        sidebar={
-          <SchoolAdminSidebar
-            schoolSlug={tenant.schoolSlug}
-            schoolStatus={status?.school?.status}
-            schoolName={status?.school?.name}
-            role={session.role}
-          />
-        }
-        mobileChrome={
-          <SchoolAdminMobileChrome
-            schoolName={status?.school?.name}
-            role={session.role}
-          />
-        }
-      >
-          <SessionManager />
-          {children}
-          {subscriptionsEnabled() ? <SubscriptionLockout /> : null}
-      </TenantDashboardShell>
+        <NotificationProvider>
+          <TenantDashboardShell
+            showRightRail
+            sidebar={
+              <SchoolAdminSidebar
+                schoolSlug={tenant.schoolSlug}
+                schoolStatus={status?.school?.status}
+                schoolName={status?.school?.name}
+                role={session.role}
+              />
+            }
+            mobileChrome={
+              <SchoolAdminMobileChrome
+                schoolName={status?.school?.name}
+                role={session.role}
+              />
+            }
+          >
+            <SessionManager />
+            {children}
+            {subscriptionsEnabled() ? <SubscriptionLockout /> : null}
+          </TenantDashboardShell>
+          <NotificationDrawer />
+        </NotificationProvider>
       </SchoolProvider>
     </PortalRoleProvider>
   );

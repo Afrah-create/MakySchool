@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   AlertCircle,
+  Bell,
   Archive,
   Award,
   BookOpenCheck,
@@ -142,6 +143,13 @@ export const schoolAdminNavGroups: NavGroup[] = [
         icon: Archive,
         exact: false,
         requiredAction: "viewAnalytics",
+      },
+      {
+        href: "/dashboard/notifications",
+        label: "Notifications",
+        icon: Bell,
+        exact: true,
+        requiredAction: null,
       },
     ],
   },

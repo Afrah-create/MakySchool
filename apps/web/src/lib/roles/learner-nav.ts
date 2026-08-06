@@ -1,4 +1,4 @@
-import { BookOpen, CalendarDays, CreditCard, FileText, LayoutDashboard, UserRound } from "lucide-react";
+import { Bell, BookOpen, CalendarDays, CreditCard, FileText, LayoutDashboard, UserRound } from "lucide-react";
 import { USER_ROLES } from "@makyschool/shared/constants";
 import type { PortalNavGroup, PortalNavItem } from "./portal-nav";
 
@@ -24,6 +24,14 @@ export const learnerNavGroups: PortalNavGroup[] = [
         label: "Profile",
         icon: UserRound,
         exact: false,
+        roles: learnerRole,
+      },
+      {
+        id: "learner-notifications",
+        href: "/learner/notifications",
+        label: "Notifications",
+        icon: Bell,
+        exact: true,
         roles: learnerRole,
       },
     ],
