@@ -64,6 +64,7 @@ async def get_setup_status(
     school = await conn.fetchrow(
         """
         SELECT id, slug, name, logo_url, stamp_url, email, phone, emails, phones, address, school_type,
+               theology_enabled,
                status, subscription_status, subscription_term, subscription_year,
                schoolpay_code, setup_completed_at, created_at
         FROM schools WHERE id = $1
@@ -110,6 +111,7 @@ async def _save_profile(
     phones: str | None,
     address: str | None,
     school_type: str | None,
+    theology_enabled: bool | None,
     logo: UploadFile | None,
     stamp: UploadFile | None,
 ):
@@ -145,7 +147,8 @@ async def _save_profile(
             emails = CASE WHEN $4::boolean THEN COALESCE($8::text[], '{}') ELSE emails END,
             phones = CASE WHEN $6::boolean THEN COALESCE($9::text[], '{}') ELSE phones END,
             address = COALESCE($10, address),
-            school_type = COALESCE($11, school_type)
+            school_type = COALESCE($11, school_type),
+            theology_enabled = COALESCE($13, theology_enabled)
         WHERE id = $12
         RETURNING *
         """,
@@ -161,6 +164,7 @@ async def _save_profile(
         address,
         school_type,
         school_id,
+        theology_enabled,
     )
     payload = _row(row)
     if isinstance(payload, dict):
@@ -179,6 +183,7 @@ async def post_profile(
     phones: str | None = Form(None),
     address: str | None = Form(None),
     school_type: str | None = Form(None),
+    theology_enabled: bool | None = Form(None),
     logo: UploadFile | None = File(None),
     stamp: UploadFile | None = File(None),
 ):
@@ -193,6 +198,7 @@ async def post_profile(
         phones=phones,
         address=address,
         school_type=school_type,
+        theology_enabled=theology_enabled,
         logo=logo,
         stamp=stamp,
     )
@@ -209,6 +215,7 @@ async def patch_profile(
     phones: str | None = Form(None),
     address: str | None = Form(None),
     school_type: str | None = Form(None),
+    theology_enabled: bool | None = Form(None),
     logo: UploadFile | None = File(None),
     stamp: UploadFile | None = File(None),
 ):
@@ -223,6 +230,7 @@ async def patch_profile(
         phones=phones,
         address=address,
         school_type=school_type,
+        theology_enabled=theology_enabled,
         logo=logo,
         stamp=stamp,
     )

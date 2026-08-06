@@ -20,7 +20,9 @@ type WizardState = {
     phones: string[];
     address: string;
     schoolType: string;
+    theologyEnabled: boolean;
   };
+  
   academicYear: {
     year: number;
     terms: Array<{ name: string; startDate: string; endDate: string }>;
@@ -59,7 +61,9 @@ function initialState(school?: SchoolRecord | null): WizardState {
       phones,
       address: school?.address ?? "",
       schoolType: school?.school_type ?? "primary",
+      theologyEnabled: school?.theology_enabled ?? false,
     },
+    
     academicYear: {
       year: new Date().getFullYear(),
       terms: [
@@ -264,6 +268,7 @@ export function WizardShell({
                   : current.profile.phones,
               address: sch.address ?? current.profile.address,
               schoolType: sch.school_type ?? current.profile.schoolType,
+              theologyEnabled: sch.theology_enabled ?? current.profile.theologyEnabled,
             },
           }));
         }
@@ -285,6 +290,7 @@ export function WizardShell({
       profileData.set("phones", JSON.stringify(phones));
       profileData.set("address", state.profile.address);
       profileData.set("school_type", state.profile.schoolType);
+      profileData.set("theology_enabled", String(state.profile.theologyEnabled));
       if (state.profile.logo) profileData.set("logo", state.profile.logo);
       if (state.profile.stamp) profileData.set("stamp", state.profile.stamp);
 

@@ -11,7 +11,9 @@ export type ProfileValue = {
   phones: string[];
   address: string;
   schoolType: string;
+  theologyEnabled: boolean;
 };
+
 
 const labelClass = "mb-2 block text-sm font-medium text-theme-muted";
 
@@ -178,6 +180,18 @@ export function ProfileStep({
             ))}
           </div>
         )}
+      </div>
+
+      <div className="lg:col-span-2">
+        <p className={labelClass}>Theology</p>
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-theme px-4 py-2.5 text-sm text-theme-muted hover:border-theme-strong">
+          <input
+            type="checkbox"
+            checked={value.theologyEnabled}
+            onChange={(event) => onChange({ ...value, theologyEnabled: event.target.checked })}
+          />
+          This school teaches theology (e.g. Qur&apos;an, Fiqh, Hadith) alongside the secular curriculum
+        </label>
       </div>
     </div>
   );
