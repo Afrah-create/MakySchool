@@ -6,6 +6,7 @@ import {
   Award,
   BookOpenCheck,
   Building2,
+  Feather,
   CalendarDays,
   CircleDollarSign,
   ClipboardList,
@@ -236,6 +237,13 @@ export const schoolAdminNavGroups: NavGroup[] = [
         requiredAction: "viewAllClasses",
       },
       {
+        href: "/dashboard/theology",
+        label: "Theology",
+        icon: Feather,
+        exact: false,
+        requiredAction: "viewAllClasses",
+      },
+      {
         href: "/dashboard/teaching-plans",
         label: "Teaching plans",
         icon: FileText,
@@ -353,6 +361,7 @@ export function filterNavGroupsByRole(groups: NavGroup[], role: UserRole): NavGr
 export function filterNavGroupsBySchoolType(
   groups: NavGroup[],
   schoolType: SchoolType | string | null | undefined,
+  theologyEnabled?: boolean,
 ): NavGroup[] {
   const offersPrimary = schoolOffersPrimary(schoolType);
   const offersALevel = schoolOffersALevel(schoolType);
@@ -370,12 +379,14 @@ export function filterNavGroupsBySchoolType(
         if (item.href === "/dashboard/olevel" || item.href.startsWith("/dashboard/olevel/")) {
           return offersOLevel;
         }
+        if (item.href === "/dashboard/theology" || item.href.startsWith("/dashboard/theology/")) {
+          return Boolean(theologyEnabled);
+        }
         return true;
       }),
     }))
     .filter((group) => group.items.length > 0);
 }
-
 export function findActiveNavGroupId(pathname: string, groups: NavGroup[]): string | null {
   for (const group of groups) {
     for (const item of group.items) {

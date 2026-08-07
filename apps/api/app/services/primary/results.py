@@ -466,8 +466,7 @@ async def student_result(
         subject_rows = await conn.fetch(
             f"""
             SELECT
-              ps.name AS subject_name, ps.code AS subject_code, ps.is_ple_subject,
-              sr.ca_percentage, sr.exam_score, sr.exam_percentage,
+ps.name AS subject_name, ps.code AS subject_code, ps.track, ps.is_ple_subject,              sr.ca_percentage, sr.exam_score, sr.exam_percentage,
               sr.final_percent, sr.grade, sr.grade_label, {gp_select}, sr.position,
               sr.teacher_comment
             FROM primary_subject_results sr
@@ -495,7 +494,7 @@ async def student_result(
         subject_rows = await conn.fetch(
             f"""
             SELECT
-              ps.name AS subject_name, ps.code AS subject_code, ps.is_ple_subject,
+              ps.name AS subject_name, ps.code AS subject_code, ps.track, ps.is_ple_subject,
               sr.ca_percentage, sr.exam_score, sr.exam_percentage,
               sr.final_percent, sr.grade, sr.grade_label, {gp_select}, sr.position,
               sr.teacher_comment
@@ -544,6 +543,16 @@ async def student_result(
         }
         for r in subject_rows
     ]
+    if mode == "secular":
+        base["subjectResults"] = [
+            r for r, raw in zip(base["subjectResults"], subject_rows)
+            if raw["track"] in ("secular", "both")
+        ]
+    elif mode == "theology":
+        base["subjectResults"] = [
+            r for r, raw in zip(base["subjectResults"], subject_rows)
+            if raw["track"] in ("theology", "both")
+        ]
     if term_row:
         present = term_row["present_days"]
         days = term_row["attendance_days"]

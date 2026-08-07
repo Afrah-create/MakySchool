@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 SUBJECT_COLUMNS = """
-    s.id, s.school_subject_id, ss.name, s.code, s.subject_type, s.is_gp, s.is_active
+    s.id, s.school_subject_id, ss.name, s.code, s.subject_type, s.is_gp, s.is_active, s.track
 """
 
 ENROLLMENT_SELECT = """
@@ -172,6 +172,7 @@ async def build_report_card_data(
     class_size: int | None = None,
     classmates: list[dict[str, Any]] | None = None,
     require_approved: bool = False,
+    mode: str = "combined",
 ) -> dict[str, Any]:
     """Assemble one student's report card payload."""
     exam = await require_exam(conn, school_id, exam_id)
@@ -220,6 +221,9 @@ async def build_report_card_data(
             "descriptor": grade_descriptor(r["grade"], r["subject_type"]),
         }
         for r in grade_rows
+        if mode == "combined"
+        or (mode == "secular" and r["track"] in ("secular", "both"))
+        or (mode == "theology" and r["track"] in ("theology", "both"))
     ]
     totals = compute_student_totals(subjects)
 

@@ -18,6 +18,12 @@ ALTER TABLE alevel_subjects
   ADD COLUMN IF NOT EXISTS track TEXT NOT NULL DEFAULT 'secular'
     CHECK (track IN ('secular', 'theology', 'both'));
 
+ALTER TABLE primary_subjects
+  ADD COLUMN IF NOT EXISTS track TEXT NOT NULL DEFAULT 'secular'
+    CHECK (track IN ('secular', 'theology', 'both'));
+
+CREATE INDEX IF NOT EXISTS idx_primary_subjects_track ON primary_subjects (school_id, track);
+
 ALTER TABLE schools
   ADD COLUMN IF NOT EXISTS theology_enabled BOOLEAN NOT NULL DEFAULT false;
 
