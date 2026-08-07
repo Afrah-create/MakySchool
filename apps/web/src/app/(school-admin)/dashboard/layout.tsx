@@ -89,7 +89,7 @@ export default async function SchoolAdminDashboardLayout({
             {children}
             {subscriptionsEnabled() ? <SubscriptionLockout /> : null}
           </TenantDashboardShell>
-          <NotificationDrawer />
+          <NotificationDrawer userRole={session.role} />
         </NotificationProvider>
       </SchoolProvider>
     </PortalRoleProvider>

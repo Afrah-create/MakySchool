@@ -54,7 +54,7 @@ export default async function BursarPortalLayout({
             <SessionManager />
             {children}
           </PortalShell>
-          <NotificationDrawer />
+          <NotificationDrawer userRole={session.role} />
         </NotificationProvider>
       </SchoolProvider>
     </PortalRoleProvider>
