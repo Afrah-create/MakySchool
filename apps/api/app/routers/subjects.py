@@ -56,6 +56,7 @@ async def list_subjects(
         SELECT
            s.id,
            s.name,
+           s.track,
            s.created_at,
            COALESCE((
              SELECT COUNT(*)::int

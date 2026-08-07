@@ -1988,3 +1988,21 @@ async def unlock_exam_submission(
     except Exception as exc:
         raise _http(exc) from exc
 
+async def get_report_card(
+    student_id: uuid.UUID,
+    ctx: TenantCtx,
+    exam_id: uuid.UUID | None = Query(None),
+    sitting_id: uuid.UUID | None = Query(None),
+    mode: str = Query("combined"),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    if mode == "secular":
+        base["subjectResults"] = [
+            r for r, raw in zip(base["subjectResults"], subject_rows)
+            if raw["track"] in ("secular", "both")
+        ]
+    elif mode == "theology":
+        base["subjectResults"] = [
+            r for r, raw in zip(base["subjectResults"], subject_rows)
+            if raw["track"] in ("theology", "both")
+        ]

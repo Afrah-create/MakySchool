@@ -80,7 +80,7 @@ async def build_report_card_data(
 
     subjects = await conn.fetch(
         """
-        SELECT sr.*, os.name AS subject_name, os.code AS subject_code
+        SELECT sr.*, os.name AS subject_name, os.code AS subject_code, os.track
         FROM olevel_subject_results sr
         JOIN olevel_subjects os ON os.id = sr.subject_id
         WHERE sr.enrollment_id=$1 AND sr.term_id=$2 AND sr.academic_year_id=$3
@@ -146,6 +146,9 @@ async def build_report_card_data(
                 "points": float(s["points"] or 0),
             }
             for s in subjects
+            if mode == "combined"
+            or (mode == "secular" and s["track"] in ("secular", "both"))
+            or (mode == "theology" and s["track"] in ("theology", "both"))
         ],
         "totals": {
             "totalPoints": float(result["total_points"] or 0),

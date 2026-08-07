@@ -43,12 +43,14 @@ function toGroupedGroups(groups: NavGroup[]): GroupedNavGroup[] {
 function useFilteredAdminNavGroups(role: UserRole, billingEnabled: boolean) {
   const schoolCtx = useOptionalSchool();
   const schoolType = schoolCtx?.school?.school_type;
+  const theologyEnabled = schoolCtx?.school?.theology_enabled;
 
   return useMemo(() => {
     return toGroupedGroups(
       filterNavGroupsBySchoolType(
         filterNavGroupsByRole(schoolAdminNavGroups, role),
         schoolType,
+        theologyEnabled,
       )
         .filter((group) => {
           if (group.id !== "finance") return true;
@@ -59,7 +61,7 @@ function useFilteredAdminNavGroups(role: UserRole, billingEnabled: boolean) {
           items: group.items.filter((item) => item.href !== "/dashboard/billing" || billingEnabled),
         })),
     );
-  }, [billingEnabled, role, schoolType]);
+  }, [billingEnabled, role, schoolType, theologyEnabled]);
 }
 
 export function SchoolAdminSidebarNav({
