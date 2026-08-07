@@ -1,10 +1,10 @@
 services:
   makyschool-api:
     build: .
-    container_name: makyschool-api
+    container_name: makyschool-api-${ENV_NAME:-prod}
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "${APP_PORT}:${APP_PORT}"
     env_file:
       - .env
     volumes:
