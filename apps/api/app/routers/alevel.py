@@ -2131,6 +2131,26 @@ async def submit_marks(
         exam_id,
         actor_id,
     )
+    exam_row = await conn.fetchrow(
+        "SELECT class_id, title FROM exams WHERE id = $1 AND school_id = $2",
+        exam_id,
+        school_id,
+    )
+    if exam_row:
+        subject_name = await conn.fetchval(
+            "SELECT name FROM school_subjects WHERE id = $1 AND school_id = $2",
+            exam_row["class_id"],
+            school_id,
+        )
+        await notify_alevel_marks_submitted(
+            conn,
+            actor_id=actor_id,
+            school_id=school_id,
+            subject_name=subject_name or "the subject",
+            class_name=exam_row["title"] or "the class",
+            exam_session_id=exam_id,
+            curriculum="alevel",
+        )
     submission = await fetch_teacher_submission(conn, school_id, exam_id, actor_id)
     return {"data": {"ok": True, **(submission or {"isSubmitted": True})}}
 

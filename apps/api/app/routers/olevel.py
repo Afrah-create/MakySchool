@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.pool import get_db
 from app.lib.classes import O_LEVEL_CLASS_LEVELS
+from app.lib.notification_events import notify_exam_session_opened, notify_marks_unlocked
 from app.lib.olevel_access import (
     assert_olevel_enabled,
     actor_user_id,
@@ -830,15 +831,51 @@ async def submit_marks(
     require_olevel_action(actor, "enterOLevelMarks")
     subject_raw = body.get("subject_id") or body.get("subjectId")
     try:
-        return _ok(
-            await marks_svc.submit_marks(
-                conn,
-                school_id,
-                actor_user_id(actor),
-                exam_session_id=exam_session_id,
-                subject_id=uuid.UUID(str(subject_raw)) if subject_raw else None,
-            )
+        result = await marks_svc.submit_marks(
+            conn,
+            school_id,
+            actor_user_id(actor),
+            exam_session_id=exam_session_id,
+            subject_id=uuid.UUID(str(subject_raw)) if subject_raw else None,
         )
+        session_row = await conn.fetchrow(
+            """
+            SELECT es.id, es.class_id, es.title, t.name AS term_name
+            FROM olevel_exam_sessions es
+            JOIN school_classes sc ON sc.id = es.class_id
+            JOIN terms t ON t.id = es.term_id
+            WHERE es.id = $1 AND es.school_id = $2
+            """,
+            exam_session_id,
+            school_id,
+        )
+        if session_row:
+            class_name = session_row["title"] or "the class"
+            subject_name = None
+            if subject_raw:
+                subject_id = uuid.UUID(str(subject_raw))
+                subject_row = await conn.fetchrow(
+                    "SELECT name FROM olevel_subjects WHERE id = $1 AND school_id = $2",
+                    subject_id,
+                    school_id,
+                )
+                if subject_row:
+                    subject_name = subject_row["name"]
+            await notify_exam_session_opened(
+                conn,
+                actor_id=actor_user_id(actor),
+                school_id=school_id,
+                class_id=session_row["class_id"],
+                session_id=session_row["id"],
+                session_title=session_row["title"],
+                class_name=class_name,
+                term_name=session_row["term_name"],
+                category_name=None,
+                max_marks=None,
+                term_end_date=None,
+                curriculum="olevel",
+            )
+        return _ok(result)
     except LookupError as exc:
         raise _http_lookup(exc) from exc
 
@@ -852,17 +889,50 @@ async def unlock_marks(
 ):
     school_id, actor = ctx
     require_olevel_action(actor, "manageExamSessions")
-    return _ok(
-        await marks_svc.unlock_marks(
-            conn,
-            school_id,
-            actor_user_id(actor),
-            exam_session_id=exam_session_id,
-            subject_id=uuid.UUID(str(body.get("subject_id") or body.get("subjectId"))),
-            teacher_id=uuid.UUID(str(body.get("teacher_id") or body.get("teacherId"))),
-            reason=str(body.get("reason") or ""),
-        )
+    subject_id = uuid.UUID(str(body.get("subject_id") or body.get("subjectId")))
+    teacher_id = uuid.UUID(str(body.get("teacher_id") or body.get("teacherId")))
+    result = await marks_svc.unlock_marks(
+        conn,
+        school_id,
+        actor_user_id(actor),
+        exam_session_id=exam_session_id,
+        subject_id=subject_id,
+        teacher_id=teacher_id,
+        reason=str(body.get("reason") or ""),
     )
+    subject_row = await conn.fetchrow(
+        "SELECT name FROM olevel_subjects WHERE id = $1 AND school_id = $2",
+        subject_id,
+        school_id,
+    )
+    class_row = await conn.fetchrow(
+        """
+        SELECT CASE
+          WHEN stream IS NULL OR stream = '' THEN level
+          ELSE level || ' ' || stream
+        END AS class_name
+        FROM school_classes
+        WHERE id = $1 AND school_id = $2
+        """,
+        await conn.fetchval(
+            "SELECT class_id FROM olevel_exam_sessions WHERE id = $1 AND school_id = $2",
+            exam_session_id,
+            school_id,
+        ),
+        school_id,
+    )
+    await notify_marks_unlocked(
+        conn,
+        actor_id=actor_user_id(actor),
+        school_id=school_id,
+        teacher_id=teacher_id,
+        subject_name=subject_row["name"] if subject_row else "the subject",
+        class_name=class_row["class_name"] if class_row else "the class",
+        reason=str(body.get("reason") or ""),
+        exam_session_id=exam_session_id,
+        curriculum="olevel",
+    )
+    return _ok(result)
 
 
 @router.get("/marks/{exam_session_id}/submissions")
