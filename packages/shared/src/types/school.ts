@@ -14,6 +14,7 @@ export interface SchoolRecord {
   phones?: string[];
   address: string | null;
   school_type: SchoolType | null;
+  theology_enabled: boolean;
   status: SchoolStatus;
   subscription_status: SubscriptionStatus;
   subscription_term: string | null;

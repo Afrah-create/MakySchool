@@ -50,6 +50,7 @@ from app.routers import (
     superadmin_schools,
     superadmin_settings,
     superadmin_subscriptions,
+    theology,
     teacher_attendance,
     teachers,
     teaching_load,
@@ -221,6 +222,7 @@ def create_app() -> FastAPI:
     mount_v1_and_legacy(app, primary_reports.router, "/api/schools/primary")
     mount_v1_and_legacy(app, alevel.router, "/api/schools/alevel")
     mount_v1_and_legacy(app, olevel.router, "/api/schools/olevel")
+    mount_v1_and_legacy(app, theology.router, "/api/schools/theology")
 
     mount_v1_and_legacy(
     app,
