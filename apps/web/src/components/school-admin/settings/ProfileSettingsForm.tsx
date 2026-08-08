@@ -60,6 +60,7 @@ export function ProfileSettingsForm({
     phones: initialContacts.phones,
     address: profile.address ?? "",
     schoolType: (profile.school_type ?? "primary") as string,
+    theologyEnabled: profile.theology_enabled ?? false,
   });
   const [mediaUrls, setMediaUrls] = useState({
     logo: profile.logo_url ?? null,

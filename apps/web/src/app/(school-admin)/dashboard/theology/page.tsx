@@ -47,11 +47,13 @@ type StudentsListResponse = {
   students: StudentListItem[];
 };
 
+type RatingFieldKey = keyof Pick<
+  RatingRow,
+  "quranicRecitation" | "islamicValues" | "arabicLiteracy" | "moralCharacter"
+>;
+
 const RATING_FIELDS: Array<{
-  key: keyof Pick
-    RatingRow,
-    "quranicRecitation" | "islamicValues" | "arabicLiteracy" | "moralCharacter"
-  >;
+  key: RatingFieldKey;
   label: string;
 }> = [
   { key: "quranicRecitation", label: "Qur'anic Recitation" },
